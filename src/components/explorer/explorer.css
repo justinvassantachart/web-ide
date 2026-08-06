@@ -1,0 +1,373 @@
+/* VS Code Modern file explorer — pixel-faithful port.
+   All tokens scoped to .vscode-explorer so this drop doesn't leak into the
+   rest of nova until we want it to. Dark values lifted from
+   microsoft/vscode/extensions/theme-defaults/themes/dark_modern.json; light
+   overrides from light_modern.json (under [data-theme="light"]). */
+
+.vscode-explorer {
+    /* Surfaces */
+    --vsx-sideBar-background: #181818;
+    --vsx-sideBar-foreground: #cccccc;
+    --vsx-sideBar-border: #2b2b2b;
+    --vsx-sideBarSectionHeader-background: #181818;
+    --vsx-sideBarSectionHeader-foreground: #cccccc;
+    --vsx-sideBarSectionHeader-border: #2b2b2b;
+
+    /* List rows */
+    --vsx-list-hoverBackground: #2a2d2e;
+    --vsx-list-hoverForeground: #cccccc;
+    --vsx-list-activeSelectionBackground: #04395e;
+    --vsx-list-activeSelectionForeground: #ffffff;
+    --vsx-list-inactiveSelectionBackground: #37373d;
+    --vsx-list-inactiveSelectionForeground: #cccccc;
+    --vsx-list-focusOutline: #0078d4;
+    --vsx-list-dropBackground: #062f4a;
+
+    /* Tree */
+    --vsx-tree-indentGuidesStroke: #585858;
+    --vsx-tree-inactiveIndentGuidesStroke: rgba(88, 88, 88, 0.4);
+
+    /* Inputs / context menu */
+    --vsx-input-background: #313131;
+    --vsx-input-border: #3c3c3c;
+    --vsx-input-foreground: #cccccc;
+    --vsx-focusBorder: #0078d4;
+    --vsx-menu-background: #1f1f1f;
+    --vsx-menu-foreground: #cccccc;
+    --vsx-menu-selectionBackground: #0078d4;
+    --vsx-menu-border: #454545;
+    --vsx-icon-foreground: #cccccc;
+    --vsx-descriptionForeground: #9d9d9d;
+
+    /* Action button hover/active — split out so the light theme can flip
+       the alpha from white-on-dark to black-on-light. */
+    --vsx-action-hover: rgba(255, 255, 255, 0.08);
+    --vsx-action-active: rgba(255, 255, 255, 0.12);
+
+    /* Tree scrollbar — same pattern. */
+    --vsx-scrollbar-thumb: rgba(121, 121, 121, 0.4);
+    --vsx-scrollbar-thumb-hover: rgba(100, 100, 100, 0.7);
+
+    /* Danger row hover (delete confirmation) */
+    --vsx-menu-danger-hover: #5a1d1d;
+
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--vsx-sideBar-background);
+    color: var(--vsx-sideBar-foreground);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Ubuntu', 'Droid Sans', sans-serif;
+    font-size: 13px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* ── Title bar (the "EXPLORER" caps strip above the section) ─────── */
+
+.vsx-titlebar {
+    display: flex;
+    align-items: center;
+    height: 35px;
+    padding: 0 20px;
+    flex-shrink: 0;
+}
+.vsx-titlebar-label {
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    color: var(--vsx-sideBar-foreground);
+    flex: 1;
+}
+
+/* ── Section header (collapsible folder section) ─────────────────── */
+
+.vsx-section-header {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 16px 0 8px;
+    background: var(--vsx-sideBarSectionHeader-background);
+    color: var(--vsx-sideBarSectionHeader-foreground);
+    border-top: 1px solid var(--vsx-sideBarSectionHeader-border);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+}
+.vsx-section-header:hover .vsx-section-actions {
+    opacity: 1;
+}
+.vsx-section-twistie {
+    width: 16px;
+    font-size: 16px;
+    color: var(--vsx-icon-foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.1s ease-in-out;
+    flex-shrink: 0;
+}
+.vsx-section-twistie.collapsed {
+    transform: rotate(-90deg);
+}
+.vsx-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    color: var(--vsx-sideBarSectionHeader-foreground);
+    margin-left: 4px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.vsx-section-actions {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    opacity: 0;
+    transition: opacity 0.1s linear;
+}
+.vsx-action-btn {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    color: var(--vsx-icon-foreground);
+    cursor: pointer;
+    border-radius: 5px;
+    padding: 0;
+}
+.vsx-action-btn:hover {
+    background: var(--vsx-action-hover);
+}
+.vsx-action-btn:active {
+    background: var(--vsx-action-active);
+}
+.vsx-action-btn .codicon {
+    font-size: 16px;
+}
+
+/* ── Tree (monaco-list-row equivalent) ───────────────────────────── */
+
+.vsx-tree {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    min-height: 0;
+}
+.vsx-tree::-webkit-scrollbar {
+    width: 10px;
+}
+.vsx-tree::-webkit-scrollbar-track {
+    background: transparent;
+}
+.vsx-tree::-webkit-scrollbar-thumb {
+    background: var(--vsx-scrollbar-thumb);
+}
+.vsx-tree::-webkit-scrollbar-thumb:hover {
+    background: var(--vsx-scrollbar-thumb-hover);
+}
+
+.vsx-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 22px;
+    line-height: 22px;
+    padding-right: 12px;
+    cursor: pointer;
+    color: var(--vsx-sideBar-foreground);
+    outline: 1px solid transparent;
+    outline-offset: -1px;
+}
+.vsx-row:hover {
+    background: var(--vsx-list-hoverBackground);
+    color: var(--vsx-list-hoverForeground);
+}
+.vsx-row.selected {
+    background: var(--vsx-list-inactiveSelectionBackground);
+    color: var(--vsx-list-inactiveSelectionForeground);
+}
+.vsx-tree:focus-within .vsx-row.selected {
+    background: var(--vsx-list-activeSelectionBackground);
+    color: var(--vsx-list-activeSelectionForeground);
+}
+.vsx-row.focused {
+    outline-color: var(--vsx-list-focusOutline);
+}
+.vsx-row.drop-target {
+    background: var(--vsx-list-dropBackground);
+}
+
+/* Indent guide lanes (one 8px-wide lane per ancestor depth) */
+.vsx-indent {
+    position: absolute;
+    top: 0;
+    left: 8px;
+    height: 100%;
+    display: flex;
+    pointer-events: none;
+}
+.vsx-indent-guide {
+    display: inline-block;
+    width: 8px;
+    height: 100%;
+    border-left: 1px solid var(--vsx-tree-inactiveIndentGuidesStroke);
+}
+.vsx-row:hover .vsx-indent-guide,
+.vsx-row.selected .vsx-indent-guide {
+    border-left-color: var(--vsx-tree-indentGuidesStroke);
+}
+
+.vsx-twistie {
+    width: 16px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: var(--vsx-icon-foreground);
+    transition: transform 0.1s ease-in-out;
+    flex-shrink: 0;
+}
+.vsx-twistie.expanded {
+    transform: rotate(90deg);
+}
+.vsx-twistie.empty {
+    /* file rows still need this slot to align with folder rows */
+    visibility: hidden;
+}
+
+.vsx-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    flex-shrink: 0;
+    display: block;
+    image-rendering: -webkit-optimize-contrast;
+}
+
+.vsx-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    line-height: 22px;
+}
+
+/* ── Inline rename / create input ────────────────────────────────── */
+
+.vsx-input-wrap {
+    flex: 1;
+    margin-right: 4px;
+    display: flex;
+}
+.vsx-input {
+    flex: 1;
+    height: 20px;
+    background: var(--vsx-input-background);
+    color: var(--vsx-input-foreground);
+    border: 0;
+    outline: 1px solid var(--vsx-focusBorder);
+    outline-offset: -1px;
+    padding: 0 4px;
+    font: inherit;
+    font-size: 13px;
+}
+.vsx-input:focus {
+    outline-color: var(--vsx-focusBorder);
+}
+
+/* ── Context menu (matches VS Code's menu chrome) ────────────────── */
+
+.vsx-context-menu {
+    position: fixed;
+    min-width: 200px;
+    padding: 4px 0;
+    background: var(--vsx-menu-background);
+    color: var(--vsx-menu-foreground);
+    border: 1px solid var(--vsx-menu-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    border-radius: 5px;
+    z-index: 1000;
+    font-size: 13px;
+}
+.vsx-menu-item {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 26px 0 22px;
+    cursor: pointer;
+    color: var(--vsx-menu-foreground);
+    position: relative;
+}
+.vsx-menu-item:hover {
+    background: var(--vsx-menu-selectionBackground);
+    color: #ffffff;
+}
+.vsx-menu-item.danger:hover {
+    background: var(--vsx-menu-danger-hover);
+    color: #ffffff;
+}
+.vsx-menu-separator {
+    height: 1px;
+    background: var(--vsx-menu-border);
+    margin: 4px 0;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────── */
+
+.vsx-empty {
+    padding: 4px 20px;
+    color: var(--vsx-descriptionForeground);
+    font-size: 13px;
+}
+
+/* ── Light theme overrides ───────────────────────────────────────── */
+
+[data-theme="light"] .vscode-explorer {
+    --vsx-sideBar-background: #f8f8f8;
+    --vsx-sideBar-foreground: #1f1f1f;
+    --vsx-sideBar-border: #e5e5e5;
+    --vsx-sideBarSectionHeader-background: #f8f8f8;
+    --vsx-sideBarSectionHeader-foreground: #1f1f1f;
+    --vsx-sideBarSectionHeader-border: #e5e5e5;
+
+    --vsx-list-hoverBackground: #e8e8e8;
+    --vsx-list-hoverForeground: #1f1f1f;
+    --vsx-list-activeSelectionBackground: #0060c0;
+    --vsx-list-activeSelectionForeground: #ffffff;
+    --vsx-list-inactiveSelectionBackground: #e4e6f1;
+    --vsx-list-inactiveSelectionForeground: #1f1f1f;
+    --vsx-list-focusOutline: #005fb8;
+    --vsx-list-dropBackground: #cce5ff;
+
+    --vsx-tree-indentGuidesStroke: #a9a9a9;
+    --vsx-tree-inactiveIndentGuidesStroke: rgba(169, 169, 169, 0.4);
+
+    --vsx-input-background: #ffffff;
+    --vsx-input-border: #cecece;
+    --vsx-input-foreground: #1f1f1f;
+    --vsx-focusBorder: #005fb8;
+    --vsx-menu-background: #ffffff;
+    --vsx-menu-foreground: #1f1f1f;
+    --vsx-menu-selectionBackground: #005fb8;
+    --vsx-menu-border: #cecece;
+    --vsx-icon-foreground: #1f1f1f;
+    --vsx-descriptionForeground: #717171;
+
+    --vsx-action-hover: rgba(0, 0, 0, 0.06);
+    --vsx-action-active: rgba(0, 0, 0, 0.12);
+
+    --vsx-scrollbar-thumb: rgba(100, 100, 100, 0.4);
+    --vsx-scrollbar-thumb-hover: rgba(100, 100, 100, 0.7);
+
+    --vsx-menu-danger-hover: #d13438;
+}

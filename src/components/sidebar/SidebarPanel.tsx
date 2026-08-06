@@ -1,0 +1,37 @@
+// The wide panel that sits next to the activity bar and shows the active
+// view's content. Each view ([ExplorerView], [AssignmentView]) renders its
+// own titlebar and body chrome — SidebarPanel is just the outer container
+// so it stays out of the way for resizing.
+
+import { useSidebarStore } from './sidebar-store'
+import { useIDEActivities } from '@/web-ide/react/contribution-context'
+import { useEngine } from '@/engine/engine-context'
+import { useExecutionStore } from '@/store/execution-store'
+import { getAllFiles } from '@/vfs/volume'
+import { useEffect } from 'react'
+
+export function SidebarPanel() {
+    const activeView = useSidebarStore((s) => s.activeView)
+    const setActiveView = useSidebarStore((s) => s.setActiveView)
+    const activities = useIDEActivities()
+    const runtime = useEngine()
+    const reveal = useExecutionStore((state) => state.setRightTab)
+    const selected = activities.find((activity) => activity.id === activeView) ?? activities[0]
+    const SelectedActivity = selected?.component
+
+    useEffect(() => {
+        if (selected && selected.id !== activeView) setActiveView(selected.id)
+    }, [activeView, selected, setActiveView])
+
+    return (
+        <div className="nova-sidebar">
+            {SelectedActivity && (
+                <SelectedActivity
+                    runtime={runtime}
+                    workspace={{ snapshot: getAllFiles }}
+                    panels={{ reveal }}
+                />
+            )}
+        </div>
+    )
+}

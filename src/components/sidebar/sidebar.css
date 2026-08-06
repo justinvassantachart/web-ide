@@ -1,0 +1,229 @@
+/* VS Code Activity Bar + Sidebar — pixel-faithful port.
+   Token values lifted from microsoft/vscode:
+     - extensions/theme-defaults/themes/dark_modern.json
+     - extensions/theme-defaults/themes/light_modern.json
+     - src/vs/platform/theme/common/colors/*.ts
+   All structural rules are theme-agnostic — only the color tokens swap
+   on [data-theme]. */
+
+/* ── Activity bar (48px vertical icon strip) ─────────────────────── */
+
+.nova-activitybar {
+    --ab-bg: #181818;
+    --ab-border: #2b2b2b;
+    --ab-fg: #cccccc;
+    --ab-inactive-fg: #858585;
+    --ab-hover-bg: rgba(255, 255, 255, 0.06);
+    --ab-active-border: #0078d4;
+    --ab-tooltip-bg: #252526;
+    --ab-tooltip-fg: #cccccc;
+    --ab-tooltip-border: #454545;
+
+    display: flex;
+    flex-direction: column;
+    width: 48px;
+    height: 100%;
+    flex-shrink: 0;
+    background: var(--ab-bg);
+    border-right: 1px solid var(--ab-border);
+    user-select: none;
+    -webkit-user-select: none;
+}
+[data-theme="light"] .nova-activitybar {
+    --ab-bg: #f8f8f8;
+    --ab-border: #e5e5e5;
+    --ab-fg: #1f1f1f;
+    --ab-inactive-fg: #616161;
+    --ab-hover-bg: rgba(0, 0, 0, 0.06);
+    --ab-active-border: #005fb8;
+    --ab-tooltip-bg: #ffffff;
+    --ab-tooltip-fg: #1f1f1f;
+    --ab-tooltip-border: #cecece;
+}
+
+.nova-ab-section {
+    display: flex;
+    flex-direction: column;
+}
+.nova-ab-section.bottom {
+    margin-top: auto;
+}
+
+.nova-ab-btn {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    color: var(--ab-inactive-fg);
+    cursor: pointer;
+    padding: 0;
+}
+.nova-ab-btn .codicon {
+    font-size: 24px;
+}
+.nova-ab-btn:hover {
+    color: var(--ab-fg);
+    background: var(--ab-hover-bg);
+}
+.nova-ab-btn.active {
+    color: var(--ab-fg);
+}
+.nova-ab-btn.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--ab-active-border);
+}
+
+.nova-ab-tooltip {
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--ab-tooltip-bg);
+    color: var(--ab-tooltip-fg);
+    border: 1px solid var(--ab-tooltip-border);
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s linear 0.45s;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+.nova-ab-btn:hover .nova-ab-tooltip {
+    opacity: 1;
+}
+
+/* ── Sidebar panel (the resizable column next to the activity bar) ── */
+
+.nova-sidebar {
+    --sb-bg: #181818;
+    --sb-fg: #cccccc;
+    --sb-border: #2b2b2b;
+
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--sb-bg);
+    color: var(--sb-fg);
+    border-right: 1px solid var(--sb-border);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Ubuntu', 'Droid Sans', sans-serif;
+    font-size: 13px;
+}
+[data-theme="light"] .nova-sidebar {
+    --sb-bg: #f8f8f8;
+    --sb-fg: #1f1f1f;
+    --sb-border: #e5e5e5;
+}
+
+/* Shared titlebar — 35px caps strip used by every view. The view supplies
+   the label + optional right-side actions. */
+.nova-view-titlebar {
+    display: flex;
+    align-items: center;
+    height: 35px;
+    padding: 0 8px 0 20px;
+    flex-shrink: 0;
+    color: var(--sb-fg);
+}
+.nova-view-titlebar-label {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.nova-view-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+.nova-view-empty {
+    padding: 8px 20px;
+    color: var(--sb-fg);
+    opacity: 0.6;
+    font-size: 13px;
+}
+
+/* ── Settings popup (anchored above the gear) ────────────────────── */
+
+.nova-settings-popup {
+    --pop-bg: #1f1f1f;
+    --pop-fg: #cccccc;
+    --pop-border: #454545;
+    --pop-section-fg: #9d9d9d;
+    --pop-sep: #454545;
+    --pop-hover-bg: #0078d4;
+    --pop-hover-fg: #ffffff;
+
+    position: fixed;
+    min-width: 220px;
+    background: var(--pop-bg);
+    color: var(--pop-fg);
+    border: 1px solid var(--pop-border);
+    border-radius: 5px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    padding: 4px 0;
+    z-index: 1100;
+    font-size: 13px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+[data-theme="light"] .nova-settings-popup {
+    --pop-bg: #ffffff;
+    --pop-fg: #1f1f1f;
+    --pop-border: #cecece;
+    --pop-section-fg: #616161;
+    --pop-sep: #e5e5e5;
+    --pop-hover-bg: #005fb8;
+    --pop-hover-fg: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.nova-popup-section {
+    padding: 6px 12px 2px 12px;
+    font-size: 11px;
+    color: var(--pop-section-fg);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.nova-popup-item {
+    display: flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px 0 8px;
+    cursor: pointer;
+    gap: 6px;
+}
+.nova-popup-item:hover {
+    background: var(--pop-hover-bg);
+    color: var(--pop-hover-fg);
+}
+.nova-popup-check {
+    width: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+.nova-popup-label {
+    flex: 1;
+}
+.nova-popup-sep {
+    height: 1px;
+    background: var(--pop-sep);
+    margin: 4px 0;
+}

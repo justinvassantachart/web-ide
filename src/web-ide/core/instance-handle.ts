@@ -1,0 +1,96 @@
+import { useDebugStore } from '@/store/debug-store'
+import { useEditorStore } from '@/store/editor-store'
+import { useExecutionStore } from '@/store/execution-store'
+import { useTestStore } from '@/testing/test-store'
+import {
+  fileExists,
+  getAllFiles,
+  readFile,
+  subscribeWorkspaceChange,
+} from '@/vfs/volume'
+import type {
+  IDEInstanceSnapshot,
+  WebIDEInstanceHandle,
+} from '../contracts/instance'
+
+function snapshot(): IDEInstanceSnapshot {
+  const editor = useEditorStore.getState()
+  const debug = useDebugStore.getState()
+  const execution = useExecutionStore.getState()
+  const tests = useTestStore.getState()
+  const breakpoints = Object.fromEntries(
+    Object.entries(debug.breakpoints).map(([path, lines]) => [
+      path,
+      Object.freeze([...lines]),
+    ]),
+  )
+
+  return {
+    workspace: Object.freeze({ ...getAllFiles() }),
+    editor: {
+      activeFile: editor.activeFile,
+      openFiles: Object.freeze([...editor.openFiles]),
+    },
+    debug: {
+      debugMode: debug.debugMode,
+      currentLine: debug.currentLine,
+      currentFile: debug.currentFile,
+      currentFunc: debug.currentFunc,
+      breakpoints: Object.freeze(breakpoints),
+      callStack: Object.freeze([...debug.callStack]),
+      memorySnapshot: debug.memorySnapshot,
+    },
+    rightPanel: execution.rightTab,
+    tests: Object.freeze(
+      tests.tests.map(({ name, status }) => Object.freeze({
+        name,
+        status: status === 'error' || status === 'skip' ? 'fail' : status,
+      })),
+    ),
+  }
+}
+
+export const webIDEInstanceHandle: WebIDEInstanceHandle = {
+  snapshot,
+  subscribe(listener) {
+    const unsubscribers = [
+      useEditorStore.subscribe(listener),
+      useDebugStore.subscribe(listener),
+      useExecutionStore.subscribe(listener),
+      useTestStore.subscribe(listener),
+      subscribeWorkspaceChange(listener),
+    ]
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe()
+    }
+  },
+  ensureFilesOpen(paths, primaryPath) {
+    if (!paths.every(fileExists)) return false
+    const primary = primaryPath && paths.includes(primaryPath) ? primaryPath : undefined
+    const ordered = [
+      ...paths.filter((path) => path !== primary).sort(),
+      ...(primary ? [primary] : []),
+    ]
+    for (const path of ordered) {
+      const editor = useEditorStore.getState()
+      if (
+        path === primary &&
+        (!editor.openFiles.includes(path) || editor.activeFile === null)
+      ) {
+        editor.setActiveFile(path, readFile(path))
+      }
+      else editor.openFile(path)
+    }
+    const editor = useEditorStore.getState()
+    const first = ordered[0]
+    if (!editor.activeFile && first) editor.setActiveFile(first, readFile(first))
+    return true
+  },
+  reset(options) {
+    for (const path of options?.breakpointFiles ?? []) {
+      useDebugStore.getState().setFileBreakpoints(path, [])
+    }
+    useDebugStore.getState().reset()
+    useTestStore.getState().reset()
+  },
+}
