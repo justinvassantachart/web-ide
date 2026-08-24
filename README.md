@@ -228,7 +228,10 @@ Rendered panels and sidebar activities receive one `IDEExecutionController`
 using the same prepare/start/stop/restart path as toolbar commands. Its
 `stop()` return remains compatible with synchronous callers and is awaitable
 when the selected session supplies settled termination. The same component gets
-an owner-bound source facade:
+an owner-bound source facade. One mount-owned coordinator is shared by toolbar,
+panel, and hotkey controllers. Awaited stop/restart invalidate and drain any
+pending test-provider or runtime preparation, so a cancelled pipeline cannot
+start after it reports settlement:
 
 ```tsx
 const activity: IDEActivityContribution = {

@@ -126,6 +126,11 @@ clean up independently. Focused jsdom coverage executes React's development
 Strict Mode setup/cleanup replay, which a production build intentionally does
 not perform.
 
+`tests/contracts/run-pipeline-execution.test.ts` also creates two controllers
+for one runtime, defers preparation through one, and stops through the other. It
+proves the mount-owned coordinator drains cancellation cleanup without allowing
+a late `start`, including re-entrant host events and ordered stop/restart races.
+
 When changing Python debugging, preserve the imported workspace-module and
 unittest browser paths. When changing shared debugger code, rerun the C++
 scenario as well; generic runtime code must not gain Python-only assumptions.

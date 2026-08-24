@@ -27,6 +27,13 @@ settlement methods let capable providers expose one awaited `completed`,
 `stopped`, or `error` outcome for each start while legacy void stop/dispose and
 numeric exit events remain compatible.
 
+Each mounted runtime owns one run-pipeline coordinator shared by the workbench's
+toolbar, panels, and hotkeys. Stop and restart invalidate pending test-provider
+or runtime preparation, await that pipeline's cancellation cleanup, and
+re-check the coordinator generation after asynchronous and re-entrant host
+boundaries. A cancelled preparation cannot start a late runtime after stop has
+already reported settlement.
+
 The optional transient-breakpoint overlay API is the generic boundary for a
 workflow that must add temporary debug stops without taking ownership of the
 editor gutter. Each contribution is keyed by an object-identity token scoped to
