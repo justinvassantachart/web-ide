@@ -3,17 +3,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import dts from 'vite-plugin-dts'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 export default defineConfig({
   base: './',
   plugins: [
     react(),
     tailwindcss(),
-    nodePolyfills({
-      include: ['buffer', 'process', 'stream', 'path', 'events'],
-      globals: { Buffer: true, process: true },
-    }),
     dts({
       tsconfigPath: './tsconfig.app.json',
       include: ['src'],
@@ -22,7 +17,13 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    alias: { '@': path.resolve(import.meta.dirname, './src') },
+    alias: {
+      '@': path.resolve(import.meta.dirname, './src'),
+      'node:buffer': 'buffer',
+      'node:events': 'events',
+      'node:path': 'path-browserify',
+      'node:stream': 'stream-browserify',
+    },
     dedupe: ['react', 'react-dom'],
   },
   worker: {

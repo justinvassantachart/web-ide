@@ -152,10 +152,11 @@ For dependency changes, record both `npm audit --omit=dev` and the full
 dependencies during the library build, so a clean production-only audit does
 not by itself clear the shipped artifact.
 
-At the current lockfile baseline, the production-only audit reports zero known
-vulnerabilities and the full audit reports six low-severity findings in the
-browser-polyfill toolchain, with no moderate, high, or critical findings.
-Refresh this baseline whenever dependency metadata or the lockfile changes.
+At the current lockfile baseline, both the production-only and full audits
+report zero known vulnerabilities. The production browser matrix also proves
+the exact direct browser shims that replaced the former whole-stdlib polyfill
+plugin. Refresh this baseline whenever dependency metadata or the lockfile
+changes.
 
 The built-in browser providers are currently certified against exactly
 `debugger-sh@0.3.15`, which is intentionally pinned in `package.json`. A runtime

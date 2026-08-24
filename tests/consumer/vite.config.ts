@@ -1,23 +1,31 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
-import topLevelAwait from 'vite-plugin-top-level-await'
 import wasm from 'vite-plugin-wasm'
+
+const isolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+}
 
 export default defineConfig({
   plugins: [
     react(),
     wasm(),
-    topLevelAwait(),
-    nodePolyfills({
-      include: ['buffer', 'process', 'stream', 'path', 'events'],
-      globals: { Buffer: true, process: true },
-    }),
   ],
-  resolve: { dedupe: ['react', 'react-dom'] },
+  server: { headers: isolationHeaders },
+  preview: { headers: isolationHeaders },
+  resolve: {
+    alias: {
+      'node:buffer': 'buffer',
+      'node:events': 'events',
+      'node:path': 'path-browserify',
+      'node:stream': 'stream-browserify',
+    },
+    dedupe: ['react', 'react-dom'],
+  },
   worker: {
     format: 'es',
-    plugins: () => [wasm(), topLevelAwait()],
+    plugins: () => [wasm()],
   },
   optimizeDeps: { exclude: ['debugger-sh'] },
   build: { target: 'esnext' },

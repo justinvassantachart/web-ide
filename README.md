@@ -61,20 +61,28 @@ The runnable example is in `examples/basic`.
 The packaged browser runtime providers currently use Debugger.sh internally,
 but that implementation name is not part of the public provider/session API.
 Because the consuming application performs the final bundle, configure
-`vite-plugin-wasm`, `vite-plugin-top-level-await`, the required Node polyfills,
-and the dependency pre-bundling exclusion:
+`vite-plugin-wasm`, the dependency pre-bundling exclusion, an `esnext` build
+target, and the narrow browser shims used by the virtual filesystem. Install
+exact versions of `buffer@6.0.3`, `events@3.3.0`,
+`path-browserify@1.0.1`, `process@0.11.10`, and
+`stream-browserify@3.0.0`; a whole-stdlib Node polyfill plugin is neither
+required nor recommended. The `esnext` target deliberately keeps the
+WebAssembly loader's top-level await for current evergreen browsers and avoids
+an unnecessary transform step:
 
 ```ts
-plugins: [
-  wasm(),
-  topLevelAwait(),
-  nodePolyfills({
-    include: ['buffer', 'process', 'stream', 'path', 'events'],
-    globals: { Buffer: true, process: true },
-  }),
-],
+plugins: [wasm()],
+resolve: {
+  alias: {
+    'node:buffer': 'buffer',
+    'node:events': 'events',
+    'node:path': 'path-browserify',
+    'node:stream': 'stream-browserify',
+  },
+  dedupe: ['react', 'react-dom'],
+},
 optimizeDeps: { exclude: ['debugger-sh'] },
-worker: { format: 'es', plugins: () => [wasm(), topLevelAwait()] },
+worker: { format: 'es', plugins: () => [wasm()] },
 build: { target: 'esnext' },
 ```
 

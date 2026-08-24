@@ -18,13 +18,13 @@ not authorized or configured for public distribution.
   developer paths, and unresolved `@/` aliases.
 - No copied compiler/sysroot archive, Stanford library, Firebase service worker,
   deployment file, or local yowasp tarball.
-- `npm audit --omit=dev` currently reports no known vulnerabilities. The full
-  dependency tree reports six low-severity findings in the browser-polyfill
-  toolchain through `vite-plugin-node-polyfills`; it reports no moderate, high,
-  or critical findings. DOMPurify 3.4.13 and Nano ID 3.3.18 remove the previously
-  reported patchable advisories. Because the library build can bundle code from
-  development-classified inputs, explicitly assess the remaining polyfill chain
-  before publication rather than relying only on `--omit=dev`.
+- `npm audit --omit=dev` and the full `npm audit` currently report no known
+  vulnerabilities. The former whole-stdlib polyfill plugin and its vulnerable
+  elliptic dependency chain were replaced by the five exact browser shims the
+  runtime actually uses, and the production runtime matrix proves those shims.
+  Because the library build can bundle code from development-classified inputs,
+  continue running both audits before publication rather than relying only on
+  `--omit=dev`.
 
 ## Decisions required before publication
 
