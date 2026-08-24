@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.2.0-source-r3/release/schemas/artifact-manifest.schema.json",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.2.0-source-r4/release/schemas/artifact-manifest.schema.json",
   "title": "Web IDE Hamilton artifact manifest",
   "type": "object",
   "additionalProperties": false,
@@ -158,7 +158,7 @@
           ],
           "properties": {
             "name": {
-              "const": "web-ide-v0.2.0-source-r3"
+              "const": "web-ide-v0.2.0-source-r4"
             },
             "objectId": {
               "type": "string",

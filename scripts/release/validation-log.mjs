@@ -166,10 +166,10 @@ function replaceKnownRoots(text, records) {
       : record.placeholder
     normalized = normalized.replace(
       new RegExp(
-        `(?<![A-Za-z0-9._~%+\\/\\\\-])${escapeRegExp(record.representation)}(?![A-Za-z0-9._~%+-])`,
+        `(?<![A-Za-z0-9._~%+\\/\\\\-])((?:${TERMINAL_CSI_PATTERN.source})*)${escapeRegExp(record.representation)}(?![A-Za-z0-9._~%+-])`,
         record.caseInsensitive ? 'giu' : 'gu',
       ),
-      replacement,
+      (_match, terminalPrefix) => `${terminalPrefix}${replacement}`,
     )
   }
   return normalized

@@ -35,15 +35,18 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.2.0-source-r3` tag object peeled to that exact commit. The earlier
-shared `v0.2.0`, `web-ide-v0.2.0-source`, and
-`web-ide-v0.2.0-source-r2` tags are abandoned prepublication source
-checkpoints. The first failed before retained gate evidence; the second was
+`web-ide-v0.2.0-source-r4` tag object peeled to that exact commit. The earlier
+shared `v0.2.0`, `web-ide-v0.2.0-source`,
+`web-ide-v0.2.0-source-r2`, and `web-ide-v0.2.0-source-r3` tags are abandoned
+prepublication source checkpoints. The first failed before retained gate
+evidence; the second was
 withheld because its capture did not yet enforce path-normalized logs; and the
 r2 capture failed closed after misclassifying a public HTTPS documentation URL
-as a local UNC path. No release or release asset was created from any of these
-tags, and all remain unchanged. The forward-only
-`web-ide-v0.2.0-source-r3` tag is the sole final Web IDE 0.2 source identity.
+as a local UNC path. The r3 capture failed closed on the ANSI color prefix that
+Vitest writes immediately before its repository path. No release or release
+asset was created from any of these tags, and all remain unchanged. The
+forward-only `web-ide-v0.2.0-source-r4` tag is the sole final Web IDE 0.2 source
+identity.
 Candidate construction then:
 
 - makes two isolated no-hardlink checkouts, installs from `package-lock.json`
@@ -114,7 +117,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.2.0-source-r3` tag at that commit, and use an
+and push the annotated `web-ide-v0.2.0-source-r4` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while
