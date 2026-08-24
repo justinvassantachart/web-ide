@@ -92,6 +92,12 @@ export interface RuntimeStartRequest {
   mode: RuntimeExecutionMode
 }
 
+/** The terminal result of one runtime start request. */
+export type RuntimeOutcome =
+  | { type: 'completed'; exitCode: number }
+  | { type: 'stopped' }
+  | { type: 'error'; error: { type: string; message: string } }
+
 export interface RuntimeCapabilities {
   debug: boolean
   breakpoints: boolean
@@ -135,6 +141,10 @@ export interface RuntimeSession {
   prepare(plan: RuntimeExecutionPlan): Promise<RuntimePreparationResult>
   start(request: RuntimeStartRequest): Promise<void>
   stop(): void
+  /** Waits for the latest start request without changing its state. */
+  waitForSettlement?(): Promise<RuntimeOutcome>
+  /** Requests a stop and resolves after that start request has fully settled. */
+  stopAndWait?(): Promise<RuntimeOutcome>
 
   setBreakpoints(file: string, lines: number[]): Promise<void>
   stepInto(): Promise<void>
@@ -143,6 +153,8 @@ export interface RuntimeSession {
   continueExecution(): Promise<void>
   writeStdin?(data: string): void
   dispose?(): void
+  /** Disposes the session and resolves after any initialization/run cleanup. */
+  disposeAndWait?(): Promise<RuntimeOutcome>
 }
 
 /** Declarative runtime contribution; sessions are lazy and instance-scoped. */

@@ -68,6 +68,7 @@ export type {
   RuntimeExecutionMode,
   RuntimeExecutionPlan,
   RuntimeEventChannels,
+  RuntimeOutcome,
   RuntimeProvider,
   RuntimePreparationResult,
   RuntimeSession,

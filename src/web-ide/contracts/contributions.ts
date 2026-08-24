@@ -84,12 +84,19 @@ export interface IDEActivityContribution {
 }
 
 /**
- * Workspace seed files supplied by any host-created plugin. Host initial files
- * win on seed collisions. An existing persistent local cache may already own
- * these paths; version the workspace ID when a resource upgrade must reseed.
+ * Files supplied by any host-created plugin. Workspace-scoped resources seed
+ * the VFS, where host initial files win collisions and an existing local cache
+ * may already own the path. Execution-only resources bypass the VFS and are
+ * added to runtime plans instead.
  */
 export interface IDEWorkspaceResourceContribution {
   id: string
-  files: WorkspaceFiles
+  /** Omitted retains the existing editable and persisted workspace behavior. */
+  scope?: 'workspace' | 'execution-only'
+  /**
+   * A callback is valid only with `scope: 'execution-only'` and is evaluated
+   * exactly once per prepared run. Workspace-scoped callbacks are rejected.
+   */
+  files: WorkspaceFiles | (() => WorkspaceFiles)
   order?: number
 }

@@ -40,6 +40,21 @@ export interface IDEInstanceResetOptions {
 export interface WebIDEInstanceHandle {
   snapshot(): IDEInstanceSnapshot
   subscribe(listener: () => void): () => void
+  /**
+   * Returns a point-in-time copy of the user workspace plane. Execution-only
+   * resources are never included in this host-persistence projection.
+   */
+  persistedFiles(): WorkspaceFiles
+  /**
+   * Saves the current persisted-file projection and awaits the host adapter.
+   * With a memory local cache, that host adapter is the durability authority.
+   */
+  flushWorkspace(): Promise<void>
+  /**
+   * Saves and flushes before disposing host persistence. A failed close is
+   * retryable and never disposes the adapter before persistence succeeds.
+   */
+  close(): Promise<void>
   /** Opens every existing path and focuses `primaryPath` last. */
   ensureFilesOpen(paths: readonly string[], primaryPath?: string): boolean
   reset(options?: IDEInstanceResetOptions): void

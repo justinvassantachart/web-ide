@@ -5,6 +5,10 @@ import { EventEmitter } from '@/lib/event-emitter';
 // 8.6 MB wasm asset, and materialises the worker blob URL — all before
 // the user has even pressed Run. Deferring keeps page-open cost flat.
 import type { DirNode, Engine as EngineType, Lang } from 'debugger-sh';
+import {
+    assertNoFlattenedRuntimePathCollisions,
+    runtimeRelativeFilePath,
+} from '@/web-ide/core/workspace-path';
 import type {
     DebugPauseState,
     DrawCommand,
@@ -13,12 +17,15 @@ import type {
     HeapAllocation,
     RuntimeExecutionPlan,
     RuntimePreparationResult,
+    RuntimeOutcome,
     RuntimeSession,
     RuntimeStartRequest,
 } from '@/web-ide/contracts/runtime';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
+type EngineRunResult = Awaited<ReturnType<EngineType['run']>>;
+type RuntimeErrorOutcome = Extract<RuntimeOutcome, { type: 'error' }>;
 
 interface DapResponse {
     type?: string;
@@ -39,6 +46,16 @@ interface DebugConfigurationState {
     completed: boolean;
     retryTimer?: ScheduledTask;
     timeoutTimer?: ScheduledTask;
+}
+
+interface RuntimeSettlementState {
+    readonly session: number;
+    readonly promise: Promise<RuntimeOutcome>;
+    resolve(outcome: RuntimeOutcome): void;
+    requestedOutcome?: RuntimeOutcome;
+    stopRequested: boolean;
+    settled: boolean;
+    exitPublished: boolean;
 }
 
 interface BrowserRuntimeSessionProfile {
@@ -72,29 +89,9 @@ function emptyDirectory(): DirNode {
     return Object.create(null) as DirNode;
 }
 
-function runtimeRelativePath(path: string): string {
-    if (path === '/workspace' || path === '/sysroot') {
-        throw new TypeError(`Runtime file path is not canonical: ${JSON.stringify(path)}`);
-    }
-    let relative = path;
-    if (path.startsWith('/workspace/')) relative = path.slice('/workspace/'.length);
-    else if (path.startsWith('/sysroot/')) relative = path.slice('/sysroot/'.length);
-    else if (path.startsWith('/')) relative = path.slice(1);
-
-    const segments = relative.split('/');
-    if (
-        relative.length === 0
-        || path.includes('\0')
-        || segments.some((segment) => segment === '' || segment === '.' || segment === '..')
-    ) {
-        throw new TypeError(`Runtime file path is not canonical: ${JSON.stringify(path)}`);
-    }
-    return segments.join('/');
-}
-
 function canonicalWorkspacePath(path: string): string {
     if (path.startsWith('/workspace/') || path.startsWith('/sysroot/')) return path;
-    return `/workspace/${runtimeRelativePath(path)}`;
+    return `/workspace/${runtimeRelativeFilePath(path)}`;
 }
 
 function runtimeSourceKey(path: unknown): string | null {
@@ -146,6 +143,47 @@ function buildRuntimeFileTree(files: Readonly<Record<string, string>>): DirNode 
     return root;
 }
 
+function createRuntimeSettlement(session: number): RuntimeSettlementState {
+    let settlePromise!: (outcome: RuntimeOutcome) => void;
+    const state: RuntimeSettlementState = {
+        session,
+        promise: new Promise<RuntimeOutcome>((resolve) => {
+            settlePromise = resolve;
+        }),
+        resolve(outcome) {
+            if (state.settled) return;
+            state.settled = true;
+            settlePromise(outcome);
+        },
+        stopRequested: false,
+        settled: false,
+        exitPublished: false,
+    };
+    return state;
+}
+
+function runtimeErrorOutcome(
+    error: unknown,
+    fallbackType = 'RuntimeError',
+): RuntimeErrorOutcome {
+    if (error instanceof Error) {
+        return {
+            type: 'error',
+            error: {
+                type: error.name || fallbackType,
+                message: error.message,
+            },
+        };
+    }
+    return {
+        type: 'error',
+        error: {
+            type: fallbackType,
+            message: String(error),
+        },
+    };
+}
+
 export class BrowserRuntimeSession implements RuntimeSession {
     public readonly id: string;
     public readonly languageIds: readonly string[];
@@ -193,7 +231,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
     // across runs, a fresh run() must wait for any prior run's promise to
     // settle — Engine.run() short-circuits to the stale promise if its
     // internal `this.promise` field is still set.
-    private currentRun: Promise<unknown> | null = null;
+    private currentRun: Promise<EngineRunResult> | null = null;
+    private currentRunSettlement: RuntimeSettlementState | null = null;
+    private activeSettlement: RuntimeSettlementState | null = null;
+    private readonly idleSettlement = Promise.resolve<RuntimeOutcome>({ type: 'stopped' });
+    private disposalPromise: Promise<RuntimeOutcome> | null = null;
     private dapSeq = 1;
     private activeBreakpoints: Record<string, number[]> = {};
     private running = false;
@@ -263,6 +305,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         );
 
         try {
+            assertNoFlattenedRuntimePathCollisions(files);
             this.fileMap = Object.create(null) as Record<string, string>;
             this.runtimePathByWorkspacePath.clear();
             this.workspacePathByRuntimePath.clear();
@@ -271,7 +314,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 if (typeof content !== 'string') {
                     throw new TypeError(`Runtime file content must be a string: ${JSON.stringify(path)}`);
                 }
-                const relativePath = runtimeRelativePath(path);
+                const relativePath = runtimeRelativeFilePath(path);
                 const workspacePath = canonicalWorkspacePath(path);
                 this.fileMap[relativePath] = content;
                 this.runtimePathByWorkspacePath.set(workspacePath, `/${relativePath}`);
@@ -282,7 +325,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
             }
 
             if (entrypoint && this.profile.defaultEntrypoint) {
-                const sourcePath = runtimeRelativePath(entrypoint);
+                const sourcePath = runtimeRelativeFilePath(entrypoint);
                 const source = this.fileMap[sourcePath];
                 if (source === undefined) {
                     throw new TypeError(`Runtime entrypoint "${entrypoint}" was not found in the workspace`);
@@ -382,6 +425,27 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.onExit.emit(exitCode);
     }
 
+    private publishExit(settlement: RuntimeSettlementState, exitCode: number): void {
+        if (settlement.exitPublished) return;
+        settlement.exitPublished = true;
+        this.emitExit(exitCode);
+    }
+
+    private requestOutcome(
+        settlement: RuntimeSettlementState | null,
+        outcome: RuntimeOutcome,
+    ): void {
+        if (!settlement || settlement.settled || settlement.requestedOutcome) return;
+        settlement.requestedOutcome = outcome;
+    }
+
+    private settleRuntime(
+        settlement: RuntimeSettlementState,
+        outcome: RuntimeOutcome,
+    ): void {
+        settlement.resolve(settlement.requestedOutcome ?? outcome);
+    }
+
     private flushStreamDecoders(): void {
         const stdout = this.stdoutDecoder.decode();
         const stderr = this.stderrDecoder.decode();
@@ -436,25 +500,36 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.scheduledTasks.clear();
     }
 
-    private finishSession(session: number, exitCode: number): void {
+    private finishSession(
+        session: number,
+        settlement: RuntimeSettlementState,
+        exitCode: number,
+    ): void {
         if (!this.isSessionActive(session)) return;
         this.running = false;
         this.debugPaused = false;
         this.cancelScheduledTasks();
         this.debugConfiguration = null;
         this.resetBreakpointAdapterIfIdle();
-        this.emitExit(exitCode);
+        this.publishExit(settlement, exitCode);
     }
 
     private failSession(session: number, message: string): void {
         if (!this.isSessionActive(session)) return;
         const engine = this.engine;
+        const settlement = this.activeSettlement;
+        this.requestOutcome(settlement, {
+            type: 'error',
+            error: { type: 'DebuggerConfigurationError', message },
+        });
+        if (settlement) settlement.stopRequested = true;
         this.emitStream('stderr', `${message}\r\n`);
         this.running = false;
         this.debugPaused = false;
         this.invalidateSession();
         try { engine?.stop(); } catch { /* ignore */ }
-        this.emitExit(1);
+        if (settlement) this.publishExit(settlement, 1);
+        else this.emitExit(1);
     }
 
     private dapSend(command: string, args: Record<string, unknown> = {}): DapResponse | null {
@@ -488,15 +563,25 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (!this.engine) return;
         const engine = this.engine;
         const wasRunning = this.running;
+        const settlement = this.activeSettlement;
+        const message = 'Debugger crashed — session aborted. Press Debug to start over.';
+        this.requestOutcome(settlement, {
+            type: 'error',
+            error: { type: 'DebuggerError', message },
+        });
+        if (settlement) settlement.stopRequested = true;
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
-        this.emitStream('stderr', 'Debugger crashed — session aborted. Press Debug to start over.\r\n');
+        this.emitStream('stderr', `${message}\r\n`);
         this.running = false;
         this.debugPaused = false;
         this.invalidateSession();
         try { engine.stop(); } catch { /* ignore */ }
-        if (wasRunning) this.emitExit(1);
+        if (wasRunning) {
+            if (settlement) this.publishExit(settlement, 1);
+            else this.emitExit(1);
+        }
     }
 
     private async ensureEngine(): Promise<EngineType> {
@@ -608,89 +693,129 @@ export class BrowserRuntimeSession implements RuntimeSession {
             throw new Error(`Runtime provider "${this.id}" does not support debugging`);
         }
         const isDebug = mode === 'debug';
-        const session = this.beginSession();
-        // Cancel any in-flight run on the shared engine, then await its
-        // settlement so Engine.run() doesn't short-circuit to the stale
-        // promise on its next call.
         const previousRun = this.currentRun;
         const previousEngine = this.engine;
-        if (previousRun) {
-            const wasRunning = this.running;
-            this.running = false;
-            this.debugPaused = false;
-            try { previousEngine?.stop(); } catch { /* ignore */ }
-            if (wasRunning) this.emitExit(0);
-            try { await previousRun; } catch { /* ignore */ }
-            if (!this.isSessionCurrent(session)) return;
-            this.resetBreakpointAdapterIfIdle();
+        const previousSettlement = this.activeSettlement;
+        const previousRunSettlement = this.currentRunSettlement;
+        const session = this.beginSession();
+        const settlement = createRuntimeSettlement(session);
+        this.activeSettlement = settlement;
+        this.requestOutcome(previousSettlement, { type: 'stopped' });
+        if (
+            previousSettlement
+            && !previousSettlement.settled
+            && previousSettlement !== previousRunSettlement
+        ) {
+            previousSettlement.stopRequested = true;
         }
 
-        let engine: EngineType;
+        let runPromise: Promise<EngineRunResult> | null = null;
+        let outcome: RuntimeOutcome = { type: 'stopped' };
         try {
-            engine = await this.ensureEngine();
-        } catch (err) {
-            if (!this.isSessionCurrent(session)) return;
-            const msg = err instanceof Error ? err.message : String(err);
-            this.emitStream('stderr', `Failed to create engine: ${msg}\r\n`);
-            this.emitExit(1);
-            return;
-        }
-        if (!this.isSessionCurrent(session)) {
-            if (this.disposed) {
-                try { engine.stop(); } catch { /* ignore */ }
+            // Cancel any in-flight run on the shared engine, then await its
+            // settlement so Engine.run() doesn't short-circuit to the stale
+            // promise on its next call.
+            if (previousRun) {
+                const shouldStopEngine = !previousRunSettlement?.stopRequested;
+                const wasRunning = this.running;
+                this.requestOutcome(previousRunSettlement, { type: 'stopped' });
+                if (previousRunSettlement) previousRunSettlement.stopRequested = true;
+                this.running = false;
+                this.debugPaused = false;
+                if (shouldStopEngine) {
+                    try { previousEngine?.stop(); } catch { /* ignore */ }
+                }
+                if (wasRunning) {
+                    if (previousRunSettlement) this.publishExit(previousRunSettlement, 0);
+                    else this.emitExit(0);
+                }
+                try { await previousRun; } catch { /* ignore */ }
+                if (!this.isSessionCurrent(session)) return;
+                this.resetBreakpointAdapterIfIdle();
             }
-            return;
-        }
 
-        engine.fs = this.runtimeFileTree;
-        engine.debugger.enabled = isDebug;
-        this.currentIsDebug = isDebug;
-        this.running = true;
-        this.debugPaused = false;
-        this.dapSeq = 1;
-        this.activeThreadId = 1;
-        this.inputBuf = '';
-        this.inCompilePhase = true;
-        this.diagnosticEmitted = false;
-        this.stderrLineBuf = '';
-        if (isDebug) this.beginDebuggerConfiguration(session);
-
-        // debugger-sh attaches its DAP transport while run() starts. Sending
-        // initialize before run() can reach the Rust adapter before the fresh
-        // worker/source map exists; its first setBreakpoints request then
-        // traps. Match debugger-sh's reference integration: start the worker,
-        // then initialize, and finish configuration on `initialized`.
-        const runPromise = engine.run();
-        this.currentRun = runPromise;
-        if (isDebug) this.dapSend('initialize', {});
-        let exitCode = 0;
-        try {
-            const result = await runPromise;
-            if (!this.isSessionCurrent(session)) return;
-            if (result.type === 'completed') {
-                exitCode = result.exitCode;
-            } else if (result.type === 'error') {
-                exitCode = 1;
+            let engine: EngineType;
+            try {
+                engine = await this.ensureEngine();
+            } catch (error) {
+                if (!this.isSessionCurrent(session)) return;
+                const failure = runtimeErrorOutcome(error, 'EngineInitializationError');
+                outcome = failure;
                 this.emitStream(
                     'stderr',
-                    `Runtime error: ${result.error.type}: ${result.error.message}\r\n`,
+                    `Failed to create engine: ${failure.error.message}\r\n`,
                 );
+                this.publishExit(settlement, 1);
+                return;
             }
-        } catch (e) {
             if (!this.isSessionCurrent(session)) return;
-            exitCode = 1;
-            const msg = e instanceof Error ? e.message : String(e);
-            this.emitStream('stderr', `Runtime error: ${msg}\r\n`);
+
+            try {
+                engine.fs = this.runtimeFileTree;
+                engine.debugger.enabled = isDebug;
+                this.currentIsDebug = isDebug;
+                this.running = true;
+                this.debugPaused = false;
+                this.dapSeq = 1;
+                this.activeThreadId = 1;
+                this.inputBuf = '';
+                this.inCompilePhase = true;
+                this.diagnosticEmitted = false;
+                this.stderrLineBuf = '';
+                if (isDebug) this.beginDebuggerConfiguration(session);
+
+                // debugger-sh attaches its DAP transport while run() starts.
+                // Start the worker before initialize so its transport and
+                // source map are ready for the first breakpoint request.
+                runPromise = engine.run();
+                this.currentRun = runPromise;
+                this.currentRunSettlement = settlement;
+                if (isDebug) this.dapSend('initialize', {});
+
+                const result = await runPromise;
+                if (!this.isSessionCurrent(session)) return;
+                if (result.type === 'completed') {
+                    outcome = { type: 'completed', exitCode: result.exitCode };
+                } else if (result.type === 'error') {
+                    outcome = {
+                        type: 'error',
+                        error: {
+                            type: result.error.type,
+                            message: result.error.message,
+                        },
+                    };
+                    this.emitStream(
+                        'stderr',
+                        `Runtime error: ${result.error.type}: ${result.error.message}\r\n`,
+                    );
+                } else {
+                    outcome = { type: 'stopped' };
+                }
+            } catch (error) {
+                if (!this.isSessionCurrent(session)) return;
+                const failure = runtimeErrorOutcome(error);
+                outcome = failure;
+                this.emitStream('stderr', `Runtime error: ${failure.error.message}\r\n`);
+            }
         } finally {
-            if (this.currentRun === runPromise) this.currentRun = null;
+            if (runPromise && this.currentRun === runPromise) {
+                this.currentRun = null;
+                this.currentRunSettlement = null;
+            }
             if (this.isSessionActive(session)) {
                 // Drain any pending stderr line and close the compile-phase window.
                 if (this.inCompilePhase && this.stderrLineBuf.length > 0) {
                     this.scanForCompileError('\n');
                 }
                 this.inCompilePhase = false;
-                this.finishSession(session, exitCode);
+                const exitCode = outcome.type === 'completed'
+                    ? outcome.exitCode
+                    : outcome.type === 'error' ? 1 : 0;
+                this.finishSession(session, settlement, exitCode);
+            } else if (this.isSessionCurrent(session) && outcome.type === 'error') {
+                this.publishExit(settlement, 1);
             }
+            this.settleRuntime(settlement, outcome);
             this.resetBreakpointAdapterIfIdle();
         }
     }
@@ -1229,16 +1354,37 @@ export class BrowserRuntimeSession implements RuntimeSession {
         }
     }
 
-    stop(): void {
-        // Stop the in-flight run but keep the Engine so the next run() reuses
-        // the same Rust DapAdapter instead of allocating a new one.
-        const wasRunning = this.running;
-        const engine = this.engine;
+    private requestStop(): Promise<RuntimeOutcome> {
+        const settlement = this.activeSettlement;
+        if (!settlement) return this.idleSettlement;
+        if (settlement.settled || settlement.stopRequested) return settlement.promise;
+
+        settlement.stopRequested = true;
+        this.requestOutcome(settlement, { type: 'stopped' });
+        const ownsCurrentRun = this.currentRunSettlement === settlement;
+        const wasRunning = ownsCurrentRun && this.running;
         this.running = false;
         this.debugPaused = false;
         this.invalidateSession();
-        try { engine?.stop(); } catch { /* ignore */ }
-        if (wasRunning) this.emitExit(0);
+        if (ownsCurrentRun) {
+            try { this.engine?.stop(); } catch { /* ignore */ }
+        }
+        if (wasRunning) this.publishExit(settlement, 0);
+        return settlement.promise;
+    }
+
+    waitForSettlement(): Promise<RuntimeOutcome> {
+        return this.activeSettlement?.promise ?? this.idleSettlement;
+    }
+
+    stop(): void {
+        // Preserve the 0.1 void API while new consumers can await the exact
+        // same per-start settlement through stopAndWait().
+        void this.requestStop();
+    }
+
+    stopAndWait(): Promise<RuntimeOutcome> {
+        return this.requestStop();
     }
 
     private assertDebuggingSupported(): void {
@@ -1248,12 +1394,35 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     dispose(): void {
-        if (this.disposed) return;
+        void this.disposeAndWait();
+    }
+
+    disposeAndWait(): Promise<RuntimeOutcome> {
+        if (this.disposalPromise) return this.disposalPromise;
+
+        const hadUnsettledStart = Boolean(
+            this.activeSettlement && !this.activeSettlement.settled,
+        );
+        const initialization = this.engineInit;
         this.disposed = true;
-        this.stop();
-        this.engine = null;
-        this.engineInit = null;
-        this.engineInitToken = null;
+        const settlement = this.requestStop();
+        if (!hadUnsettledStart) {
+            try { this.engine?.stop(); } catch { /* ignore */ }
+        }
+
+        this.disposalPromise = (async () => {
+            const outcome = await settlement;
+            if (initialization) {
+                try { await initialization; } catch { /* disposal rejects adoption */ }
+            }
+            this.cancelScheduledTasks();
+            this.debugConfiguration = null;
+            this.engine = null;
+            this.engineInit = null;
+            this.engineInitToken = null;
+            return outcome;
+        })();
+        return this.disposalPromise;
     }
 
     // Line-buffered stdin. Mirrors debugger.sh upstream behavior so programs that

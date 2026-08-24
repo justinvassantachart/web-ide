@@ -165,7 +165,9 @@ describe('WorkspacePersistenceCoordinator', () => {
 
     coordinator.scheduleSave({ '/main.cpp': 'sync failure' })
     await vi.advanceTimersByTimeAsync(1)
-    expect(coordinator.isPending).toBe(false)
+    // A failed full snapshot remains pending until a newer snapshot succeeds
+    // or an explicit retry persists it.
+    expect(coordinator.isPending).toBe(true)
 
     coordinator.scheduleSave({ '/main.cpp': 'async failure' })
     let thrown: unknown
@@ -248,6 +250,126 @@ describe('WorkspacePersistenceCoordinator', () => {
     expect(dispose).toHaveBeenCalledTimes(1)
   })
 
+  it('closes safely, serializes concurrent callers, and retries an exact failed save', async () => {
+    vi.useFakeTimers()
+    const saveError = new Error('save failed')
+    const calls: string[] = []
+    const save = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        calls.push('save:failed')
+        throw saveError
+      })
+      .mockImplementationOnce(() => {
+        calls.push('save:retried')
+      })
+    const flush = vi.fn(() => {
+      calls.push('flush')
+    })
+    const dispose = vi.fn(() => {
+      calls.push('dispose')
+    })
+    const coordinator = new WorkspacePersistenceCoordinator({
+      workspaceId: 'workspace',
+      persistence: { save, flush, dispose },
+      debounceMs: 10_000,
+    })
+    const finalFiles = { '/workspace/main.cpp': 'retain this exact snapshot' }
+
+    coordinator.scheduleSave(finalFiles)
+    const firstClose = coordinator.close()
+    expect(coordinator.close()).toBe(firstClose)
+    await expect(firstClose).rejects.toBe(saveError)
+
+    expect(calls).toEqual(['save:failed'])
+    expect(flush).not.toHaveBeenCalled()
+    expect(dispose).not.toHaveBeenCalled()
+    expect(coordinator.isDisposed).toBe(false)
+    expect(coordinator.isPending).toBe(true)
+
+    await expect(coordinator.close()).resolves.toBeUndefined()
+
+    expect(calls).toEqual(['save:failed', 'save:retried', 'flush', 'dispose'])
+    expect(save.mock.calls.map(([files]) => files)).toEqual([
+      finalFiles,
+      finalFiles,
+    ])
+    expect(save.mock.calls.map(([, context]) => context)).toEqual([
+      { workspaceId: 'workspace', revision: 1, reason: 'flush' },
+      { workspaceId: 'workspace', revision: 2, reason: 'flush' },
+    ])
+    expect(coordinator.isDisposed).toBe(true)
+    expect(coordinator.isPending).toBe(false)
+  })
+
+  it('does not dispose after a safe flush failure and retries the close', async () => {
+    const flushError = new Error('flush failed')
+    const calls: string[] = []
+    const save = vi.fn(() => {
+      calls.push('save')
+    })
+    const flush = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        calls.push('flush:failed')
+        throw flushError
+      })
+      .mockImplementationOnce(() => {
+        calls.push('flush:retried')
+      })
+    const dispose = vi.fn(() => {
+      calls.push('dispose')
+    })
+    const coordinator = new WorkspacePersistenceCoordinator({
+      workspaceId: 'workspace',
+      persistence: { save, flush, dispose },
+    })
+
+    await expect(
+      coordinator.close({ '/workspace/main.cpp': 'saved before flush' }),
+    ).rejects.toBe(flushError)
+    expect(calls).toEqual(['save', 'flush:failed'])
+    expect(dispose).not.toHaveBeenCalled()
+    expect(coordinator.isDisposed).toBe(false)
+
+    await expect(coordinator.close()).resolves.toBeUndefined()
+    expect(calls).toEqual([
+      'save',
+      'flush:failed',
+      'flush:retried',
+      'dispose',
+    ])
+  })
+
+  it('retries only adapter disposal after save and flush have succeeded', async () => {
+    const disposeError = new Error('dispose failed')
+    const save = vi.fn()
+    const flush = vi.fn()
+    const dispose = vi
+      .fn()
+      .mockRejectedValueOnce(disposeError)
+      .mockResolvedValueOnce(undefined)
+    const coordinator = new WorkspacePersistenceCoordinator({
+      workspaceId: 'workspace',
+      persistence: { save, flush, dispose },
+    })
+
+    await expect(
+      coordinator.close({ '/workspace/main.cpp': 'final' }),
+    ).rejects.toBe(disposeError)
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(flush).toHaveBeenCalledTimes(1)
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(coordinator.isDisposed).toBe(true)
+    expect(() => coordinator.scheduleSave({ '/workspace/main.cpp': 'late' }))
+      .toThrow(/after disposal/)
+
+    await expect(coordinator.close()).resolves.toBeUndefined()
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(flush).toHaveBeenCalledTimes(1)
+    expect(dispose).toHaveBeenCalledTimes(2)
+  })
+
   it('attempts adapter disposal after flush failure and reports both errors', async () => {
     const flushError = new Error('flush failed')
     const disposeError = new Error('dispose failed')
@@ -283,6 +405,38 @@ describe('WorkspacePersistenceCoordinator', () => {
     await expect(coordinator.dispose()).rejects.toBe(thrown)
     expect(flush).toHaveBeenCalledTimes(1)
     expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases forced-unmount pending state after attempting final cleanup', async () => {
+    const saveError = new Error('final save failed')
+    const calls: string[] = []
+    const save = vi.fn(() => {
+      calls.push('save')
+      throw saveError
+    })
+    const flush = vi.fn(() => {
+      calls.push('flush')
+    })
+    const dispose = vi.fn(() => {
+      calls.push('dispose')
+    })
+    const onPendingChange = vi.fn()
+    const coordinator = new WorkspacePersistenceCoordinator({
+      workspaceId: 'workspace',
+      persistence: { save, flush, dispose },
+      debounceMs: 10_000,
+      onPendingChange,
+    })
+
+    coordinator.scheduleSave({ '/workspace/main.cpp': 'final' })
+    await expect(coordinator.dispose()).rejects.toBe(saveError)
+
+    expect(calls).toEqual(['save', 'flush', 'dispose'])
+    expect(coordinator.isPending).toBe(false)
+    expect(onPendingChange.mock.calls.map(([pending]) => pending)).toEqual([
+      true,
+      false,
+    ])
   })
 
   it('validates the debounce interval', () => {

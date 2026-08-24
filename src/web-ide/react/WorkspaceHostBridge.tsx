@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import {
   getAllFiles,
   hasPendingWrites,
@@ -7,9 +7,11 @@ import {
   subscribeWorkspaceChange,
 } from '@/vfs/volume'
 import type { IDEWorkspacePersistence } from '../contracts/host'
+import type { WebIDEInstanceController } from '../core/instance-handle'
 import { WorkspacePersistenceCoordinator } from '../core/workspace-persistence'
 import {
   mergeWorkspaceFiles,
+  projectPersistedWorkspaceFiles,
   workspaceFilesFingerprint,
 } from '../core/workspace-resources'
 import { useIDEWorkspaceResources } from './contribution-context'
@@ -23,7 +25,11 @@ interface PersistenceBinding {
 }
 
 /** Owns workspace bootstrap and host persistence independently of runtimes. */
-export function WorkspaceHostBridge() {
+export function WorkspaceHostBridge({
+  instanceController,
+}: {
+  instanceController: WebIDEInstanceController
+}) {
   const host = useWebIDEHost()
   const resources = useIDEWorkspaceResources()
   const workspace = host?.workspace
@@ -45,7 +51,7 @@ export function WorkspaceHostBridge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localCache, seedFingerprint, workspaceId])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!workspaceId || !persistence) return
 
     let binding = persistenceBinding.current
@@ -74,12 +80,19 @@ export function WorkspaceHostBridge() {
     }
 
     const currentBinding = binding
+    const detachLifecycle = instanceController.attachWorkspaceLifecycle({
+      flush: (files) => currentBinding.coordinator.flush(files),
+      close: (files) => currentBinding.coordinator.close(files),
+    })
     const unsubscribe = subscribeWorkspaceChange(() =>
-      currentBinding.coordinator.scheduleSave(getAllFiles()),
+      currentBinding.coordinator.scheduleSave(
+        projectPersistedWorkspaceFiles(getAllFiles()),
+      ),
     )
 
     return () => {
       unsubscribe()
+      detachLifecycle()
       const ticket = { cancelled: false }
       currentBinding.pendingDisposal = ticket
       queueMicrotask(() => {
@@ -92,7 +105,7 @@ export function WorkspaceHostBridge() {
         }
       })
     }
-  }, [persistence, workspaceId])
+  }, [instanceController, persistence, workspaceId])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {

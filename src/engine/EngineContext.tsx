@@ -21,7 +21,12 @@ export function EngineProvider({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setEngine(nextEngine);
         return () => {
-            if (nextEngine.dispose) nextEngine.dispose();
+            if (nextEngine.disposeAndWait) {
+                void nextEngine.disposeAndWait().catch((error: unknown) => {
+                    console.warn('[web-ide] runtime cleanup failed', error);
+                });
+            }
+            else if (nextEngine.dispose) nextEngine.dispose();
             else nextEngine.stop();
         };
     }, [createSession]);

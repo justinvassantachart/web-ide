@@ -343,6 +343,24 @@ describe('built-in runtime providers', () => {
     expect(engineCreate).not.toHaveBeenCalled()
   })
 
+  it('rejects cross-plane files that flatten to the same engine path', async () => {
+    const session = createSession(pythonRuntimeProvider)
+
+    await expect(session.prepare({
+      files: {
+        '/workspace/lib/support.py': 'student content',
+        '/sysroot/lib/support.py': 'execution-only content',
+      },
+      mode: 'run',
+    })).resolves.toEqual({
+      success: false,
+      errors: [
+        'Runtime file paths "/sysroot/lib/support.py" and "/workspace/lib/support.py" both flatten to "lib/support.py"',
+      ],
+    })
+    expect(engineCreate).not.toHaveBeenCalled()
+  })
+
   it('treats special object-property names as ordinary runtime files', async () => {
     const engine = new FakeEngine()
     engineCreate.mockResolvedValueOnce(engine)

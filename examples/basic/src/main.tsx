@@ -1,26 +1,51 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
-  WebIDE,
-  WebIDEHostProvider,
   initWebIDETheme,
+  type IDEPlugin,
+  type IDEWorkspacePersistence,
   type WebIDEConfiguration,
+  type WebIDEHost,
   type WorkspaceFiles,
 } from 'web-ide'
 import { cppRuntimePlugin, pythonRuntimePlugin } from 'web-ide/runtimes'
 import { pythonTestingPlugin, testingPlugin } from 'web-ide/testing'
 import { canvasPlugin, coreWorkbenchPlugin } from 'web-ide/plugins'
+import { ExampleApplication } from './ExampleApplication'
 import 'web-ide/styles.css'
 
 const searchParams = new URLSearchParams(window.location.search)
 const useCppRuntime = searchParams.get('runtime') === 'cpp'
 const useFailingPythonTest = searchParams.get('tests') === 'failing'
+const useExecutionOnlyResource = searchParams.get('resources') === 'execution-only'
+const showLifecycleProbe = searchParams.get('lifecycle') === 'probe'
+
+const executionOnlyResourcePlugin: IDEPlugin = {
+  id: 'web-ide.example.execution-resource',
+  contributes: {
+    resources: [{
+      id: 'web-ide.example.execution-resource.files',
+      scope: 'execution-only',
+      files: {
+        '/protected_support.py': [
+          'def protected_message():',
+          '    return "Execution-only resource loaded"',
+        ].join('\n'),
+      },
+    }],
+  },
+}
 
 const configuration: WebIDEConfiguration = useCppRuntime
   ? {
       runtimeProvider: 'web-ide.runtime.cpp',
       brand: 'WEB·IDE',
-      plugins: [cppRuntimePlugin, coreWorkbenchPlugin, canvasPlugin],
+      plugins: [
+        cppRuntimePlugin,
+        ...(useExecutionOnlyResource ? [executionOnlyResourcePlugin] : []),
+        coreWorkbenchPlugin,
+        canvasPlugin,
+      ],
     }
   : {
       runtimeProvider: 'web-ide.runtime.python',
@@ -29,6 +54,7 @@ const configuration: WebIDEConfiguration = useCppRuntime
       plugins: [
         pythonRuntimePlugin,
         pythonTestingPlugin,
+        ...(useExecutionOnlyResource ? [executionOnlyResourcePlugin] : []),
         coreWorkbenchPlugin,
         canvasPlugin,
         testingPlugin,
@@ -53,64 +79,93 @@ const initialFiles: WorkspaceFiles = useCppRuntime
         '}',
       ].join('\n'),
     }
-  : {
-      '/workspace/main.py': [
-        'from helpers import double',
-        '',
-        'seed = 5',
-        'answer = double(seed)',
-        'print(f"Double {seed} is {answer}")',
-        '',
-        'def fail_from_main():',
-        '    raise ValueError("failure from user main")',
-      ].join('\n'),
-      '/workspace/helpers.py': [
-        'def double(value):',
-        '    result = value * 2',
-        '    return result',
-      ].join('\n'),
-      '/workspace/test_helpers.py': useFailingPythonTest
-        ? [
-            'import unittest',
-            '',
-            'from main import fail_from_main',
-            '',
-            '',
-            'class MainLocationTests(unittest.TestCase):',
-            '    def test_failure_location(self):',
-            '        fail_from_main()',
-          ].join('\n')
-        : [
-            'import unittest',
-            '',
-            'from helpers import double',
-            '',
-            '',
-            'class DoubleTests(unittest.TestCase):',
-            '    def test_double(self):',
-            '        self.assertEqual(double(6), 12)',
-          ].join('\n'),
-    }
+  : useExecutionOnlyResource
+    ? {
+        '/workspace/main.py': [
+          'from protected_support import protected_message',
+          '',
+          'print(protected_message())',
+        ].join('\n'),
+      }
+    : {
+        '/workspace/main.py': [
+          'from helpers import double',
+          '',
+          'seed = 5',
+          'answer = double(seed)',
+          'print(f"Double {seed} is {answer}")',
+          '',
+          'def fail_from_main():',
+          '    raise ValueError("failure from user main")',
+        ].join('\n'),
+        '/workspace/helpers.py': [
+          'def double(value):',
+          '    result = value * 2',
+          '    return result',
+        ].join('\n'),
+        '/workspace/test_helpers.py': useFailingPythonTest
+          ? [
+              'import unittest',
+              '',
+              'from main import fail_from_main',
+              '',
+              '',
+              'class MainLocationTests(unittest.TestCase):',
+              '    def test_failure_location(self):',
+              '        fail_from_main()',
+            ].join('\n')
+          : [
+              'import unittest',
+              '',
+              'from helpers import double',
+              '',
+              '',
+              'class DoubleTests(unittest.TestCase):',
+              '    def test_double(self):',
+              '        self.assertEqual(double(6), 12)',
+            ].join('\n'),
+      }
 
-const host = {
+const workspaceId = useCppRuntime
+  ? 'basic-example-cpp-v1'
+  : useFailingPythonTest
+    ? 'basic-example-python-failing-v1'
+    : useExecutionOnlyResource
+      ? 'basic-example-python-execution-resource-v1'
+      : 'basic-example-python-v3'
+
+const lifecycleEvents: string[] = []
+const lifecyclePersistence: IDEWorkspacePersistence = {
+  save(files, context) {
+    lifecycleEvents.push(
+      `save:r${context.revision}:${context.reason}:${Object.keys(files).sort().join(',')}`,
+    )
+  },
+  flush() {
+    lifecycleEvents.push('flush')
+  },
+  dispose() {
+    lifecycleEvents.push('dispose')
+  },
+}
+
+const host: WebIDEHost = {
   workspace: {
-    id: useCppRuntime
-      ? 'basic-example-cpp-v1'
-      : useFailingPythonTest
-        ? 'basic-example-python-failing-v1'
-        : 'basic-example-python-v3',
-    localCache: 'memory' as const,
+    id: workspaceId,
+    localCache: 'memory',
     initialFiles,
+    ...(showLifecycleProbe ? { persistence: lifecyclePersistence } : {}),
   },
 }
 
 initWebIDETheme()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <WebIDEHostProvider host={host}>
-      <div style={{ width: '100vw', height: '100vh' }}>
-        <WebIDE configuration={configuration} />
-      </div>
-    </WebIDEHostProvider>
+    <ExampleApplication
+      configuration={configuration}
+      host={host}
+      lifecycleEvents={lifecycleEvents}
+      showLifecycleProbe={showLifecycleProbe}
+    />
   </StrictMode>,
 )

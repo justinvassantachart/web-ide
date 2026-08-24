@@ -22,7 +22,10 @@ is the first consumer and owns all of those concerns.
 `RuntimeProvider` selects and lazily creates a session per mount.
 `RuntimeSession` owns prepare/start/stop/debug operations and typed event
 channels. Its execution mode is only `run` or `debug`; runtime implementations
-do not receive workbench stores or know about a test framework.
+do not receive workbench stores or know about a test framework. The additive
+settlement methods let capable providers expose one awaited `completed`,
+`stopped`, or `error` outcome for each start while legacy void stop/dispose and
+numeric exit events remain compatible.
 
 `LanguageToolingProvider` is an independent optional selection. Its component
 publishes a provider-neutral editor service through the public callback prop,
@@ -52,6 +55,15 @@ runtime-provider, test-provider, and language-tooling-provider contributions.
 registered callback/listener/disposable is released on deactivation; static
 registrations are released when the manager is disposed.
 
+Workspace resources have two generic planes. The default `/workspace` plane
+seeds the editable VFS and is eligible for host persistence. The
+`execution-only` plane is normalized to `/sysroot`, copied into a runtime plan
+after test-provider preparation, and never enters the VFS. A synchronous
+execution-only snapshot callback may supply current bytes exactly once per
+prepare. The boundary rejects traversal, invalid bytes, exact plan overlap, and
+flattened cross-plane collisions. It prevents accidental editing/persistence;
+it does not claim secrecy from code executing in the browser.
+
 `IDEPanelServices` is the shared public component facade for panels and sidebar
 activities: selected runtime, immutable workspace snapshot, and panel reveal.
 It intentionally contains no React context implementation or Zustand handle.
@@ -59,9 +71,12 @@ Panel visibility may be gated by the same immutable workbench snapshot used by
 commands. The packaged Variables and Graph panels therefore disappear for a
 run-only runtime rather than presenting impossible debugging affordances.
 
-`WebIDEInstanceHandle` is a narrow host integration seam for snapshots,
-subscriptions, ensuring files are open, and resetting a session. Nova's guided
-lessons use this handle instead of importing package state.
+`WebIDEInstanceHandle` is a per-mount host integration seam for snapshots,
+subscriptions, ensuring files are open, resetting a session, projecting only
+persistable workspace files, and awaiting flush/close. Explicit close disposes
+the host persistence adapter only after save and flush succeed; failures remain
+retryable. Consuming applications use this handle instead of importing package
+state.
 
 ## Built-ins and optional pieces
 

@@ -4,8 +4,9 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This repository is a local, private extraction. It has no remote and no
-publication license yet. The current built-in browser runtime providers support
+This repository remains private and unpublished; release licensing, versioning,
+and immutable artifact metadata are separate publication gates. The current
+built-in browser runtime providers support
 C/C++ and Python execution and source-level debugging. Rust is not claimed as
 supported here. The provider-neutral session contract does not expose the
 underlying engine package.
@@ -197,9 +198,14 @@ export const myRuntimePlugin: IDEPlugin = {
 `MyPythonRuntimeSession` implements the exported `RuntimeSession` contract. A
 new instance receives a copied `RuntimeExecutionPlan` in `prepare`, starts the
 backend in `start`, publishes only the typed event channels, stops promptly,
-and releases workers/listeners in `dispose`. The session never receives React
-stores or host credentials. See `src/web-ide/contracts/runtime.ts` and the
-contract tests under `tests/contracts` for the exact lifecycle.
+and releases workers/listeners in `dispose`. Custom 0.1 providers remain valid
+with the void `stop`/`dispose` methods. Providers that support deterministic
+cleanup may additionally expose `waitForSettlement`, `stopAndWait`, and
+`disposeAndWait`; those methods resolve one `RuntimeOutcome` (`completed`,
+`stopped`, or `error`) per start without changing numeric exit events. The
+session never receives React stores or host credentials. See
+`src/web-ide/contracts/runtime.ts` and the contract tests under
+`tests/contracts` for the exact lifecycle.
 
 Generic debug variables do not need to invent native memory. `VariableNode`
 address/size/pointer fields and `StackFrame.sp` are optional; provide them only
@@ -272,6 +278,12 @@ export const notesPlugin: IDEPlugin = {
     resources: [{
       id: 'my-app.notes.seed',
       files: { '/activity/readme.txt': 'Host-owned plugin resource' },
+    }, {
+      id: 'my-app.notes.runtime-support',
+      scope: 'execution-only',
+      files: () => ({
+        '/current-settings.json': JSON.stringify(readCurrentSettings()),
+      }),
     }],
   },
   activate(context) {
@@ -281,6 +293,40 @@ export const notesPlugin: IDEPlugin = {
   },
 }
 ```
+
+An omitted resource scope keeps the existing editable `/workspace` seed
+behavior. `execution-only` files are copied under `/sysroot` for each runtime
+plan, do not enter the VFS, explorer, host snapshot, or persistence, and may use
+a synchronous callback that is evaluated exactly once per prepare. The runtime
+rejects unsafe paths, non-string bytes, exact execution-plan overlap, and any
+`/workspace`/`/sysroot` pair that would flatten to the same engine path. This is
+an ownership and presentation boundary, not a confidentiality boundary:
+executing browser code may still read or print support resources.
+
+## Awaited host workspace close
+
+Attach a ref when navigation must wait for persistence:
+
+```tsx
+import { createRef } from 'react'
+import type { WebIDEInstanceHandle } from 'web-ide'
+
+const ideRef = createRef<WebIDEInstanceHandle>()
+
+<WebIDE ref={ideRef} configuration={configuration} />
+
+// The host may offer this projection as an authorized local export.
+const files = ideRef.current?.persistedFiles()
+await ideRef.current?.flushWorkspace()
+await ideRef.current?.close()
+```
+
+`persistedFiles` returns only the copied `/workspace` plane. `flushWorkspace`
+saves that projection and waits for the host adapter. `close` saves, flushes,
+and only then disposes persistence. A save or flush failure rejects without
+disposing the adapter, so the host can keep navigation blocked and retry. A
+React unmount still performs best-effort legacy cleanup to avoid leaking an
+adapter when the host cannot await.
 
 Karel is deliberately not present in this repository. The separately
 maintained `@web-ide/karel` companion lives in the local sibling
@@ -340,8 +386,11 @@ best-effort default.
   plugin managers are mount-scoped; legacy workbench stores and VFS are not yet.
 - `workspace.readOnly` disables editing, explorer mutation, and selected
   language-tooling startup, but it is a UI policy rather than a security boundary.
-- Workspace resources seed a workspace. Version the workspace ID when a plugin
-  resource upgrade must replace browser-local cached content.
+- Workspace-scoped resources seed a workspace. Version the workspace ID when a
+  plugin resource upgrade must replace browser-local cached content.
+- Execution-only resources are non-editable and non-persisted, but they are not
+  secret or trusted grading inputs; student code and browser tooling remain an
+  untrusted execution boundary.
 - C++ and Python run/debug are verified. Python debugging includes line
   breakpoints, stepping, call stacks, and variables; Python does not provide the
   C/C++ native-memory Graph. The separate Karel companion has its own browser

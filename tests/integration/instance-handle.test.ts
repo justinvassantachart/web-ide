@@ -4,14 +4,18 @@ import { useEditorStore } from '../../src/store/editor-store'
 import { useExecutionStore } from '../../src/store/execution-store'
 import { useTestStore } from '../../src/testing/test-store'
 import { initVFS, readFile } from '../../src/vfs/volume'
-import { webIDEInstanceHandle } from '../../src/web-ide/core/instance-handle'
+import type { WebIDEInstanceHandle } from '../../src/web-ide/contracts/instance'
+import { createWebIDEInstanceController } from '../../src/web-ide/core/instance-handle'
 
 const files = {
   '/workspace/main.cpp': 'int main() {}',
   '/workspace/helper.cpp': 'int helper() { return 1; }',
 }
 
+let webIDEInstanceHandle: WebIDEInstanceHandle
+
 beforeEach(async () => {
+  webIDEInstanceHandle = createWebIDEInstanceController().handle
   await initVFS({ projectId: 'instance-handle-test', initialFiles: files, ephemeral: true })
   useEditorStore.setState({
     activeFile: null,
@@ -80,5 +84,50 @@ describe('public Web IDE instance facade', () => {
     expect(snapshot.debug.debugMode).toBe('idle')
     expect(snapshot.debug.breakpoints['/workspace/main.cpp']).toEqual([])
     expect(snapshot.tests).toEqual([])
+  })
+
+  it('provides isolated per-mount persistence lifecycles and immutable projections', async () => {
+    const first = createWebIDEInstanceController()
+    const second = createWebIDEInstanceController()
+    const firstFlush = vi.fn().mockResolvedValue(undefined)
+    const firstClose = vi.fn().mockResolvedValue(undefined)
+    const secondFlush = vi.fn().mockResolvedValue(undefined)
+    const secondClose = vi.fn().mockResolvedValue(undefined)
+
+    first.attachWorkspaceLifecycle({ flush: firstFlush, close: firstClose })
+    second.attachWorkspaceLifecycle({ flush: secondFlush, close: secondClose })
+
+    expect(first.handle).not.toBe(second.handle)
+    const persisted = first.handle.persistedFiles()
+    expect(persisted).toEqual(files)
+    expect(Object.isFrozen(persisted)).toBe(true)
+
+    await first.handle.flushWorkspace()
+    await first.handle.close()
+
+    expect(firstFlush).toHaveBeenCalledWith(files)
+    expect(firstClose).toHaveBeenCalledWith(files)
+    expect(secondFlush).not.toHaveBeenCalled()
+    expect(secondClose).not.toHaveBeenCalled()
+  })
+
+  it('does not let a stale mount detach its replacement lifecycle', async () => {
+    const controller = createWebIDEInstanceController()
+    const staleFlush = vi.fn().mockResolvedValue(undefined)
+    const activeFlush = vi.fn().mockResolvedValue(undefined)
+    const detachStale = controller.attachWorkspaceLifecycle({
+      flush: staleFlush,
+      close: vi.fn(),
+    })
+    controller.attachWorkspaceLifecycle({
+      flush: activeFlush,
+      close: vi.fn(),
+    })
+
+    detachStale()
+    await controller.handle.flushWorkspace()
+
+    expect(staleFlush).not.toHaveBeenCalled()
+    expect(activeFlush).toHaveBeenCalledTimes(1)
   })
 })

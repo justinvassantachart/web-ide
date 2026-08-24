@@ -108,6 +108,7 @@ class FakeEngine {
   readonly stdin = { write: vi.fn(() => Promise.resolve()) }
   readonly debugger = new FakeDebugger()
   readonly calls: string[] = []
+  settleRunOnStop = true
   private readonly runs: Deferred<FakeRunResult>[] = []
 
   readonly run = vi.fn((): Promise<FakeRunResult> => {
@@ -118,7 +119,7 @@ class FakeEngine {
   })
 
   readonly stop = vi.fn((): void => {
-    this.activeRun()?.resolve({ type: 'stopped' })
+    if (this.settleRunOnStop) this.activeRun()?.resolve({ type: 'stopped' })
   })
 
   complete(result: FakeRunResult): void {
@@ -166,6 +167,89 @@ afterEach(() => {
 })
 
 describe('BrowserRuntimeSession run lifecycle', () => {
+  it('publishes one stable completed settlement without changing the void start API', async () => {
+    const engine = new FakeEngine()
+    const adapter = createSession()
+    engineCreate.mockResolvedValueOnce(engine)
+
+    const { running } = await beginRun(adapter, engine, 'run')
+    const firstSettlement = adapter.waitForSettlement!()
+    const sameSettlement = adapter.waitForSettlement!()
+    expect(sameSettlement).toBe(firstSettlement)
+
+    engine.complete({ type: 'completed', exitCode: 7 })
+
+    await expect(running).resolves.toBeUndefined()
+    await expect(firstSettlement).resolves.toEqual({
+      type: 'completed',
+      exitCode: 7,
+    })
+    expect(adapter.stopAndWait!()).toBe(firstSettlement)
+    expect(engine.stop).not.toHaveBeenCalled()
+  })
+
+  it('shares one pending stopped settlement across repeated running stops', async () => {
+    const engine = new FakeEngine()
+    const adapter = createSession()
+    const exits: number[] = []
+    engineCreate.mockResolvedValueOnce(engine)
+    engine.settleRunOnStop = false
+    adapter.events.exit.subscribe((code) => exits.push(code))
+
+    const { running } = await beginRun(adapter, engine, 'run')
+    const pendingSettlement = adapter.waitForSettlement!()
+    const firstStop = adapter.stopAndWait!()
+    const repeatedStop = adapter.stopAndWait!()
+
+    expect(firstStop).toBe(pendingSettlement)
+    expect(repeatedStop).toBe(firstStop)
+    let stopSettled = false
+    void firstStop.then(() => {
+      stopSettled = true
+    })
+    await Promise.resolve()
+    expect(stopSettled).toBe(false)
+    engine.complete({ type: 'stopped' })
+    await expect(firstStop).resolves.toEqual({ type: 'stopped' })
+    await running
+    expect(engine.stop).toHaveBeenCalledTimes(1)
+    expect(exits).toEqual([0])
+  })
+
+  it('awaits the same stopped settlement when a debug session is paused', async () => {
+    vi.useFakeTimers()
+    const engine = new FakeEngine()
+    const adapter = createSession()
+    const paused = vi.fn()
+    engineCreate.mockResolvedValueOnce(engine)
+    engine.debugger.responder = ({ command }) => {
+      if (command === 'stackTrace') {
+        return {
+          success: true,
+          body: {
+            stackFrames: [
+              { id: 1, name: 'main', line: 3, source: { path: '/main.cpp' } },
+            ],
+          },
+        }
+      }
+      if (command === 'scopes') return { success: true, body: { scopes: [] } }
+      return { success: true }
+    }
+    adapter.events.debugPaused.subscribe(paused)
+
+    const { running } = await beginRun(adapter, engine, 'debug')
+    engine.debugger.emit('stopped', { threadId: 1 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(paused).toHaveBeenCalledTimes(1)
+
+    const pendingSettlement = adapter.waitForSettlement!()
+    expect(adapter.stopAndWait!()).toBe(pendingSettlement)
+    await expect(pendingSettlement).resolves.toEqual({ type: 'stopped' })
+    await running
+    expect(engine.stop).toHaveBeenCalledTimes(1)
+  })
+
   it('preserves run-before-initialize ordering and retries configuration until acknowledged', async () => {
     vi.useFakeTimers()
     const engine = new FakeEngine()
@@ -226,6 +310,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     adapter.events.stderr.subscribe((text) => errors.push(text))
 
     const { running } = await beginRun(adapter, engine, 'debug')
+    const settlement = adapter.waitForSettlement!()
     engine.debugger.emit('initialized')
     await vi.advanceTimersByTimeAsync(120_000)
     await running
@@ -235,6 +320,13 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     expect(engine.stop).toHaveBeenCalledTimes(1)
     expect(exits).toEqual([1])
     expect(errors.join('')).toContain('Debugger configuration timed out')
+    await expect(settlement).resolves.toEqual({
+      type: 'error',
+      error: {
+        type: 'DebuggerConfigurationError',
+        message: 'Debugger configuration timed out before the runtime became ready.',
+      },
+    })
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -297,12 +389,16 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     engineCreate.mockResolvedValueOnce(engine)
 
     const { running: firstRun } = await beginRun(adapter, engine, 'debug')
+    const firstSettlement = adapter.waitForSettlement!()
     engine.debugger.emit('initialized')
     engine.debugger.emit('stopped', { threadId: 1 })
     adapter.stop()
     await firstRun
+    await expect(firstSettlement).resolves.toEqual({ type: 'stopped' })
 
     const secondRun = adapter.start({ mode: 'run' })
+    const secondSettlement = adapter.waitForSettlement!()
+    expect(secondSettlement).not.toBe(firstSettlement)
     await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
     await vi.advanceTimersByTimeAsync(100)
 
@@ -311,6 +407,37 @@ describe('BrowserRuntimeSession run lifecycle', () => {
 
     engine.complete({ type: 'completed', exitCode: 0 })
     await secondRun
+    await expect(secondSettlement).resolves.toEqual({
+      type: 'completed',
+      exitCode: 0,
+    })
+  })
+
+  it('settles an automatically replaced run before starting its successor', async () => {
+    const engine = new FakeEngine()
+    const adapter = createSession()
+    const exits: number[] = []
+    engineCreate.mockResolvedValueOnce(engine)
+    adapter.events.exit.subscribe((code) => exits.push(code))
+
+    const { running: firstRun } = await beginRun(adapter, engine, 'run')
+    const firstSettlement = adapter.waitForSettlement!()
+    const secondRun = adapter.start({ mode: 'run' })
+    const secondSettlement = adapter.waitForSettlement!()
+
+    expect(secondSettlement).not.toBe(firstSettlement)
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
+    await firstRun
+    await expect(firstSettlement).resolves.toEqual({ type: 'stopped' })
+
+    engine.complete({ type: 'completed', exitCode: 4 })
+    await secondRun
+    await expect(secondSettlement).resolves.toEqual({
+      type: 'completed',
+      exitCode: 4,
+    })
+    expect(exits).toEqual([0, 4])
+    expect(engine.stop).toHaveBeenCalledTimes(1)
   })
 
   it('reports resolved engine errors as failures instead of successful exits', async () => {
@@ -323,6 +450,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     adapter.events.stderr.subscribe((text) => errors.push(text))
 
     const { running } = await beginRun(adapter, engine, 'run')
+    const settlement = adapter.waitForSettlement!()
     engine.complete({
       type: 'error',
       error: { type: 'EngineError', message: 'worker failed' },
@@ -331,6 +459,29 @@ describe('BrowserRuntimeSession run lifecycle', () => {
 
     expect(exits).toEqual([1])
     expect(errors.join('')).toContain('Runtime error: EngineError: worker failed')
+    await expect(settlement).resolves.toEqual({
+      type: 'error',
+      error: { type: 'EngineError', message: 'worker failed' },
+    })
+  })
+
+  it('settles engine initialization failures as typed errors exactly once', async () => {
+    const adapter = createSession()
+    const exits: number[] = []
+    engineCreate.mockRejectedValueOnce(new TypeError('engine unavailable'))
+    adapter.events.exit.subscribe((code) => exits.push(code))
+
+    await adapter.prepare({ files: workspace, mode: 'run' })
+    const running = adapter.start({ mode: 'run' })
+    const settlement = adapter.waitForSettlement!()
+
+    await expect(running).resolves.toBeUndefined()
+    await expect(settlement).resolves.toEqual({
+      type: 'error',
+      error: { type: 'TypeError', message: 'engine unavailable' },
+    })
+    expect(adapter.waitForSettlement!()).toBe(settlement)
+    expect(exits).toEqual([1])
   })
 
   it('flushes intercepted trailing output before publishing normal exit', async () => {
@@ -396,8 +547,18 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     const running = adapter.start({ mode: 'run' })
     await vi.waitFor(() => expect(engineCreate).toHaveBeenCalledTimes(1))
     adapter.dispose?.()
+    const firstDisposal = adapter.disposeAndWait!()
+    const repeatedDisposal = adapter.disposeAndWait!()
+    let disposalSettled = false
+    void firstDisposal.then(() => {
+      disposalSettled = true
+    })
+    expect(repeatedDisposal).toBe(firstDisposal)
+    await Promise.resolve()
+    expect(disposalSettled).toBe(false)
     creation.resolve(engine)
     await running
+    await expect(firstDisposal).resolves.toEqual({ type: 'stopped' })
 
     expect(engine.stop).toHaveBeenCalledTimes(1)
     expect(engine.run).not.toHaveBeenCalled()

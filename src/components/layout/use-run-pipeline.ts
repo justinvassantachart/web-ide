@@ -11,6 +11,8 @@ import type {
 } from '@/web-ide/contracts/runtime'
 import { prepareWorkbenchExecution } from '@/testing/test-execution'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
+import { useIDEWorkspaceResources } from '@/web-ide/react/contribution-context'
+import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
 
 // One shared compile-and-run pipeline so the toolbar buttons, the floating
 // debug toolbar's Restart, and the F5 hotkey all launch sessions through the
@@ -19,6 +21,7 @@ export function useRunPipeline() {
     const engine = useEngine()
     const host = useIDEHost()
     const testProvider = useSelectedTestProvider()
+    const resources = useIDEWorkspaceResources()
 
     const run = useCallback(async (debug: boolean, isTest = false) => {
         const exec = useExecutionStore.getState()
@@ -33,13 +36,17 @@ export function useRunPipeline() {
         let prepared: RuntimePreparationResult
         let executionMode = mode
         try {
-            const plan = await prepareWorkbenchExecution({
+            let plan = await prepareWorkbenchExecution({
                 files: getAllFiles(),
                 mode,
                 executeTests: isTest,
                 testProvider,
                 onTestEvent: (event) => useTestStore.getState().processEvent(event),
             })
+            const files = mergeExecutionResourceFiles(resources, plan.files)
+            if (files !== plan.files) {
+                plan = { ...plan, files }
+            }
             executionMode = plan.mode
             prepared = await engine.prepare(plan)
         } catch (error) {
@@ -70,19 +77,35 @@ export function useRunPipeline() {
             useDebugStore.getState().setDebugMode('idle')
             useTestStore.getState().finalize()
         }
-    }, [engine, host, testProvider])
+    }, [engine, host, resources, testProvider])
 
-    const stop = useCallback(() => {
-        engine.stop()
-        useDebugStore.getState().reset()
+    const settleStop = useCallback(async () => {
+        if (engine.stopAndWait) await engine.stopAndWait()
+        else engine.stop()
     }, [engine])
+
+    const stop = useCallback(async () => {
+        try {
+            await settleStop()
+        } catch (error) {
+            console.error('[web-ide] runtime stop failed', error)
+        } finally {
+            useDebugStore.getState().reset()
+        }
+    }, [settleStop])
 
     const restart = useCallback(async (debug: boolean) => {
         host?.events?.emit('debug_restart', {})
-        engine.stop()
-        useDebugStore.getState().reset()
+        try {
+            await settleStop()
+        } catch (error) {
+            console.error('[web-ide] runtime restart stop failed', error)
+            return
+        } finally {
+            useDebugStore.getState().reset()
+        }
         await run(debug)
-    }, [engine, host, run])
+    }, [host, run, settleStop])
 
     return { run, stop, restart }
 }

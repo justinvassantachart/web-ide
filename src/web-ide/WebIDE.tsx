@@ -31,6 +31,7 @@ import {
 } from './react/language-tooling-context'
 import { resolveLanguageToolingProvider } from './core/language-tooling'
 import { createRuntimeSessionFactory } from './core/runtime-provider'
+import { createWebIDEInstanceController } from './core/instance-handle'
 
 const runtimeMountKeys = new WeakMap<RuntimeProvider, number>()
 let nextRuntimeMountKey = 1
@@ -65,6 +66,10 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
   { configuration },
   instanceRef,
 ) {
+  const instanceController = useMemo(
+    () => createWebIDEInstanceController(),
+    [],
+  )
   const plugins = useMemo(
     () => new IDEPluginManager(configuration.plugins),
     [configuration.plugins],
@@ -98,8 +103,11 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
     <WebIDEConfigurationContext.Provider value={configuration}>
       <IDEContributionContext.Provider value={plugins}>
         <PluginManagerLifetime plugins={plugins} />
-        <WorkspaceHostBridge />
-        <InstanceHandleBridge instanceRef={instanceRef} />
+        <WorkspaceHostBridge instanceController={instanceController} />
+        <InstanceHandleBridge
+          instanceRef={instanceRef}
+          handle={instanceController.handle}
+        />
         <EngineProvider
           key={runtimeMountKey}
           createSession={createRuntimeSession!}
