@@ -215,6 +215,42 @@
   z-index: 10;
 }
 
+/* Public owner-scoped source presentation. Shape and color both distinguish
+   live, recorded-history, and error locations. */
+.source-presentation-current-line {
+  background-color: color-mix(in srgb, #4fc1ff 18%, transparent) !important;
+  box-shadow: inset 3px 0 #4fc1ff;
+}
+.source-presentation-historical-line {
+  background-color: color-mix(in srgb, #c586c0 16%, transparent) !important;
+  box-shadow: inset 3px 0 #c586c0;
+}
+.source-presentation-error-line {
+  background-color: color-mix(in srgb, #f14c4c 18%, transparent) !important;
+  box-shadow: inset 3px 0 #f14c4c;
+}
+.source-presentation-current-glyph,
+.source-presentation-historical-glyph,
+.source-presentation-error-glyph {
+  width: 9px !important;
+  height: 9px !important;
+  margin-left: 6px;
+  margin-top: 6px;
+}
+.source-presentation-current-glyph {
+  border-radius: 50%;
+  background: #4fc1ff;
+}
+.source-presentation-historical-glyph {
+  border-radius: 50%;
+  border: 2px solid #c586c0;
+  background: transparent;
+}
+.source-presentation-error-glyph {
+  background: #f14c4c;
+  transform: rotate(45deg) scale(0.8);
+}
+
 /* When paused ON a breakpoint line, VS Code layers the arrow over the
    red dot; our glyph wins via z-index above. */
 

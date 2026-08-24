@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useExecutionStore } from '@/store/execution-store'
 import { useDebugStore } from '@/store/debug-store'
 import { useTestStore } from '@/testing/test-store'
@@ -13,6 +13,7 @@ import { prepareWorkbenchExecution } from '@/testing/test-execution'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { useIDEWorkspaceResources } from '@/web-ide/react/contribution-context'
 import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
+import type { IDEExecutionController } from '@/web-ide/contracts/contributions'
 
 // One shared compile-and-run pipeline so the toolbar buttons, the floating
 // debug toolbar's Restart, and the F5 hotkey all launch sessions through the
@@ -107,5 +108,11 @@ export function useRunPipeline() {
         await run(debug)
     }, [host, run, settleStop])
 
-    return { run, stop, restart }
+    const execution = useMemo<IDEExecutionController>(() => ({
+        start: async (mode) => run(mode === 'debug', mode === 'test'),
+        stop,
+        restart: async (mode) => restart(mode === 'debug'),
+    }), [restart, run, stop])
+
+    return { run, stop, restart, execution }
 }

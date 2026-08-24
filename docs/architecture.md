@@ -65,11 +65,17 @@ flattened cross-plane collisions. It prevents accidental editing/persistence;
 it does not claim secrecy from code executing in the browser.
 
 `IDEPanelServices` is the shared public component facade for panels and sidebar
-activities: selected runtime, immutable workspace snapshot, and panel reveal.
-It intentionally contains no React context implementation or Zustand handle.
-Panel visibility may be gated by the same immutable workbench snapshot used by
-commands. The packaged Variables and Graph panels therefore disappear for a
-run-only runtime rather than presenting impossible debugging affordances.
+activities: selected runtime, the same instance-bound execution pipeline used
+by commands, one automatically revoked source-presentation owner, immutable
+workspace snapshot, and panel reveal. It intentionally contains no React
+context implementation, Monaco object, owner identifier, or Zustand handle.
+Source presentation accepts only canonical current visible `/workspace` files,
+valid one-based bounds, and `current`/`historical`/`error` decorations. It
+prunes invalidated paths after workspace mutations and clears every owner's
+Monaco decorations on owner/editor/workspace disposal. Panel visibility may be
+gated by the same immutable workbench snapshot used by commands. The packaged
+Variables and Graph panels therefore disappear for a run-only runtime rather
+than presenting impossible debugging affordances.
 
 `WebIDEInstanceHandle` is a per-mount host integration seam for snapshots,
 subscriptions, ensuring files are open, resetting a session, projecting only

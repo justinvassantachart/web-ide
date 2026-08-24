@@ -9,8 +9,8 @@ function activity(id: string, order: number): IDEActivityContribution {
     title: id,
     icon: 'extensions',
     order,
-    component: ({ runtime, workspace }) => (
-      <output>{`${runtime.id}:${Object.keys(workspace.snapshot()).length}`}</output>
+    component: ({ runtime, execution, workspace }) => (
+      <output>{`${runtime.id}:${typeof execution.start}:${Object.keys(workspace.snapshot()).length}`}</output>
     ),
   }
 }
@@ -48,15 +48,27 @@ describe('open activity contribution API', () => {
     expect(Dynamic).toBeDefined()
     const DynamicActivity = Dynamic!
     const snapshot = vi.fn(() => ({ '/workspace/main.txt': 'hello' }))
+    const execution = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      restart: vi.fn(),
+    }
     expect(
       renderToStaticMarkup(
         <DynamicActivity
           runtime={{ id: 'fake.runtime' } as never}
+          execution={execution}
+          source={{
+            reveal: vi.fn(),
+            replaceDecorations: vi.fn(),
+            clearDecorations: vi.fn(),
+            dispose: vi.fn(),
+          }}
           workspace={{ snapshot }}
           panels={{ reveal: vi.fn() }}
         />,
       ),
-    ).toContain('fake.runtime:1')
+    ).toContain('fake.runtime:function:1')
 
     activation.dispose()
     expect(manager.activities.has('host.dynamic')).toBe(false)

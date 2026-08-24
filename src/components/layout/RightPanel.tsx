@@ -7,6 +7,8 @@ import { useIDEPanels } from '@/web-ide/react/contribution-context'
 import { useEngine } from '@/engine/engine-context'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { getAllFiles } from '@/vfs/volume'
+import { useRunPipeline } from './use-run-pipeline'
+import { ContributionSurface } from '@/web-ide/react/ContributionSurface'
 import {
     ResizableHandle,
     ResizablePanel,
@@ -15,6 +17,7 @@ import {
 
 export function RightPanel() {
     const runtime = useEngine()
+    const { execution } = useRunPipeline()
     const {
         rightTab: activeTab,
         setRightTab: setActiveTab,
@@ -62,11 +65,14 @@ export function RightPanel() {
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-hidden">
-                        {SelectedPanel && (
-                            <SelectedPanel
+                        {SelectedPanel && selected && (
+                            <ContributionSurface
+                                key={selected.id}
+                                component={SelectedPanel}
                                 runtime={runtime}
-                                workspace={{ snapshot: getAllFiles }}
-                                panels={{ reveal: setActiveTab }}
+                                execution={execution}
+                                snapshot={getAllFiles}
+                                revealPanel={setActiveTab}
                             />
                         )}
                     </div>

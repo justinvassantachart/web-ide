@@ -220,6 +220,13 @@ describe('host-authored Web IDE plugins', () => {
       renderToStaticMarkup(
         createElement(ActivityPanel!, {
           runtime: session,
+          execution: commandContext.execution,
+          source: {
+            reveal: vi.fn(),
+            replaceDecorations: vi.fn(),
+            clearDecorations: vi.fn(),
+            dispose: vi.fn(),
+          },
           workspace: { snapshot: () => ({ '/workspace/main.txt': 'host data' }) },
           panels: { reveal },
         }),

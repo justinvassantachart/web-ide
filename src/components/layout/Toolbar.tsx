@@ -27,7 +27,7 @@ export function Toolbar() {
     const { isCompiling, isRunning, setIsRunning, setRightTab } = useExecutionStore()
     const { cacheState, downloadProgress } = useCompilerStore()
     const { debugMode, pushHistoryState, setDebugMode } = useDebugStore()
-    const { run, stop, restart } = useRunPipeline()
+    const { execution } = useRunPipeline()
     const commands = useIDECommands()
     const testProvider = useSelectedTestProvider()
     const compilerReady = cacheState === 'ready'
@@ -66,11 +66,7 @@ export function Toolbar() {
         testingAvailable: testProvider !== undefined,
     }
     const commandContext: IDECommandContext = {
-        execution: {
-            start: async (kind) => run(kind === 'debug', kind === 'test'),
-            stop,
-            restart: async (kind) => restart(kind === 'debug'),
-        },
+        execution,
         workspace: { snapshot: getAllFiles },
         panels: { reveal: setRightTab },
     }

@@ -93,7 +93,7 @@ test('debugs Python with production assets and clean browser diagnostics', async
 
 test('maps unittest failures in staged main.py back to the host workspace', async ({ page }) => {
   const diagnostics = observeBrowserDiagnostics(page)
-  const navigation = await page.goto('/?tests=failing')
+  const navigation = await page.goto('/?tests=failing&source=probe')
 
   await expectIsolatedRuntime(page, navigation)
 
@@ -112,5 +112,19 @@ test('maps unittest failures in staged main.py back to the host workspace', asyn
 
   await location.click()
   await expect(page.getByRole('tab', { name: 'main.py' })).toHaveAttribute('aria-selected', 'true')
+  await expect(statusBar).toContainText('Ln 8, Col 1')
+  await expect(page.locator('.monaco-editor .source-presentation-error-line')).toHaveCount(1)
+
+  // The activity and Tests panel own independent source presentations.
+  await page.getByRole('button', { name: 'Execution and source', exact: true }).click()
+  const probe = page.getByRole('region', { name: 'Execution and source probe' })
+  await probe.getByRole('button', { name: 'Present historical main line' }).click()
+  await expect(page.locator('.monaco-editor .source-presentation-historical-line')).toHaveCount(1)
+  await expect(page.locator('.monaco-editor .source-presentation-error-line')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Explorer', exact: true }).click()
+  await expect(page.locator('.monaco-editor .source-presentation-historical-line')).toHaveCount(0)
+  await expect(page.locator('.monaco-editor .source-presentation-error-line')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Variables', exact: true }).click()
+  await expect(page.locator('.monaco-editor .source-presentation-error-line')).toHaveCount(0)
   expectCleanBrowser(diagnostics)
 })

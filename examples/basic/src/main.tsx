@@ -12,6 +12,7 @@ import { cppRuntimePlugin, pythonRuntimePlugin } from 'web-ide/runtimes'
 import { pythonTestingPlugin, testingPlugin } from 'web-ide/testing'
 import { canvasPlugin, coreWorkbenchPlugin } from 'web-ide/plugins'
 import { ExampleApplication } from './ExampleApplication'
+import { ExecutionSourceProbe } from './ExecutionSourceProbe'
 import 'web-ide/styles.css'
 
 const searchParams = new URLSearchParams(window.location.search)
@@ -19,6 +20,7 @@ const useCppRuntime = searchParams.get('runtime') === 'cpp'
 const useFailingPythonTest = searchParams.get('tests') === 'failing'
 const useExecutionOnlyResource = searchParams.get('resources') === 'execution-only'
 const showLifecycleProbe = searchParams.get('lifecycle') === 'probe'
+const showExecutionSourceProbe = searchParams.get('source') === 'probe'
 
 const executionOnlyResourcePlugin: IDEPlugin = {
   id: 'web-ide.example.execution-resource',
@@ -32,6 +34,19 @@ const executionOnlyResourcePlugin: IDEPlugin = {
           '    return "Execution-only resource loaded"',
         ].join('\n'),
       },
+    }],
+  },
+}
+
+const executionSourceProbePlugin: IDEPlugin = {
+  id: 'web-ide.example.execution-source-probe',
+  contributes: {
+    activities: [{
+      id: 'web-ide.example.execution-source-probe.activity',
+      title: 'Execution and source',
+      icon: 'debug-alt-small',
+      component: ExecutionSourceProbe,
+      order: 10,
     }],
   },
 }
@@ -55,6 +70,7 @@ const configuration: WebIDEConfiguration = useCppRuntime
         pythonRuntimePlugin,
         pythonTestingPlugin,
         ...(useExecutionOnlyResource ? [executionOnlyResourcePlugin] : []),
+        ...(showExecutionSourceProbe ? [executionSourceProbePlugin] : []),
         coreWorkbenchPlugin,
         canvasPlugin,
         testingPlugin,
@@ -128,7 +144,9 @@ const initialFiles: WorkspaceFiles = useCppRuntime
 
 const workspaceId = useCppRuntime
   ? 'basic-example-cpp-v1'
-  : useFailingPythonTest
+    : showExecutionSourceProbe
+      ? 'basic-example-python-execution-source-v1'
+      : useFailingPythonTest
     ? 'basic-example-python-failing-v1'
     : useExecutionOnlyResource
       ? 'basic-example-python-execution-resource-v1'

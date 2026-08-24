@@ -32,6 +32,7 @@ import {
 import { resolveLanguageToolingProvider } from './core/language-tooling'
 import { createRuntimeSessionFactory } from './core/runtime-provider'
 import { createWebIDEInstanceController } from './core/instance-handle'
+import { SourcePresentationProvider } from './react/source-presentation-context'
 
 const runtimeMountKeys = new WeakMap<RuntimeProvider, number>()
 let nextRuntimeMountKey = 1
@@ -70,6 +71,8 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
     () => createWebIDEInstanceController(),
     [],
   )
+  const host = useWebIDEHost()
+  const workspaceKey = host?.workspace?.id ?? 'default-project'
   const plugins = useMemo(
     () => new IDEPluginManager(configuration.plugins),
     [configuration.plugins],
@@ -113,12 +116,14 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
           createSession={createRuntimeSession!}
         >
           <PluginActivation plugins={plugins} />
-          <LanguageToolingMount
-            provider={languageToolingProvider}
-            supplementalFiles={testProvider?.editorSupportFiles}
-          >
-            <WorkbenchLayout />
-          </LanguageToolingMount>
+          <SourcePresentationProvider key={workspaceKey} workspaceKey={workspaceKey}>
+            <LanguageToolingMount
+              provider={languageToolingProvider}
+              supplementalFiles={testProvider?.editorSupportFiles}
+            >
+              <WorkbenchLayout />
+            </LanguageToolingMount>
+          </SourcePresentationProvider>
         </EngineProvider>
       </IDEContributionContext.Provider>
     </WebIDEConfigurationContext.Provider>

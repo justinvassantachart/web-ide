@@ -95,6 +95,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "jsdom": "26.1.0",
     "lucide-react": "^0.575.0",
     "material-icon-theme": "^5.34.0",
     "memfs": "^4.56.10",

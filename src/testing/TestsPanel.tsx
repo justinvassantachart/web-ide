@@ -1,17 +1,16 @@
 import { Codicon } from '@/components/ui/codicon'
-import { useEditorStore } from '@/store/editor-store'
 import { useExecutionStore } from '@/store/execution-store'
-import { fileExists, readFile } from '@/vfs/volume'
 import type {
     TestAssertion,
     TestDiagnostic,
     TestLocation,
 } from '@/web-ide/contracts/testing'
+import type { IDEPanelServices } from '@/web-ide/contracts/contributions'
 import type { TestCase } from './test-store'
 import { useTestStore } from './test-store'
 import { useSelectedTestProvider } from './use-test-provider'
 
-export function TestsPanel() {
+export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
     const tests = useTestStore((s) => s.tests)
     const isTesting = useTestStore((s) => s.isTesting)
     const totalCount = useTestStore((s) => s.totalCount)
@@ -81,14 +80,20 @@ export function TestsPanel() {
                         {isCompiling ? 'Compiling tests…' : 'Waiting for results…'}
                     </div>
                 ) : (
-                    tests.map((t, i) => <TestRow key={i} test={t} />)
+                    tests.map((t, i) => <TestRow key={i} test={t} source={source} />)
                 )}
             </div>
         </aside>
     )
 }
 
-function TestRow({ test }: { test: TestCase }) {
+function TestRow({
+    test,
+    source,
+}: {
+    test: TestCase
+    source: IDEPanelServices['source']
+}) {
     const failedAsserts = test.assertions.filter((assertion) => assertion.status === 'fail')
     const showDetails = (test.status === 'fail' || test.status === 'error')
         && (failedAsserts.length > 0 || test.diagnostics.length > 0)
@@ -114,10 +119,10 @@ function TestRow({ test }: { test: TestCase }) {
             {showDetails && (
                 <div className="pl-7 pr-3 pb-2 space-y-2">
                     {failedAsserts.map((a, i) => (
-                        <AssertRow key={i} assert={a} />
+                        <AssertRow key={i} assert={a} source={source} />
                     ))}
                     {test.diagnostics.map((diagnostic, i) => (
-                        <DiagnosticRow key={i} diagnostic={diagnostic} />
+                        <DiagnosticRow key={i} diagnostic={diagnostic} source={source} />
                     ))}
                 </div>
             )}
@@ -141,24 +146,48 @@ function StatusIcon({ status }: { status: TestCase['status'] }) {
     return <Codicon name="loading" size={12} spin className="text-primary shrink-0" />
 }
 
-function openLocation(location: TestLocation | undefined) {
-    if (!location) return
-    // __FILE__ from the compiler omits the /workspace/ prefix since compile()
-    // strips it before mounting. Map back so the editor can resolve the file.
-    const candidate = location.file.startsWith('/workspace/')
-        ? location.file
-        : `/workspace/${location.file.replace(/^\/+/, '')}`
-    if (fileExists(candidate)) {
-        useEditorStore.getState().setActiveFile(candidate, readFile(candidate))
+function openLocation(
+    location: TestLocation | undefined,
+    source: IDEPanelServices['source'],
+) {
+    const line = location?.line
+    if (!location || line === undefined) return
+    try {
+        // __FILE__ from the compiler omits the /workspace/ prefix since
+        // compile() strips it before mounting. Build the candidate inside the
+        // rejection boundary because test protocol strings are untrusted.
+        const candidate = location.file.startsWith('/workspace/')
+            ? location.file
+            : `/workspace/${location.file.replace(/^\/+/, '')}`
+        source.replaceDecorations([{
+            path: candidate,
+            line,
+            ...(location.column === undefined ? {} : { column: location.column }),
+            kind: 'error',
+        }])
+        source.reveal({
+            path: candidate,
+            line,
+            ...(location.column === undefined ? {} : { column: location.column }),
+        })
+    } catch {
+        // Invalid paths/positions remain visible in the diagnostic text but
+        // never escape the source boundary or trigger a filesystem lookup.
     }
 }
 
-function LocationButton({ location }: { location: TestLocation | undefined }) {
+function LocationButton({
+    location,
+    source,
+}: {
+    location: TestLocation | undefined
+    source: IDEPanelServices['source']
+}) {
     if (!location?.line) return null
     return (
         <button
             type="button"
-            onClick={() => openLocation(location)}
+            onClick={() => openLocation(location, source)}
             className="mt-1 text-[10px] text-muted-foreground/70 hover:text-foreground hover:underline"
         >
             {location.file.split('/').pop()}:{location.line}
@@ -166,7 +195,13 @@ function LocationButton({ location }: { location: TestLocation | undefined }) {
     )
 }
 
-function AssertRow({ assert: assertion }: { assert: TestAssertion }) {
+function AssertRow({
+    assert: assertion,
+    source,
+}: {
+    assert: TestAssertion
+    source: IDEPanelServices['source']
+}) {
     const actual = assertion.actual
     const expected = assertion.expected
 
@@ -191,12 +226,18 @@ function AssertRow({ assert: assertion }: { assert: TestAssertion }) {
                     <span className="text-emerald-400 truncate">{expected.value}</span>
                 </div>
             )}
-            <LocationButton location={assertion.location} />
+            <LocationButton location={assertion.location} source={source} />
         </div>
     )
 }
 
-function DiagnosticRow({ diagnostic }: { diagnostic: TestDiagnostic }) {
+function DiagnosticRow({
+    diagnostic,
+    source,
+}: {
+    diagnostic: TestDiagnostic
+    source: IDEPanelServices['source']
+}) {
     return (
         <div className="text-[11px] font-mono border-l-2 border-red-500/30 pl-2">
             <div className="text-red-400 whitespace-pre-wrap">{diagnostic.message}</div>
@@ -205,7 +246,7 @@ function DiagnosticRow({ diagnostic }: { diagnostic: TestDiagnostic }) {
                     {diagnostic.details}
                 </pre>
             )}
-            <LocationButton location={diagnostic.location} />
+            <LocationButton location={diagnostic.location} source={source} />
         </div>
     )
 }

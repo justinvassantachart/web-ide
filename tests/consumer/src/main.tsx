@@ -5,6 +5,9 @@ import {
   WebIDEHostProvider,
   initWebIDETheme,
   type IDEPlugin,
+  type IDEPanelServices,
+  type IDESourceDecoration,
+  type IDESourceLocation,
   type RuntimeOutcome,
   type WebIDEConfiguration,
   type WebIDEInstanceHandle,
@@ -26,6 +29,29 @@ async function verifyPublicLifecycle(
   return { type: 'stopped' }
 }
 
+const publicSourceLocation: IDESourceLocation = {
+  path: '/workspace/main.cpp',
+  line: 1,
+}
+
+const publicSourceDecoration: IDESourceDecoration = {
+  ...publicSourceLocation,
+  kind: 'current',
+}
+
+async function verifyPublicPanelServices(
+  services: Pick<IDEPanelServices, 'execution' | 'source'>,
+): Promise<void> {
+  await services.execution.start('debug')
+  await services.execution.stop()
+  await services.execution.restart('run')
+  services.source.replaceDecorations([publicSourceDecoration])
+  services.source.reveal(publicSourceLocation)
+  services.source.clearDecorations()
+}
+
+void verifyPublicPanelServices
+
 // Compile this public contract against the clean installed tarball without
 // closing the fixture automatically at runtime.
 void verifyPublicLifecycle
@@ -38,8 +64,22 @@ const hostActivity: IDEPlugin = {
         id: 'consumer.notes.activity',
         title: 'Notes',
         icon: 'note',
-        component: ({ workspace }) => (
-          <pre>{Object.keys(workspace.snapshot()).sort().join('\n')}</pre>
+        component: ({ workspace, execution, source }) => (
+          <section>
+            <pre>{Object.keys(workspace.snapshot()).sort().join('\n')}</pre>
+            <button type="button" onClick={() => void execution.start('run')}>
+              Run from Notes
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                source.replaceDecorations([publicSourceDecoration])
+                source.reveal(publicSourceLocation)
+              }}
+            >
+              Reveal source
+            </button>
+          </section>
         ),
         order: 10,
       },

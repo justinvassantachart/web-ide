@@ -5,6 +5,7 @@ import type {
   RuntimeExecutionMode,
   RuntimeSession,
 } from './runtime'
+import type { IDESourcePresentationOwner } from './source-presentation'
 
 export type IDEWorkbenchRunState = 'idle' | 'running' | 'paused'
 export type IDEExecutionMode = RuntimeExecutionMode | 'test'
@@ -20,7 +21,8 @@ export interface IDEWorkbenchSnapshot {
 
 export interface IDEExecutionController {
   start(mode: IDEExecutionMode): Promise<void>
-  stop(): void
+  /** Existing synchronous implementations remain valid; callers may await cleanup. */
+  stop(): void | Promise<void>
   restart(mode: RuntimeExecutionMode): Promise<void>
 }
 
@@ -53,6 +55,10 @@ export interface IDECommandContribution {
 
 export interface IDEPanelServices {
   readonly runtime: RuntimeSession
+  /** Uses the same instance-scoped prepare/start/stop pipeline as commands. */
+  readonly execution: IDEExecutionController
+  /** Owner-bound navigation/decorations facade; the host revokes it on unmount. */
+  readonly source: IDESourcePresentationOwner
   readonly workspace: {
     snapshot(): WorkspaceFiles
   }

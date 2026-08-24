@@ -105,8 +105,9 @@ including the response headers required by the runtime.
   preference helpers. Core imports do not load the clangd worker integration.
 - `web-ide/styles.css` — compiled workbench styles and Codicon assets.
 
-Internal React contexts, registries, VFS modules, and Zustand stores are not
-package exports. Plugins receive public runtime/workspace/panel facades only.
+Internal React contexts, registries, VFS modules, Monaco objects, and Zustand
+stores are not package exports. Rendered plugin panels/activities receive only
+public runtime, execution, source-presentation, workspace, and panel facades.
 
 ## How the pieces fit
 
@@ -206,6 +207,40 @@ cleanup may additionally expose `waitForSettlement`, `stopAndWait`, and
 session never receives React stores or host credentials. See
 `src/web-ide/contracts/runtime.ts` and the contract tests under
 `tests/contracts` for the exact lifecycle.
+
+Rendered panels and sidebar activities receive one `IDEExecutionController`
+using the same prepare/start/stop/restart path as toolbar commands. Its
+`stop()` return remains compatible with synchronous callers and is awaitable
+when the selected session supplies settled termination. The same component gets
+an owner-bound source facade:
+
+```tsx
+const activity: IDEActivityContribution = {
+  id: 'example.trace',
+  title: 'Trace',
+  icon: 'debug-alt-small',
+  component: ({ execution, source }) => (
+    <>
+      <button onClick={() => void execution.start('debug')}>Start</button>
+      <button onClick={() => void execution.stop()}>Stop</button>
+      <button onClick={() => {
+        const location = { path: '/workspace/main.py', line: 4 } as const
+        source.replaceDecorations([{ ...location, kind: 'historical' }])
+        source.reveal(location)
+      }}>
+        Show recorded line
+      </button>
+    </>
+  ),
+}
+```
+
+Source locations must be canonical visible `/workspace` files with valid
+one-based line/column bounds. Decorations use only the generic `current`,
+`historical`, and `error` meanings, replace atomically per owner, and are
+removed automatically when that rendered contribution unmounts. The facade
+never exposes editor models, arbitrary CSS/HTML, private debug history, or
+another owner's state.
 
 Generic debug variables do not need to invent native memory. `VariableNode`
 address/size/pointer fields and `StackFrame.sp` are optional; provide them only

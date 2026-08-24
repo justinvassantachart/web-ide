@@ -62,6 +62,7 @@ crosses their boundary.
 | Execution-only resource or persistence projection | Path/resource contracts, packed consumer, and a real-runtime production browser scenario proving execution succeeds while the resource remains absent from editable/persisted views. |
 | Debug protocol, runtime paths, stdin/stdout, worker, or WASM loading | Contract tests plus a real-browser scenario using the actual backend. |
 | Command, panel, capability, or contribution visibility | Integration test; add browser coverage when it controls a runtime workflow. |
+| Panel execution or source presentation | Owner/instance isolation, bounds, Strict Mode cleanup, packed public types, and production-browser run/debug/stop/navigation/decorations with clean diagnostics. |
 | Test provider/parser | `tests/testing`; add browser coverage before claiming the framework's end-to-end workflow. |
 | Export, dependency, CSS, binary, or package metadata | Build, packed consumer, `npm pack --dry-run`, and dependency/license review. |
 | Host integration used by Nova | Web IDE validation plus Nova's unit, type, build, and browser regression pass. |
@@ -113,6 +114,14 @@ edits that debugger-sh 0.3.15 cannot safely apply during a live native session.
 `/sysroot` support module, proves that module is absent from the explorer and
 persisted-file projection, and drives the public awaited host close through
 save, flush, and dispose.
+`tests/browser/execution-source-services.spec.ts` drives a host-authored
+activity through only public panel services. It proves real Python run/debug/
+awaited-stop, exact current/historical/error source navigation, owner cleanup,
+and isolation between two production workbench realms. The staged unittest
+failure scenario separately proves that two concurrently mounted source owners
+clean up independently. Focused jsdom coverage executes React's development
+Strict Mode setup/cleanup replay, which a production build intentionally does
+not perform.
 
 When changing Python debugging, preserve the imported workspace-module and
 unittest browser paths. When changing shared debugger code, rerun the C++

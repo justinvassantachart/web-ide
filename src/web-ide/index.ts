@@ -78,6 +78,12 @@ export type {
   VariableNode,
 } from './contracts/runtime'
 export type {
+  IDESourceDecoration,
+  IDESourceDecorationKind,
+  IDESourceLocation,
+  IDESourcePresentationOwner,
+} from './contracts/source-presentation'
+export type {
   PreparedTestExecution,
   TestAssertion,
   TestCaseStatus,

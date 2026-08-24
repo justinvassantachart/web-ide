@@ -14,6 +14,9 @@ not authorized or configured for public distribution.
 - Unit/integration tests in dedicated test folders and a production-build
   Playwright regression for Python breakpoints, variables, and stepping.
 - Real example and packed-tarball consumer builds without a Nova alias.
+- Public panel execution and owner-scoped source-presentation contracts,
+  including strict path/position validation, bounded decorations, deterministic
+  cleanup, packed-consumer compilation, and production-runtime browser proof.
 - Source/dist scans excluding LMS, Firebase, lessons, replay, Karel, absolute
   developer paths, and unresolved `@/` aliases.
 - No copied compiler/sysroot archive, Stanford library, Firebase service worker,
