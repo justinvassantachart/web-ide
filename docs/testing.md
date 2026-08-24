@@ -11,7 +11,7 @@ isolated browser with the real execution backend.
 | --- | --- |
 | `npm test` | Run Vitest contract, integration, workflow, and workbench tests once. |
 | `npm run test:watch` | Run Vitest while developing. |
-| `npm run test:consumer` | Pack Web IDE and build a fresh consumer without source aliases. |
+| `npm run test:consumer` | Pack Web IDE in an OS temp directory and build a locked fresh consumer without source aliases. |
 | `npm run test:browser` | Build the library/basic example and run Playwright headlessly. |
 | `npm run test:browser:headed` | Run the same browser suite with a visible browser. |
 | `npm run validate` | Run lint, Vitest, types, builds, packed consumer, and package-content checks. |
@@ -28,6 +28,28 @@ npm run validate:production
 Linux CI may need `npx playwright install --with-deps chromium`. The Python and
 C/C++ browser backends download toolchain/runtime assets, so runtime browser
 tests require network access unless those assets are explicitly self-hosted.
+
+The packed consumer uses its committed `tests/consumer/package-lock.json`,
+copies the candidate to the stable fixture name `web-ide.tgz`, and runs
+`npm ci --ignore-scripts` with a new temporary npm cache. Before npm runs, the
+gate requires both manifest and lock to resolve exactly `file:web-ide.tgz`,
+streams SHA-512 from the copied destination, and matches it to the committed
+lock integrity. Mismatched bytes are deleted without invoking installation, so
+an existing global cache cannot satisfy a corrupted candidate. The gate then
+proves a single React/React DOM identity, runs the production-only audit, and
+builds every exercised public export. The default command packs current source
+into an OS temporary directory and leaves no repository tarball. To verify an
+already-built release candidate, provide an absolute path:
+
+```sh
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.2.0.tgz \
+  npm run test:consumer
+```
+
+The committed fixture lock is tied to the exact packed artifact. Regenerate and
+review it whenever a shipped manifest, distribution file, or dependency changes;
+an integrity mismatch is a gate failure, not a reason to fall back to
+`npm install`.
 
 ## Where tests belong
 
@@ -166,8 +188,10 @@ Every implementation handoff should state:
 - whether package, remote, deployment, or repository state changed.
 
 Passing `npm run validate:production` is the local production gate. Publishing
-or deploying still requires the separate decisions and host checks in
-[Publishing readiness](publishing-readiness.md).
+or consuming a release still requires P2.5's complete bundled-license inventory,
+production SBOM, two-build deterministic artifact proof, exact Web IDE/Karel
+candidate compatibility, immutable release receipts, and Hamilton host checks
+in [Publishing readiness](publishing-readiness.md).
 
 For dependency changes, record both `npm audit --omit=dev` and the full
 `npm audit` result. Web IDE bundles some packages classified as development

@@ -1,8 +1,10 @@
 # Third-party notices and provenance
 
-This file is an audit aid, not a substitute for the license texts shipped by
-dependencies. Before public distribution, generate a full production dependency
-license report and have the intended project license reviewed.
+The Web IDE source is licensed under MIT. This file records notable provenance,
+but it is not a substitute for the license texts and notices required by files
+and dependencies in an exact distribution artifact. P2.5 remains incomplete
+until the `0.2.0` tarball has a generated, reviewed bundled-license inventory and
+production SBOM tied to its digest.
 
 Notable retained dependencies and source provenance include:
 

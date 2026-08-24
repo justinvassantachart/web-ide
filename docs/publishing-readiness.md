@@ -1,57 +1,65 @@
 # Publishing readiness
 
-The local repository is ready for review and a single initial commit, but it is
-not authorized or configured for public distribution.
+Web IDE's source repository is public and its `0.2.0` source candidate is
+licensed under MIT. The npm manifest deliberately remains `private: true`: this
+checkpoint does not authorize or configure an npm publication. Hamilton's
+accepted distribution path is an exact integrity-checked tarball attached to an
+immutable release in Hamilton's private repository.
 
-## Completed locally
+## Source checkpoint complete
 
-- Host-neutral package metadata, ESM export map, declarations, compiled CSS,
-  clangd worker emission, and raw C++ test resources.
-- Separate exports for host APIs, built-in plugins, browser runtime providers,
-  generic/language-specific testing providers, and optional C/C++ language
-  tooling.
-- Nova consuming only public package exports through a local file dependency.
-- Unit/integration tests in dedicated test folders and a production-build
-  Playwright regression for Python breakpoints, variables, and stepping.
-- Real example and packed-tarball consumer builds without a Nova alias.
-- Public panel execution and owner-scoped source-presentation contracts,
-  including strict path/position validation, bounded decorations, deterministic
-  cleanup, packed-consumer compilation, and production-runtime browser proof.
-- Source/dist scans excluding LMS, Firebase, lessons, replay, Karel, absolute
-  developer paths, and unresolved `@/` aliases.
-- No copied compiler/sysroot archive, Stanford library, Firebase service worker,
-  deployment file, or local yowasp tarball.
-- `npm audit --omit=dev` and the full `npm audit` currently report no known
-  vulnerabilities. The former whole-stdlib polyfill plugin and its vulnerable
-  elliptic dependency chain were replaced by the five exact browser shims the
-  runtime actually uses, and the production runtime matrix proves those shims.
-  Because the library build can bundle code from development-classified inputs,
-  continue running both audits before publication rather than relying only on
-  `--omit=dev`.
+- The manifest records the public GitHub source, issue tracker, homepage,
+  semantic version, and MIT source license without changing the export map,
+  React peer ranges, or exact `debugger-sh@0.3.15` runtime pin.
+- Host-neutral ESM exports, declarations, compiled CSS, clangd worker output,
+  and raw C++ test resources remain package inputs.
+- The clean packed consumer imports the root and `web-ide/host` public exports,
+  requires the committed local resolution and SHA-512 before installation,
+  installs with lifecycle scripts disabled and a disposable empty npm cache,
+  proves one React/React DOM version, runs a production-only audit, and builds
+  without source aliases or sibling imports.
+- Unit, integration, and production-browser coverage proves the current C/C++
+  and Python runtime claims. The separately maintained Karel companion is not
+  part of this package.
+- Source and distribution scans exclude LMS, Firebase, lessons, replay, Karel,
+  absolute developer paths, unresolved `@/` aliases, copied compiler/sysroot
+  archives, Stanford library files, service workers, and deployment assets.
+- At this source baseline, `npm audit --omit=dev` and the full `npm audit`
+  report no known vulnerabilities. Both remain required because the library
+  build can bundle development-classified inputs.
 
-## Decisions required before publication
+## P2.5 release evidence still required
 
-- Open-source license and confirmation of redistribution rights.
-- Final npm name/scope and semantic version.
-- GitHub organization/owner, visibility, branch protections, and CI policy.
-- npm, Git dependency, or release-tarball distribution strategy.
-- Whether Monaco, Debugger.sh, clangd, LLVM/WASI, and toolchain assets remain
-  externally hosted or become audited self-hosted release assets.
-- CSP, CORS/CORP, caching, uptime, version pinning, and privacy policy for those
-  runtime downloads.
+The MIT source license is not by itself a complete distribution-license audit.
+Before calling `0.2.0` released or allowing Hamilton to depend on it, P2.5 must
+also produce and verify:
 
-Until those decisions are made, keep `private: true`, `license: UNLICENSED`, no
-remote, and no releases.
+- a complete license inventory for every file and dependency bundled in the
+  exact tarball, with required notices retained;
+- a production-dependency SBOM tied to the candidate SHA-256;
+- byte-for-byte deterministic tarballs from two clean isolated builds;
+- the full `validate:production` gate and an exact-candidate clean consumer
+  gate, followed by the paired Karel compatibility gate;
+- a private immutable GitHub release asset, independently downloaded and
+  matched to its recorded SHA-256, size, source commit, and release identity;
+- Hamilton's pinned asset receipt and clean installation proof.
 
-## Pre-publish gate
+The repository does not claim npm availability, Rust, bundled Karel behavior,
+offline operation, multiple simultaneous embeds, or graphics output. Remote
+Debugger.sh, Monaco, clangd, LLVM/WASI, and Python assets remain subject to the
+host's reviewed CSP, CORS/CORP, caching, availability, integrity, and privacy
+policy; they are not silently converted into bundled release assets.
+
+## Candidate gate
 
 Run `npm ci`, install the pinned Playwright Chromium build, and run
-`npm run validate:production`. Inspect `npm pack --dry-run`, audit the actual
-tarball and third-party licenses, test it in a clean browser consumer, and repeat
-Nova's unit/build/browser regression pass. Python source debugging and unittest
-execution have production-build browser regressions; publication should still
-not claim Rust, bundled Karel functionality, offline use, multiple simultaneous
-embeds, or working graphics output until each has the required browser-level
-tests. The separately maintained Karel
-companion has its own real Python browser coverage; that does not make Karel
-part of the Web IDE package. See [Testing](testing.md) for the release gate.
+`npm run validate:production`. Inspect `npm pack --dry-run`, run both dependency
+audits, audit the candidate's bundled licenses, and pass the packed consumer
+against the exact absolute candidate path:
+
+```sh
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.2.0.tgz \
+  npm run test:consumer
+```
+
+See [Testing](testing.md) for the behavior and release-evidence matrix.
