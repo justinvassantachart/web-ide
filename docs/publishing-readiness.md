@@ -35,11 +35,13 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.2.0-source` tag object peeled to that exact commit. The earlier
-shared `v0.2.0` tag is an abandoned prepublication source checkpoint: its
-failed validation gate emitted no retained log, and no release or release
-asset was created from it. The shared tag is retained unchanged; the
-forward-only source tag is the sole final Web IDE 0.2 source identity.
+`web-ide-v0.2.0-source-r2` tag object peeled to that exact commit. The earlier
+shared `v0.2.0` and `web-ide-v0.2.0-source` tags are abandoned prepublication
+source checkpoints. The first failed before retained gate evidence; the second
+was withheld because its capture did not yet enforce path-normalized logs. No
+release or release asset was created from either one, and both tags remain
+unchanged. The forward-only `web-ide-v0.2.0-source-r2` tag is the sole final Web
+IDE 0.2 source identity.
 Candidate construction then:
 
 - makes two isolated no-hardlink checkouts, installs from `package-lock.json`
@@ -110,7 +112,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.2.0-source` tag at that commit, and use an
+and push the annotated `web-ide-v0.2.0-source-r2` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while
@@ -145,8 +147,21 @@ user/global configuration files plus isolated home, temporary, cache, prefix,
 and XDG directories; the explicit Playwright browser cache is the only
 host-tool cache passed through. It kills
 the complete process group on a 30-minute timeout or a 16 MiB combined-log
-limit and removes every partial log on failure. Record exactly one raw
-UTF-8 log for each of the five gates in
+limit. After a successful subprocess exit, it normalizes the completed bounded
+UTF-8 capture in one pass so chunk boundaries cannot evade normalization. The
+known repository, home, candidate, and temporary roots, including their
+reviewed JSON-slash, file-URL, and percent-encoded forms, become the explicit
+stable placeholders `<repository-root>`, `<home>`, `<web-candidate>`, and
+`<execution-root>`. Both path boundaries must be explicit; embedded
+placeholders and residual encoded separators fail closed. Raw and normalized
+dev/inode/size/mtime stay pinned through a no-clobber hard-link publication in
+a current-user-owned, non-group/world-writable directory, and the linked inode
+is verified before owned temporary names are removed.
+The canonical receipt remains byte-for-byte unchanged as the final line.
+Residual local path forms, secret-like text found after terminal-control
+decoding, or receipt drift remove the owned partial capture and fail the gate;
+the retained bytes are never token-masked.
+Record exactly one normalized UTF-8 log for each of the five gates in
 `release/validation-summary.template.json`, fill its absolute regular-file path,
 size, SHA-256, the exact source commit, and candidate SHA-256, then finalize:
 

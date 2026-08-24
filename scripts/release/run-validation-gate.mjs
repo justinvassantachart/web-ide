@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { link, lstat, rm, unlink } from 'node:fs/promises'
+import { lstat } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 
 import { runBoundedCommandLog } from './bounded-command-log.mjs'
@@ -19,12 +20,18 @@ import {
 import { verifyReleaseSourceState } from './source-state.mjs'
 import {
   createValidationGateReceipt,
+  parseValidationGateReceipt,
   validationGateReceiptFooter,
 } from './validation-gate-receipt.mjs'
 import {
   defaultPlaywrightBrowsersPath,
   withValidationGateEnvironment,
 } from './validation-gate-environment.mjs'
+import {
+  assertTrustedValidationLogDirectory,
+  normalizeValidationGateLogFile,
+  removeOwnedValidationGateLog,
+} from './validation-log.mjs'
 
 const localGateIds = new Set([
   'validate-production',
@@ -82,13 +89,17 @@ const temporaryLogPath = path.join(
   path.dirname(logPath),
   `.${path.basename(logPath)}.partial-${randomUUID()}`,
 )
+await assertTrustedValidationLogDirectory(logPath)
 let logComplete = false
+let publishedLogIdentity
+let rawLogIdentity
 try {
   await withValidationGateEnvironment({
     candidateTarball: invocation.candidateTarball,
     playwrightBrowsersPath: defaultPlaywrightBrowsersPath(),
-  }, async ({ environment }) => {
-    await runBoundedCommandLog({
+  }, async ({ environment, paths }) => {
+    let receiptFooter
+    const capture = await runBoundedCommandLog({
       command: npmExecutable,
       arguments: invocation.arguments,
       cwd: repositoryRoot,
@@ -111,19 +122,40 @@ try {
           exitCode,
           emitter: gate.receiptEmitter,
         })
-        return Buffer.from(validationGateReceiptFooter(receipt))
+        receiptFooter = validationGateReceiptFooter(receipt)
+        return Buffer.from(receiptFooter)
       },
+    })
+    rawLogIdentity = capture.fileIdentity
+    if (!receiptFooter) throw new TypeError('Validation gate did not produce its receipt footer')
+    const normalized = await normalizeValidationGateLogFile({
+      rawLogPath: temporaryLogPath,
+      outputPath: logPath,
+      expectedRawIdentity: capture.fileIdentity,
+      maximumBytes: MAX_VALIDATION_GATE_LOG_BYTES,
+      receiptFooter,
+      roots: {
+        repository: [repositoryRoot],
+        home: [paths.home, os.homedir(), process.env.HOME].filter(Boolean),
+        candidate: [outputDirectory],
+        temporary: [paths.temporary, paths.workspace, os.tmpdir()],
+      },
+    })
+    rawLogIdentity = undefined
+    publishedLogIdentity = normalized.fileIdentity
+    parseValidationGateReceipt(normalized.text, {
+      gateId,
+      sourceCommit: source.commit,
+      candidateSha256: candidateIdentity.sha256,
     })
   })
   logComplete = true
 } finally {
-  if (!logComplete) await rm(temporaryLogPath, { force: true })
+  if (!logComplete && publishedLogIdentity) {
+    await removeOwnedValidationGateLog(logPath, publishedLogIdentity)
+  }
+  if (!logComplete && rawLogIdentity) {
+    await removeOwnedValidationGateLog(temporaryLogPath, rawLogIdentity)
+  }
 }
-try {
-  await link(temporaryLogPath, logPath)
-  await unlink(temporaryLogPath)
-} catch (error) {
-  await rm(temporaryLogPath, { force: true })
-  throw error
-}
-process.stdout.write(`Validation gate ${gateId} passed; receipt appended to ${logPath}\n`)
+process.stdout.write(`Validation gate ${gateId} passed; normalized receipt log written to ${logPath}\n`)

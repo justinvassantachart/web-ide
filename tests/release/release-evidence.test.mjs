@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -71,7 +71,11 @@ import {
   defaultPlaywrightBrowsersPath,
   withValidationGateEnvironment,
 } from '../../scripts/release/validation-gate-environment.mjs'
-import { decodeValidationLog } from '../../scripts/release/validation-log.mjs'
+import {
+  decodeValidationLog,
+  normalizeValidationGateLog,
+  normalizeValidationGateLogFile,
+} from '../../scripts/release/validation-log.mjs'
 
 const temporaryDirectories = []
 
@@ -141,6 +145,16 @@ function runtimeLock(overrides = {}) {
       sourceLocations: ['src/runtime.ts'],
       ...overrides,
     }],
+  }
+}
+
+async function regularFileIdentity(filePath) {
+  const info = await lstat(filePath, { bigint: true })
+  return {
+    dev: info.dev,
+    ino: info.ino,
+    size: info.size,
+    mtimeNs: info.mtimeNs,
   }
 }
 
@@ -513,8 +527,265 @@ describe('bounded subprocess evidence', () => {
       timeoutMs: 5_000,
       footerForSuccessfulExit: async () => Buffer.from('verified footer\n'),
     })
-    expect(result).toEqual({ exitCode: 0, size: 29 })
+    expect(result).toMatchObject({ exitCode: 0, size: 29 })
+    expect(result.fileIdentity).toEqual(await regularFileIdentity(outputPath))
     await expect(readFile(outputPath, 'utf8')).resolves.toBe('exact output\nverified footer\n')
+  })
+
+  it('normalizes completed path-bearing logs and preserves the exact final receipt', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'web-ide-normalized-log-'))
+    temporaryDirectories.push(directory)
+    const repository = '/Users/synthetic/Projects/web-ide'
+    const candidate = '/Users/synthetic/evidence/candidate-r2'
+    const home = '/Users/synthetic'
+    const isolatedHome = '/private/tmp/web-ide-gate/home'
+    const temporary = '/private/tmp/web-ide-gate/tmp'
+    const sourceCommit = 'a'.repeat(40)
+    const candidateSha256 = 'b'.repeat(64)
+    const receipt = createValidationGateReceipt({
+      gateId: 'validate-production',
+      sourceCommit,
+      candidateSha256,
+      exitCode: 0,
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+    })
+    const receiptFooter = validationGateReceiptFooter(receipt)
+    const splitRepositoryPath = Buffer.concat([
+      Buffer.from('stack: /Users/synthetic/Projects/web-'),
+      Buffer.from('ide/src/index.ts:1\n'),
+    ])
+    const raw = Buffer.concat([
+      splitRepositoryPath,
+      Buffer.from([
+        `candidate: ${candidate}/web-ide-0.2.0.tgz`,
+        `home: ${home}/Library/Caches/ms-playwright`,
+        `isolated home: ${isolatedHome}/.npmrc`,
+        `temporary: ${temporary}/consumer/package.json`,
+        `url: file://${repository}/tests/release/release-evidence.test.mjs`,
+        `encoded: ${encodeURIComponent(repository)}/package.json`,
+        `encoded file: file:${encodeURIComponent(`///${repository.slice(1)}`)}/package.json`,
+        String.raw`json: \/Users\/synthetic\/Projects\/web-ide\/package.json`,
+        'token=abcdefghijk',
+      ].join('\n') + receiptFooter),
+    ])
+    const roots = {
+      repository: [repository],
+      home: [home, isolatedHome],
+      candidate: [candidate],
+      temporary: [temporary, '/private/tmp/web-ide-gate'],
+    }
+
+    const normalizedBytes = normalizeValidationGateLog(raw, { roots, receiptFooter })
+    const normalized = normalizedBytes.toString('utf8')
+    expect(normalized).toContain('stack: <repository-root>/src/index.ts:1')
+    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.2.0.tgz')
+    expect(normalized).toContain('home: <home>/Library/Caches/ms-playwright')
+    expect(normalized).toContain('isolated home: <home>/.npmrc')
+    expect(normalized).toContain('temporary: <execution-root>/consumer/package.json')
+    expect(normalized).toContain('url: file:<repository-root>/tests/release/release-evidence.test.mjs')
+    expect(normalized).toContain('encoded: <repository-root>/package.json')
+    expect(normalized).toContain('encoded file: file:<repository-root>/package.json')
+    expect(normalized).toContain(String.raw`json: <repository-root>\/package.json`)
+    expect(normalized).toContain('token=abcdefghijk')
+    expect(normalized.endsWith(receiptFooter)).toBe(true)
+    expect(parseValidationGateReceipt(normalized, {
+      gateId: 'validate-production',
+      sourceCommit,
+      candidateSha256,
+    })).toEqual(receipt)
+    expect(() => decodeValidationLog(normalizedBytes, 'fixture.log')).toThrow(/secret assignment/u)
+
+    const logPath = path.join(directory, 'normalized.log')
+    const outputPath = path.join(directory, 'published.log')
+    await writeFile(logPath, raw, { mode: 0o600 })
+    await expect(normalizeValidationGateLogFile({
+      rawLogPath: logPath,
+      outputPath,
+      expectedRawIdentity: await regularFileIdentity(logPath),
+      maximumBytes: 16 * 1024,
+      roots,
+      receiptFooter,
+    })).rejects.toThrow(/secret assignment/u)
+    await expect(readFile(logPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(outputPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readdir(directory)).toEqual([])
+  })
+
+  it('atomically publishes a normalized log and fails closed on residual local paths', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'web-ide-normalized-log-file-'))
+    temporaryDirectories.push(directory)
+    const sourceCommit = 'a'.repeat(40)
+    const candidateSha256 = 'b'.repeat(64)
+    const receipt = createValidationGateReceipt({
+      gateId: 'audit-full',
+      sourceCommit,
+      candidateSha256,
+      exitCode: 0,
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+    })
+    const receiptFooter = validationGateReceiptFooter(receipt)
+    const roots = {
+      repository: ['/opt/build/web-ide'],
+      home: ['/home/synthetic'],
+      candidate: ['/opt/evidence/candidate'],
+      temporary: ['/tmp/web-ide-gate'],
+    }
+    const rawLogPath = path.join(directory, '.audit.log.raw')
+    const outputPath = path.join(directory, 'audit.log')
+    await writeFile(rawLogPath, `checked /opt/build/web-ide/package.json${receiptFooter}`, { mode: 0o600 })
+    const result = await normalizeValidationGateLogFile({
+      rawLogPath,
+      outputPath,
+      expectedRawIdentity: await regularFileIdentity(rawLogPath),
+      maximumBytes: 16 * 1024,
+      roots,
+      receiptFooter,
+    })
+    expect(result.text).toContain('checked <repository-root>/package.json')
+    expect(result.text.endsWith(receiptFooter)).toBe(true)
+    expect(await readFile(outputPath, 'utf8')).toBe(result.text)
+    expect(result.fileIdentity).toEqual(await regularFileIdentity(outputPath))
+    expect(await readdir(directory)).toEqual(['audit.log'])
+
+    for (const unsafe of [
+      '/Users/unrecognized/private.txt',
+      '/home/unrecognized/private.txt',
+      '/private/var/unrecognized/private.txt',
+      '/var/folders/unrecognized/private.txt',
+      '/tmp/unrecognized/private.txt',
+      '/private/Users/synthetic/private.txt',
+      'prefix/Users/synthetic/private.txt',
+      'prefixfile:///Users/synthetic/private.txt',
+      String.raw`C:\Users\unrecognized\private.txt`,
+      'file:///opt/unrecognized/private.txt',
+      '%2FUsers%2Funrecognized%2Fprivate.txt',
+      '%2Fopt%2Funrecognized%2Fprivate.txt',
+      'file:%2F%2F%2Fopt%2Funrecognized%2Fprivate.txt',
+      `/Users/unrec\u001b[31mognized/private.txt`,
+    ]) {
+      expect(() => normalizeValidationGateLog(
+        Buffer.from(`${unsafe}${receiptFooter}`),
+        { roots, receiptFooter },
+      )).toThrow(/unsafe local path/u)
+      expect(() => decodeValidationLog(Buffer.from(unsafe), 'residual-path.log'))
+        .toThrow(/unsafe local path/u)
+    }
+    expect(() => normalizeValidationGateLog(
+      Buffer.from(`clean output${receiptFooter}trailing bytes`),
+      { roots, receiptFooter },
+    )).toThrow(/not final/u)
+
+    for (const embeddedPlaceholder of [
+      'prefix<home>/private.txt',
+      '/private<home>/private.txt',
+      'prefixfile:<home>/private.txt',
+      '<home>suffix/private.txt',
+    ]) {
+      expect(() => decodeValidationLog(Buffer.from(embeddedPlaceholder), 'embedded.log'))
+        .toThrow(/embeds a .*path placeholder/u)
+    }
+
+    const encodedRoots = normalizeValidationGateLog(Buffer.from([
+      '%2Fopt%2Fbuild%2Fweb-ide/package.json',
+      'file:%2F%2F%2Fopt%2Fbuild%2Fweb-ide/package.json',
+      receiptFooter,
+    ].join('\n')), { roots, receiptFooter }).toString('utf8')
+    expect(encodedRoots).toContain('<repository-root>/package.json')
+    expect(encodedRoots).toContain('file:<repository-root>/package.json')
+
+    const ansiSplitGitHubToken = `ghp_${'a'.repeat(10)}\u001b[31m${'b'.repeat(12)}`
+    expect(() => decodeValidationLog(Buffer.from(ansiSplitGitHubToken), 'ansi-secret.log'))
+      .toThrow(/GitHub token/u)
+  })
+
+  it('pins raw and normalized inodes and never clobbers a competing publication', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'web-ide-normalized-log-races-'))
+    temporaryDirectories.push(directory)
+    const sourceCommit = 'a'.repeat(40)
+    const candidateSha256 = 'b'.repeat(64)
+    const receiptFooter = validationGateReceiptFooter(createValidationGateReceipt({
+      gateId: 'audit-production',
+      sourceCommit,
+      candidateSha256,
+      exitCode: 0,
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+    }))
+    const roots = {
+      repository: ['/opt/build/web-ide'],
+      home: ['/home/synthetic'],
+      candidate: ['/opt/evidence/candidate'],
+      temporary: ['/tmp/web-ide-gate'],
+    }
+    const rawBytes = Buffer.from(`checked /opt/build/web-ide/package.json${receiptFooter}`)
+    const runRace = async (name, beforePublish) => {
+      const caseDirectory = path.join(directory, name)
+      await mkdir(caseDirectory)
+      const rawLogPath = path.join(caseDirectory, '.gate.raw')
+      const outputPath = path.join(caseDirectory, 'gate.log')
+      await writeFile(rawLogPath, rawBytes, { mode: 0o600 })
+      const expectedRawIdentity = await regularFileIdentity(rawLogPath)
+      const operation = normalizeValidationGateLogFile({
+        rawLogPath,
+        outputPath,
+        expectedRawIdentity,
+        maximumBytes: 16 * 1024,
+        roots,
+        receiptFooter,
+        hooks: { beforePublish },
+      })
+      return { caseDirectory, rawLogPath, outputPath, operation }
+    }
+
+    const rawRace = await runRace('raw-replacement', async ({ rawLogPath }) => {
+      await rename(rawLogPath, path.join(path.dirname(rawLogPath), 'owned-raw.log'))
+      await writeFile(rawLogPath, 'competing raw bytes\n', { mode: 0o600 })
+    })
+    await expect(rawRace.operation).rejects.toThrow(/publication and cleanup failed/u)
+    await expect(readFile(rawRace.outputPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(rawRace.rawLogPath, 'utf8')).resolves.toBe('competing raw bytes\n')
+    await expect(readFile(path.join(rawRace.caseDirectory, 'owned-raw.log')))
+      .resolves.toEqual(rawBytes)
+
+    let displacedNormalizedPath
+    const normalizedRace = await runRace('normalized-replacement', async ({ normalizedPath }) => {
+      displacedNormalizedPath = path.join(path.dirname(normalizedPath), 'owned-normalized.log')
+      await rename(normalizedPath, displacedNormalizedPath)
+      await writeFile(normalizedPath, 'competing normalized bytes\n', { mode: 0o600 })
+    })
+    await expect(normalizedRace.operation).rejects.toThrow(/publication and cleanup failed/u)
+    await expect(readFile(normalizedRace.outputPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(displacedNormalizedPath, 'utf8'))
+      .resolves.toContain('<repository-root>/package.json')
+    const normalizedCompetitor = (await readdir(normalizedRace.caseDirectory))
+      .find((fileName) => fileName.includes('.normalized-'))
+    expect(normalizedCompetitor).toBeTruthy()
+    await expect(readFile(path.join(normalizedRace.caseDirectory, normalizedCompetitor), 'utf8'))
+      .resolves.toBe('competing normalized bytes\n')
+
+    const outputRace = await runRace('output-no-clobber', async ({ outputPath }) => {
+      await writeFile(outputPath, 'competing published bytes\n', { mode: 0o600 })
+    })
+    await expect(outputRace.operation).rejects.toMatchObject({ code: 'EEXIST' })
+    await expect(readFile(outputRace.outputPath, 'utf8'))
+      .resolves.toBe('competing published bytes\n')
+    expect(await readdir(outputRace.caseDirectory)).toEqual(['gate.log'])
+
+    const untrustedDirectory = path.join(directory, 'untrusted-parent')
+    await mkdir(untrustedDirectory)
+    await chmod(untrustedDirectory, 0o777)
+    const untrustedRawPath = path.join(untrustedDirectory, '.gate.raw')
+    const untrustedOutputPath = path.join(untrustedDirectory, 'gate.log')
+    await writeFile(untrustedRawPath, rawBytes, { mode: 0o600 })
+    await expect(normalizeValidationGateLogFile({
+      rawLogPath: untrustedRawPath,
+      outputPath: untrustedOutputPath,
+      expectedRawIdentity: await regularFileIdentity(untrustedRawPath),
+      maximumBytes: 16 * 1024,
+      roots,
+      receiptFooter,
+    })).rejects.toThrow(/must not be group- or world-writable/u)
+    await expect(readFile(untrustedOutputPath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await chmod(untrustedDirectory, 0o700)
   })
 
   it('terminates output and time limit violations without retaining partial logs', async () => {
@@ -1083,7 +1354,7 @@ describe('validation summary', () => {
       sourceCommit,
       candidateSha256,
       exitCode: 0,
-      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@2',
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
     })
     const log = `gate output\n${validationGateReceiptFooter(receipt)}`
     expect(parseValidationGateReceipt(log, {
@@ -1319,7 +1590,7 @@ describe('artifact manifest', () => {
     const configuration = {
       package: 'web-ide@0.2.0',
       sourceRepository: 'https://github.com/justinvassantachart/web-ide.git',
-      sourceTag: 'web-ide-v0.2.0-source',
+      sourceTag: 'web-ide-v0.2.0-source-r2',
       sourceAssetFilename: 'web-ide-0.2.0-source.tar.gz',
       capabilityReleaseId: 'hamilton.python-karel/1',
       packageRole: 'web-ide',
@@ -1340,7 +1611,7 @@ describe('artifact manifest', () => {
         tree: sourceTree,
         commitTimestamp: 1,
         sourceDateEpoch: '1',
-        tag: { name: 'web-ide-v0.2.0-source', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
+        tag: { name: 'web-ide-v0.2.0-source-r2', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
         remote: configuration.sourceRepository,
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
@@ -1391,8 +1662,8 @@ describe('release source state', () => {
         ref: 'refs/heads/main',
         object: { type: 'commit', sha: commit },
       }],
-      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source', {
-        ref: 'refs/tags/web-ide-v0.2.0-source',
+      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r2', {
+        ref: 'refs/tags/web-ide-v0.2.0-source-r2',
         object: { type: 'tag', sha: tagObjectId },
       }],
       [`https://api.github.com/repos/justinvassantachart/web-ide/git/tags/${tagObjectId}`, {
@@ -1417,16 +1688,16 @@ describe('release source state', () => {
       }
     }
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source' },
+      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r2' },
       { commit, tagObjectId },
       fakeFetch,
     )).resolves.toEqual({ branchCommit: commit, tagObjectId, peeledCommit: commit })
     expect(fetched).toEqual([...responses.keys()])
 
-    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source')
+    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r2')
       .object.type = 'commit'
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source' },
+      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r2' },
       { commit, tagObjectId },
       fakeFetch,
     )).rejects.toThrow(/expected tag ref/u)
@@ -1455,20 +1726,20 @@ describe('release source state', () => {
       '-c', 'user.email=release-fixture@example.invalid',
       'commit', '-m', 'fixture',
     ], { cwd: checkout, env: gitIdentityEnvironment })
-    await run('git', ['tag', '-a', 'web-ide-v0.2.0-source', '-m', 'Web IDE 0.2.0 fixture'], {
+    await run('git', ['tag', '-a', 'web-ide-v0.2.0-source-r2', '-m', 'Web IDE 0.2.0 fixture'], {
       cwd: checkout,
       env: gitIdentityEnvironment,
     })
-    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.2.0-source'], { cwd: checkout })
+    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.2.0-source-r2'], { cwd: checkout })
     const configuration = {
       sourceRepository: bare,
-      sourceTag: 'web-ide-v0.2.0-source',
+      sourceTag: 'web-ide-v0.2.0-source-r2',
       nodeVersion: process.versions.node,
       npmVersion: process.env.npm_config_user_agent?.match(/^npm\/([^ ]+)/u)?.[1] ?? '11.6.2',
     }
     const fixtureOptions = { nonreleaseFixtureRemote: bare }
     const source = await verifyReleaseSourceState(configuration, checkout, fixtureOptions)
-    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.2.0-source', objectType: 'tag' } })
+    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.2.0-source-r2', objectType: 'tag' } })
     const [first, second] = await Promise.all([
       sourceArchiveBytes(configuration, checkout, fixtureOptions),
       sourceArchiveBytes(configuration, checkout, fixtureOptions),

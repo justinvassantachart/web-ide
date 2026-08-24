@@ -131,8 +131,20 @@ export async function runBoundedCommandLog({
       })
     })
     await handle.sync()
+    const info = await handle.stat({ bigint: true })
+    if (!info.isFile() || info.size !== BigInt(result.size)) {
+      throw new TypeError('Completed command log identity does not match its captured bytes')
+    }
     successful = true
-    return result
+    return {
+      ...result,
+      fileIdentity: {
+        dev: info.dev,
+        ino: info.ino,
+        size: info.size,
+        mtimeNs: info.mtimeNs,
+      },
+    }
   } finally {
     await handle.close()
     if (!successful) await rm(outputPath, { force: true })

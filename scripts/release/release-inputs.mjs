@@ -12,22 +12,22 @@ export const VALIDATION_GATES = Object.freeze([
   Object.freeze({
     id: 'validate-production',
     command: 'npm run validate:production',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@2',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
   }),
   Object.freeze({
     id: 'consumer-exact-candidate',
     command: 'WEB_IDE_CANDIDATE_TARBALL=<candidate> npm run test:consumer',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@2',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
   }),
   Object.freeze({
     id: 'audit-production',
     command: 'npm audit --omit=dev',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@2',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
   }),
   Object.freeze({
     id: 'audit-full',
     command: 'npm audit',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@2',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
   }),
   Object.freeze({
     id: 'karel-compatibility',
@@ -69,7 +69,7 @@ export async function loadReleaseConfiguration() {
   if (input.capabilityReleaseId !== 'hamilton.python-karel/1' || input.packageRole !== 'web-ide') {
     throw new TypeError('Release input does not match the accepted Hamilton composition identity')
   }
-  if (input.sourceTag !== 'web-ide-v0.2.0-source') {
+  if (input.sourceTag !== 'web-ide-v0.2.0-source-r2') {
     throw new TypeError('Release input does not use the forward-only Web IDE 0.2 source tag')
   }
   if (input.releaseAssetFilename !== 'web-ide-0.2.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.2.0-source.tar.gz') {
@@ -101,7 +101,7 @@ export function validateValidationSummary(summary, sourceCommit, candidateSha256
       throw new TypeError(`Validation gate ${gate.id} is not an exact pass record`)
     }
     if (!Array.isArray(gate.logs) || gate.logs.length !== 1) {
-      throw new TypeError(`Validation gate ${gate.id} must have exactly one machine-receipted raw log`)
+      throw new TypeError(`Validation gate ${gate.id} must have exactly one machine-receipted normalized log`)
     }
     for (const [logIndex, log] of gate.logs.entries()) {
       const location = `validation summary gates[${index}].logs[${logIndex}]`

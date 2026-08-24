@@ -24,7 +24,16 @@ keeps generated evidence outside the repository. It derives ownership from the
 actual Rollup module graph plus `package-lock.json`, validates packed bytes
 without extracting them, and binds exact source/tag, runtime receipts, SBOM,
 licenses, machine-receipted gate logs, and package inventory in one
-deterministic manifest. Candidate creation and finalization stage complete
+deterministic manifest. Each local gate first completes one bounded temporary
+log, then replaces the known repository, home, candidate, and temporary roots
+and their reviewed file/percent encodings with stable explicit placeholders.
+Replacement requires boundaries on both sides; residual local path forms,
+embedded placeholders, ANSI-obscured secret-like text, or any changed/nonfinal
+receipt footer fail closed. Publication pins the captured and normalized file
+identities plus their owner-controlled, non-writable-by-others directory, uses
+a no-clobber hard link, and verifies the exact linked inode before removing
+owned temporary names. Candidate
+creation and finalization stage complete
 file sets beside the external target, reserve the target name exclusively,
 pin the staging-directory inode through checked quarantine cleanup, keep the
 target reservation nonempty while moving each regular file, verify both

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "package": "web-ide@0.2.0",
   "sourceRepository": "https://github.com/justinvassantachart/web-ide.git",
-  "sourceTag": "web-ide-v0.2.0-source",
+  "sourceTag": "web-ide-v0.2.0-source-r2",
   "sourceAssetFilename": "web-ide-0.2.0-source.tar.gz",
   "capabilityReleaseId": "hamilton.python-karel/1",
   "packageRole": "web-ide",

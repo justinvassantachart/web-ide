@@ -21,8 +21,8 @@ isolated browser with the real execution backend.
 | `npm run release:runtime-assets:verify` | Stream and verify every reviewed runtime-asset receipt into an external output directory. |
 | `npm run release:preflight` | Exercise candidate and finalization orchestration with disposable remote/tag/synthetic-log fixtures and mark outputs nonfinal. |
 | `npm run release:candidate` | Generate the final two-build candidate from clean, pushed, annotated-tagged source. |
-| `npm run release:gate -- <gate-id>` | Run one reviewed local gate and emit its bounded candidate/source-bound machine-receipted raw log only on success. |
-| `npm run release:finalize` | Independently rebuild/revalidate the candidate, verify machine-receipted raw logs, and transactionally close the strict artifact manifest. |
+| `npm run release:gate -- <gate-id>` | Run one reviewed local gate and emit its bounded, path-normalized, candidate/source-bound machine-receipted log only on success. |
+| `npm run release:finalize` | Independently rebuild/revalidate the candidate, verify machine-receipted normalized logs, and transactionally close the strict artifact manifest. |
 
 For a fresh checkout:
 
@@ -41,19 +41,33 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.2.0-source` tag, or a toolchain mismatch. The earlier `v0.2.0` tag
-is an abandoned prepublication checkpoint and is not an accepted candidate or
-release identity. Use `release:preflight` before the real source tag; its result
-is explicitly nonfinal and cannot be passed to
+`web-ide-v0.2.0-source-r2` tag, or a toolchain mismatch. The earlier `v0.2.0`
+and `web-ide-v0.2.0-source` tags are retained abandoned prepublication source
+checkpoints; the latter's evidence was withheld before publication because its
+capture did not yet enforce normalized paths. Neither is an accepted candidate
+or release identity. Use
+`release:preflight` before the real source tag; its result is explicitly
+nonfinal and cannot be passed to
 `release:finalize`. See [Publishing readiness](publishing-readiness.md) for the
-exact five raw-log gates and release sequencing.
+exact five normalized-log gates and release sequencing.
 
 `release:gate` runs npm with two distinct empty temporary user/global npmrc
 files and isolated home, temporary, cache, prefix, and XDG directories. It
-removes that workspace on success or failure. The configured or platform
-default Playwright browser cache is passed explicitly so production browser
-validation can use the already reviewed browser installation without exposing
-the user's npm configuration or cache.
+removes that workspace on success or failure. After the bounded subprocess has
+fully exited and its canonical receipt is final, the gate normalizes the
+complete log in one pass, including paths split across subprocess chunks. It
+uses only the source-supported repository, home, candidate, and temporary
+roots, replaces their bounded plain, JSON-slash, file-URL, and percent-encoded
+forms with `<repository-root>`, `<home>`, `<web-candidate>`, and
+`<execution-root>`, and rejects every residual encoded separator or local path.
+The secret scan uses terminal-decoded inspection text, while retained bytes are
+never token-masked. Publication pins raw and normalized dev/inode/size/mtime,
+requires the current user's non-group/world-writable directory, creates the
+final name with a no-clobber hard link, and verifies that exact inode before
+removing owned temporary names. The configured or platform default Playwright
+browser cache is passed explicitly so production browser validation can use the
+already reviewed browser installation without exposing the user's npm
+configuration or cache.
 
 The packed consumer uses its committed `tests/consumer/package-lock.json`,
 copies the candidate to the stable fixture name `web-ide.tgz`, and runs
