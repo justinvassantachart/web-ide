@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "package": "web-ide",
+  "records": [
+    {
+      "id": "clangd",
+      "assets": ["clangd.js", "clangd.wasm"],
+      "relationship": "configuration-and-recipe-only",
+      "source": {
+        "repository": "https://github.com/Guyutongxue/clangd-in-browser",
+        "commit": "4acd71dec6428906271e922f119d794344e0d35e",
+        "paths": ["build.sh", "LICENSE"]
+      },
+      "inputs": [
+        "llvm-project llvmorg-21.1.0",
+        "emscripten 4.0.22",
+        "wasi-sdk 29"
+      ],
+      "limitations": [
+        "The served clangd files are ignored build output with no upstream checksum manifest tying them to the recorded source and recipe.",
+        "VITE_CLANGD_WASM_URL and VITE_CLANGD_JS_URL can override the defaults; final candidate browser evidence must retain the resolved URLs."
+      ]
+    },
+    {
+      "id": "debugger-sh-engine",
+      "assets": ["debugger-sh.engine-bg.wasm"],
+      "relationship": "exact-versioned-npm-file-match",
+      "source": {
+        "repository": "https://github.com/debugger-sh/engine",
+        "commit": "cc250508fabb5b091075e073ceb2e14899fd8423",
+        "paths": ["LICENSE", "src/worker/mod.rs", "src/python/worker/mod.rs"]
+      },
+      "inputs": [
+        "debugger-sh@0.3.15 npm integrity sha512-Sx4B8RPU5t5Pj50vFs7ngLvOr1YLwF9xsqdF/p2vbLRA38gv8iJ06EmPmuVfXoFFyI0fo+7kVe6tQRYwTC8lNA=="
+      ],
+      "limitations": [
+        "The npm package retains its top-level MIT license but does not ship a generated license inventory for Rust crates compiled into engine_bg.wasm."
+      ]
+    },
+    {
+      "id": "debugger-sh-llvm",
+      "assets": ["debugger-sh.llvm-core.wasm", "debugger-sh.llvm-resources.tar.gz"],
+      "relationship": "exact-host-git-blob-match-with-strong-inferred-build-provenance",
+      "source": {
+        "repository": "https://github.com/fabioibanez/website",
+        "commit": "ab3ee50b4b70a6bbef70d7bcb2b1d4aad773793f",
+        "paths": ["gh-pages-assets/llvm.core.wasm", "gh-pages-assets/llvm-resources.tar.gz"]
+      },
+      "inputs": [
+        "YoWASP/clang ab5516d6821f586c6c6af2eca1a264b63057627f",
+        "YoWASP/llvm-project 9560ae0f2cc440e4fc891fddbc119da6f56daa59",
+        "wasi-libc 2fc32bc81b9f07f8d9525edea59bfbaf760c06d6",
+        "wasi-sdk 32"
+      ],
+      "limitations": [
+        "The host repository has no compiler build recipe or signed checksum manifest tying the two committed blobs to the inferred YoWASP invocation.",
+        "The 2466-entry resources archive omits license and notice files; reviewed source license texts are retained separately."
+      ]
+    },
+    {
+      "id": "debugger-sh-python",
+      "assets": ["debugger-sh.python-3.11.3.tar.gz", "debugger-sh.python-3.11.3.wasm"],
+      "relationship": "exact-host-git-blob-match",
+      "source": {
+        "repository": "https://github.com/taybenlor/runno",
+        "commit": "b610e3b58a3485e3b1ca070e2a4319e104463c33",
+        "paths": ["langs/python-3.11.3.tar.gz", "langs/python-3.11.3.wasm"]
+      },
+      "inputs": ["CPython 3.11.3"],
+      "limitations": [
+        "The Runno repository does not provide a checksum-bound build recipe or exact CPython source commit for these binary files.",
+        "The eight-entry standard-library archive omits license files; the exact CPython 3.11.3 license and Runno MIT license are retained separately."
+      ]
+    },
+    {
+      "id": "monaco",
+      "assets": [
+        "monaco.assets.editor-worker.js",
+        "monaco.basic-languages.monaco-contribution.js",
+        "monaco.cpp.js",
+        "monaco.css-worker.js",
+        "monaco.editor-core.js",
+        "monaco.editor-main.css",
+        "monaco.editor-main.js",
+        "monaco.editor-worker-host.js",
+        "monaco.high-contrast.js",
+        "monaco.html-worker.js",
+        "monaco.index.js",
+        "monaco.json-worker.js",
+        "monaco.loader.js",
+        "monaco.monaco-contribution-1.js",
+        "monaco.monaco-contribution-2.js",
+        "monaco.monaco-contribution-3.js",
+        "monaco.monaco-contribution-4.js",
+        "monaco.nls-messages-loader.js",
+        "monaco.python.js",
+        "monaco.ts-worker.js"
+      ],
+      "relationship": "exact-versioned-jsdelivr-npm-files",
+      "source": {
+        "repository": "https://github.com/microsoft/monaco-editor",
+        "commit": "npm:monaco-editor@0.56.0",
+        "paths": ["LICENSE", "ThirdPartyNotices.txt"]
+      },
+      "inputs": [
+        "monaco-editor@0.56.0 npm integrity sha512-sXboRm3BeBeLm938eaiyLMe0OxzfXIlZvbv4ir/jVgQy1zDhWjgmny0WoN45fuDKhCCQsYMbBJrv/A6jd8aCUg=="
+      ],
+      "limitations": [
+        "The locked graph covers initial C/C++ and Python editor loads; optional features or other languages may fetch additional files from the same exact package prefix."
+      ]
+    }
+  ]
+}

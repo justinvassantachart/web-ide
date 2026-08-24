@@ -17,6 +17,27 @@ The dependency direction is one way. Web IDE contains no router, Firebase,
 authentication, LMS, assignment, lesson, replay, or Karel implementation. Nova
 is the first consumer and owns all of those concerns.
 
+Release tooling is a source/distribution trust boundary, not runtime product
+code. It is activated in Vite only by an absolute external provenance-output
+path, executes in clean isolated installs with a scrubbed environment, and
+keeps generated evidence outside the repository. It derives ownership from the
+actual Rollup module graph plus `package-lock.json`, validates packed bytes
+without extracting them, and binds exact source/tag, runtime receipts, SBOM,
+licenses, machine-receipted gate logs, and package inventory in one
+deterministic manifest. Candidate creation and finalization stage complete
+file sets beside the external target, reserve the target name exclusively,
+pin the staging-directory inode through checked quarantine cleanup, keep the
+target reservation nonempty while moving each regular file, verify both
+identities, revalidate source and inventory immediately before close, remove
+the sentinel, re-hash the closed set, and write the deterministic adjacent
+completion marker as the final publication action. The marker is outside the
+exact candidate/final artifact directory. Replacement compares the prior
+directory's complete inventory around backup and retains the prior directory
+at a named recovery path if publication cannot complete;
+finalization independently rebuilds and reparses the candidate before closure.
+The package remains private and is not published to npm; Hamilton consumes only
+the independently verified immutable private-release tarball.
+
 ## Stable contracts
 
 `RuntimeProvider` selects and lazily creates a session per mount.

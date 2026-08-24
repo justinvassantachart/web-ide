@@ -1,10 +1,11 @@
 # Third-party notices and provenance
 
-The Web IDE source is licensed under MIT. This file records notable provenance,
-but it is not a substitute for the license texts and notices required by files
-and dependencies in an exact distribution artifact. P2.5 remains incomplete
-until the `0.2.0` tarball has a generated, reviewed bundled-license inventory and
-production SBOM tied to its digest.
+The Web IDE source is licensed under MIT. This file records notable provenance.
+The package also ships generated `THIRD_PARTY_LICENSES.txt`; final candidate
+generation compares that file byte-for-byte with license evidence derived
+inside both exact isolated installs. The external release-evidence directory
+contains the canonical machine inventory and candidate-digest-bound CycloneDX
+SBOM.
 
 Notable retained dependencies and source provenance include:
 
@@ -18,13 +19,17 @@ Notable retained dependencies and source provenance include:
 - class-variance-authority and memfs — Apache-2.0.
 - Lucide — ISC.
 - `src/clangd/json-stream.ts` is adapted from clangd-in-browser, MIT.
-- VS Code light/dark theme values and interaction conventions are identified in
-  source comments; verify any required attribution before redistribution.
+- VS Code light/dark theme values retained from the MIT-licensed theme defaults
+  are covered by the generated source-attribution record and license text.
 
 Remote WebAssembly/toolchain artifacts used by Debugger.sh and optional clangd
-are not copied into this repository. LLVM, Clang, WASI, Python, Rust, and any
-transitive binary notices must be audited if those assets are later self-hosted
-or redistributed.
+are not copied into this repository or tarball. Their exact reachable runtime
+receipts, reviewed source relationships, retained license texts, and known
+provenance limitations are recorded under `release/`. Those records support
+current remote loading; they do not establish complete binary notice/source
+compliance for later self-hosting or redistribution. Rust payloads are not
+reachable through the package's supported providers and are not included in
+the runtime lock.
 
 Intentionally excluded from this repository: Nova's local yowasp-clang tarball,
 `public/sysroot.zip` and backup, Stanford library files, Firebase service worker,

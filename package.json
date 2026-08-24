@@ -21,6 +21,7 @@
     "docs",
     "README.md",
     "LICENSE.md",
+    "THIRD_PARTY_LICENSES.txt",
     "THIRD_PARTY_NOTICES.md"
   ],
   "exports": {
@@ -67,7 +68,14 @@
     "test:browser": "playwright test",
     "test:browser:headed": "playwright test --headed",
     "test:consumer": "node tests/consumer/run-packed-consumer.mjs",
+    "test:release": "vitest run tests/release",
     "pack:check": "npm pack --dry-run",
+    "release:runtime-assets:verify": "node scripts/release/verify-runtime-assets.mjs",
+    "release:licenses:check": "node scripts/release/check-release-licenses.mjs",
+    "release:preflight": "node scripts/release/preflight-release-candidate.mjs",
+    "release:candidate": "node scripts/release/generate-release-candidate.mjs",
+    "release:gate": "node scripts/release/run-validation-gate.mjs",
+    "release:finalize": "node scripts/release/finalize-release-evidence.mjs",
     "validate": "npm run lint && npm run test && npm run typecheck && npm run build && npm run test:consumer && npm run pack:check",
     "validate:production": "npm run validate && npm run test:browser"
   },
@@ -96,6 +104,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.10.1",
+    "ajv": "8.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.13",
@@ -128,6 +137,9 @@
     "zustand": "^5.0.11"
   },
   "overrides": {
+    "@tailwindcss/oxide-wasm32-wasi": {
+      "@emnapi/wasi-threads": "1.2.2"
+    },
     "dompurify": "^3.4.13",
     "uuid": "^11.1.1"
   }

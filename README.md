@@ -7,9 +7,11 @@ registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 This public source repository is preparing the MIT-licensed `0.2.0` source
 candidate. The package remains `private: true` and is not published to npm.
 Hamilton distribution is limited to exact integrity-checked tarballs from
-immutable releases in Hamilton's private repository; P2.5 remains open until
-the candidate also has a complete bundled-license inventory, production SBOM,
-reproducible artifact evidence, and verified release receipts. The current
+immutable releases in Hamilton's private repository. Deterministic P2.5
+candidate, SBOM, license, runtime-receipt, source-archive, and strict-manifest
+tooling is implemented; the package is not released until the final tagged
+candidate, paired Karel gate, immutable release, and download receipts pass.
+The current
 built-in browser runtime providers support
 C/C++ and Python execution and source-level debugging. Rust is not claimed as
 supported here. The provider-neutral session contract does not expose the
@@ -408,7 +410,9 @@ and example builds, package contents, and a fresh consumer that installs the
 packed tarball from its committed lockfile without source aliases or sibling
 imports. Before installation, it copies the candidate to `web-ide.tgz`, streams
 that destination's SHA-512, and requires the exact locked integrity and local
-resolution. Its script-disabled clean install uses a fresh disposable npm cache.
+resolution. Its script-disabled clean install uses disposable home, temporary,
+cache, and npm-config paths plus an explicit registry and scrubbed build
+environment.
 The consumer packs current source into an OS temporary directory by default, so
 it does not leave a tarball in the repository. Release tooling can validate an
 already-built candidate by setting
@@ -427,8 +431,8 @@ The isolated Codex worktree uses an absolute `file:` dependency only for local
 verification; that path is not a publishing strategy.
 
 The source license and package version do not themselves complete a release.
-See [Publishing readiness](docs/publishing-readiness.md) for the remaining P2.5
-license-inventory, SBOM, deterministic-build, and immutable-release evidence.
+See [Publishing readiness](docs/publishing-readiness.md) for candidate,
+finalization, immutable-release, and downstream-consumption evidence.
 
 ## Browser and runtime requirements
 

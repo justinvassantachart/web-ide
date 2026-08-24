@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/v0.2.0/release/schemas/validation-summary.schema.json",
+  "title": "Web IDE 0.2 normalized validation summary",
+  "required": [
+    "schemaVersion",
+    "package",
+    "sourceCommit",
+    "candidateSha256",
+    "gateCount",
+    "logCount",
+    "gates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "package": {
+      "const": "web-ide@0.2.0"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "candidateSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gateCount": {
+      "const": 5
+    },
+    "logCount": {
+      "const": 5
+    },
+    "gates": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "command",
+            "result",
+            "logs"
+          ],
+          "properties": {
+            "id": {
+              "const": "validate-production"
+            },
+            "command": {
+              "const": "npm run validate:production"
+            },
+            "result": {
+              "const": "pass"
+            },
+            "logs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fileName",
+                  "size",
+                  "sha256"
+                ],
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]*\\.log$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16777216
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "command",
+            "result",
+            "logs"
+          ],
+          "properties": {
+            "id": {
+              "const": "consumer-exact-candidate"
+            },
+            "command": {
+              "const": "WEB_IDE_CANDIDATE_TARBALL=<candidate> npm run test:consumer"
+            },
+            "result": {
+              "const": "pass"
+            },
+            "logs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fileName",
+                  "size",
+                  "sha256"
+                ],
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]*\\.log$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16777216
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "command",
+            "result",
+            "logs"
+          ],
+          "properties": {
+            "id": {
+              "const": "audit-production"
+            },
+            "command": {
+              "const": "npm audit --omit=dev"
+            },
+            "result": {
+              "const": "pass"
+            },
+            "logs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fileName",
+                  "size",
+                  "sha256"
+                ],
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]*\\.log$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16777216
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "command",
+            "result",
+            "logs"
+          ],
+          "properties": {
+            "id": {
+              "const": "audit-full"
+            },
+            "command": {
+              "const": "npm audit"
+            },
+            "result": {
+              "const": "pass"
+            },
+            "logs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fileName",
+                  "size",
+                  "sha256"
+                ],
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]*\\.log$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16777216
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "command",
+            "result",
+            "logs"
+          ],
+          "properties": {
+            "id": {
+              "const": "karel-compatibility"
+            },
+            "command": {
+              "const": "Karel exact-candidate compatibility gate"
+            },
+            "result": {
+              "const": "pass"
+            },
+            "logs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fileName",
+                  "size",
+                  "sha256"
+                ],
+                "properties": {
+                  "fileName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]*\\.log$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16777216
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    }
+  }
+}

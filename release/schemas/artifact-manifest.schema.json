@@ -1,0 +1,1344 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/v0.2.0/release/schemas/artifact-manifest.schema.json",
+  "title": "Web IDE Hamilton artifact manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "manifestKind",
+    "manifestId",
+    "capabilityReleaseId",
+    "packageRole",
+    "package",
+    "source",
+    "toolchain",
+    "buildInputs",
+    "distribution",
+    "runtime",
+    "validation",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "manifestKind": {
+      "const": "hamilton-capability-package-artifact"
+    },
+    "manifestId": {
+      "type": "string",
+      "pattern": "^urn:sha256:[a-f0-9]{64}$"
+    },
+    "capabilityReleaseId": {
+      "const": "hamilton.python-karel/1"
+    },
+    "packageRole": {
+      "const": "web-ide"
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "private",
+        "license",
+        "engines",
+        "dependencies",
+        "peerDependencies",
+        "exports"
+      ],
+      "properties": {
+        "name": {
+          "const": "web-ide"
+        },
+        "version": {
+          "const": "0.2.0"
+        },
+        "private": {
+          "const": true
+        },
+        "license": {
+          "const": "MIT"
+        },
+        "engines": {
+          "const": {
+            "node": "^20.19.0 || >=22.12.0"
+          }
+        },
+        "dependencies": {
+          "const": {
+            "debugger-sh": "0.3.15"
+          }
+        },
+        "peerDependencies": {
+          "const": {
+            "react": "^18.3.0 || ^19.0.0",
+            "react-dom": "^18.3.0 || ^19.0.0"
+          }
+        },
+        "exports": {
+          "const": {
+            ".": {
+              "types": "./dist/index.d.ts",
+              "import": "./dist/index.js"
+            },
+            "./plugins": {
+              "types": "./dist/plugins.d.ts",
+              "import": "./dist/plugins.js"
+            },
+            "./host": {
+              "types": "./dist/host.d.ts",
+              "import": "./dist/host.js"
+            },
+            "./runtimes": {
+              "types": "./dist/runtimes.d.ts",
+              "import": "./dist/runtimes.js"
+            },
+            "./testing": {
+              "types": "./dist/testing.d.ts",
+              "import": "./dist/testing.js"
+            },
+            "./language-tools": {
+              "types": "./dist/language-tools.d.ts",
+              "import": "./dist/language-tools.js"
+            },
+            "./styles.css": "./dist/styles.css",
+            "./package.json": "./package.json"
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "branch",
+        "commit",
+        "tree",
+        "commitTimestamp",
+        "sourceDateEpoch",
+        "tag",
+        "inputs",
+        "archive"
+      ],
+      "properties": {
+        "repository": {
+          "const": "https://github.com/justinvassantachart/web-ide.git"
+        },
+        "branch": {
+          "const": "main"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "commitTimestamp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sourceDateEpoch": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "tag": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "objectId",
+            "objectType",
+            "peeledCommit"
+          ],
+          "properties": {
+            "name": {
+              "const": "v0.2.0"
+            },
+            "objectId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            },
+            "objectType": {
+              "const": "tag"
+            },
+            "peeledCommit": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            }
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "packageJson",
+            "packageLock"
+          ],
+          "properties": {
+            "packageJson": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "fileName",
+                "size",
+                "sha256"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "source-input"
+                },
+                "fileName": {
+                  "const": "package.json"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            "packageLock": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "fileName",
+                "size",
+                "sha256"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "source-input"
+                },
+                "fileName": {
+                  "const": "package-lock.json"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "archive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fileName",
+            "size",
+            "sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "source-archive"
+            },
+            "fileName": {
+              "const": "web-ide-0.2.0-source.tar.gz"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "npm",
+        "osType",
+        "osRelease",
+        "platform",
+        "arch"
+      ],
+      "properties": {
+        "node": {
+          "const": "24.11.1"
+        },
+        "npm": {
+          "const": "11.6.2"
+        },
+        "osType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "osRelease": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arch": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "buildInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argv",
+        "environment",
+        "pathNormalization"
+      ],
+      "properties": {
+        "argv": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "install",
+            "build",
+            "licenseEvidence",
+            "pack"
+          ],
+          "properties": {
+            "install": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "const": "npm"
+                },
+                {
+                  "const": "ci"
+                },
+                {
+                  "const": "--ignore-scripts"
+                },
+                {
+                  "const": "--no-audit"
+                },
+                {
+                  "const": "--no-fund"
+                }
+              ],
+              "items": false,
+              "minItems": 5,
+              "maxItems": 5
+            },
+            "build": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "const": "npm"
+                },
+                {
+                  "const": "run"
+                },
+                {
+                  "const": "build:library"
+                }
+              ],
+              "items": false,
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "licenseEvidence": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "const": "node"
+                },
+                {
+                  "const": "scripts/release/generate-isolated-license-evidence.mjs"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "pack": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "const": "npm"
+                },
+                {
+                  "const": "pack"
+                },
+                {
+                  "const": "--json"
+                },
+                {
+                  "const": "--ignore-scripts"
+                },
+                {
+                  "const": "--pack-destination"
+                },
+                {
+                  "const": "../pack"
+                }
+              ],
+              "items": false,
+              "minItems": 6,
+              "maxItems": 6
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "inherited",
+            "PATH",
+            "HOME",
+            "TMPDIR",
+            "TZ",
+            "LANG",
+            "LC_ALL",
+            "CI",
+            "NO_UPDATE_NOTIFIER",
+            "SOURCE_DATE_EPOCH",
+            "npm_config_cache",
+            "npm_config_registry",
+            "npm_config_globalconfig",
+            "npm_config_strict_ssl",
+            "npm_config_package_lock",
+            "npm_config_offline",
+            "npm_config_prefer_offline",
+            "npm_config_prefer_online",
+            "npm_config_ignore_scripts",
+            "npm_config_audit",
+            "npm_config_fund",
+            "npm_config_userconfig",
+            "WEB_IDE_RELEASE_PROVENANCE_PATH",
+            "WEB_IDE_RELEASE_LICENSE_OUTPUT_DIR"
+          ],
+          "properties": {
+            "inherited": {
+              "type": "array",
+              "maxItems": 0
+            },
+            "PATH": {
+              "type": "string",
+              "pattern": "^/[^\\n]*:/usr/bin:/bin$"
+            },
+            "HOME": {
+              "const": "<isolated-build>/home"
+            },
+            "TMPDIR": {
+              "const": "<isolated-build>/tmp"
+            },
+            "TZ": {
+              "const": "UTC"
+            },
+            "LANG": {
+              "const": "C"
+            },
+            "LC_ALL": {
+              "const": "C"
+            },
+            "CI": {
+              "const": "true"
+            },
+            "NO_UPDATE_NOTIFIER": {
+              "const": "1"
+            },
+            "SOURCE_DATE_EPOCH": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "npm_config_cache": {
+              "const": "<isolated-build>/npm-cache"
+            },
+            "npm_config_registry": {
+              "const": "https://registry.npmjs.org/"
+            },
+            "npm_config_globalconfig": {
+              "const": "<isolated-build>/global.npmrc"
+            },
+            "npm_config_strict_ssl": {
+              "const": "true"
+            },
+            "npm_config_package_lock": {
+              "const": "true"
+            },
+            "npm_config_offline": {
+              "const": "false"
+            },
+            "npm_config_prefer_offline": {
+              "const": "false"
+            },
+            "npm_config_prefer_online": {
+              "const": "false"
+            },
+            "npm_config_ignore_scripts": {
+              "const": "true"
+            },
+            "npm_config_audit": {
+              "const": "false"
+            },
+            "npm_config_fund": {
+              "const": "false"
+            },
+            "npm_config_userconfig": {
+              "const": "<isolated-build>/user.npmrc"
+            },
+            "WEB_IDE_RELEASE_PROVENANCE_PATH": {
+              "const": "<isolated-build>/bundle-provenance.json"
+            },
+            "WEB_IDE_RELEASE_LICENSE_OUTPUT_DIR": {
+              "const": "<isolated-build>/licenses"
+            }
+          }
+        },
+        "pathNormalization": {
+          "const": "<isolated-build> replaces the absolute per-build directory outside the source checkout"
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mechanism",
+        "npmPublished",
+        "repository",
+        "intendedTag",
+        "intendedAssetFilename",
+        "artifact"
+      ],
+      "properties": {
+        "mechanism": {
+          "const": "private-github-release-asset"
+        },
+        "npmPublished": {
+          "const": false
+        },
+        "repository": {
+          "const": "justinvassantachart/ths-ide"
+        },
+        "intendedTag": {
+          "const": "web-ide-v0.2.0"
+        },
+        "intendedAssetFilename": {
+          "const": "web-ide-0.2.0.tgz"
+        },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fileName",
+            "size",
+            "sha256",
+            "sha512Integrity",
+            "files"
+          ],
+          "properties": {
+            "kind": {
+              "const": "package-tarball"
+            },
+            "fileName": {
+              "const": "web-ide-0.2.0.tgz"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "sha512Integrity": {
+              "type": "string",
+              "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "size",
+                  "mode",
+                  "sha256"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\]+$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "mode": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observedDate",
+        "digestRepresentation",
+        "expectedRedirectCount",
+        "requestTimeoutMs",
+        "scope",
+        "limitations",
+        "assets",
+        "debuggerSh"
+      ],
+      "properties": {
+        "observedDate": {
+          "const": "2026-08-24"
+        },
+        "digestRepresentation": {
+          "const": "identity-encoded-response-body"
+        },
+        "expectedRedirectCount": {
+          "const": 0
+        },
+        "requestTimeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 27,
+          "maxItems": 27,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "requestedUrl",
+              "finalUrl",
+              "size",
+              "sha256",
+              "contentType",
+              "headers",
+              "license"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requestedUrl": {
+                "type": "string",
+                "pattern": "^https://"
+              },
+              "finalUrl": {
+                "type": "string",
+                "pattern": "^https://"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "contentType": {
+                "type": "string",
+                "minLength": 1
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "access-control-allow-origin",
+                  "cross-origin-resource-policy"
+                ],
+                "properties": {
+                  "access-control-allow-origin": {
+                    "type": "string"
+                  },
+                  "cross-origin-resource-policy": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "license": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "debuggerSh": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "registry",
+            "source",
+            "distribution"
+          ],
+          "properties": {
+            "registry": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "version",
+                "resolved",
+                "integrity"
+              ],
+              "properties": {
+                "name": {
+                  "const": "debugger-sh"
+                },
+                "version": {
+                  "const": "0.3.15"
+                },
+                "resolved": {
+                  "const": "https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15.tgz"
+                },
+                "integrity": {
+                  "const": "sha512-Sx4B8RPU5t5Pj50vFs7ngLvOr1YLwF9xsqdF/p2vbLRA38gv8iJ06EmPmuVfXoFFyI0fo+7kVe6tQRYwTC8lNA=="
+                }
+              }
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "repository",
+                "tag",
+                "commit"
+              ],
+              "properties": {
+                "repository": {
+                  "const": "https://github.com/debugger-sh/engine"
+                },
+                "tag": {
+                  "const": "v0.3.15"
+                },
+                "commit": {
+                  "const": "cc250508fabb5b091075e073ceb2e14899fd8423"
+                }
+              }
+            },
+            "distribution": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "size",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "const": "dist/engine_bg.wasm"
+                },
+                "size": {
+                  "const": 8760773
+                },
+                "sha256": {
+                  "const": "65379e4e786195233151269f7cd7f55dc3891dcd0725f5eee048d70de39b959b"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateSha256",
+        "gateCount",
+        "logCount"
+      ],
+      "properties": {
+        "candidateSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "gateCount": {
+          "const": 5
+        },
+        "logCount": {
+          "const": 5
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 15,
+      "maxItems": 15,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "bundle-provenance"
+              },
+              "fileName": {
+                "const": "bundle-provenance.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "candidate-state"
+              },
+              "fileName": {
+                "const": "candidate-state.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "cyclonedx-sbom"
+              },
+              "fileName": {
+                "const": "web-ide-0.2.0.cdx.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "deterministic-builds"
+              },
+              "fileName": {
+                "const": "deterministic-builds.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "license-inventory"
+              },
+              "fileName": {
+                "const": "third-party-licenses.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "package-inspection"
+              },
+              "fileName": {
+                "const": "package-inspection.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "runtime-assets"
+              },
+              "fileName": {
+                "const": "runtime-assets-verification.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "runtime-source-provenance"
+              },
+              "fileName": {
+                "const": "runtime-source-provenance.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "third-party-license-text"
+              },
+              "fileName": {
+                "const": "THIRD_PARTY_LICENSES.txt"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-summary"
+              },
+              "fileName": {
+                "const": "validation-summary.json"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "fileName",
+              "size",
+              "sha256"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "pattern": "^validation-log:(?:validate-production|consumer-exact-candidate|audit-production|audit-full|karel-compatibility):[0-4]$"
+              },
+              "fileName": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]*\\.log$"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16777216
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          }
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "bundle-provenance"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "candidate-state"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "cyclonedx-sbom"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "deterministic-builds"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "license-inventory"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "package-inspection"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "runtime-assets"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "runtime-source-provenance"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "third-party-license-text"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-summary"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-log:validate-production:0"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-log:consumer-exact-candidate:0"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-log:audit-production:0"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-log:audit-full:0"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "validation-log:karel-compatibility:0"
+              }
+            }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ]
+    }
+  }
+}

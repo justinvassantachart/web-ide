@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "package": "web-ide@0.2.0",
+  "sourceCommit": "REPLACE_WITH_EXACT_40_CHARACTER_SOURCE_COMMIT",
+  "candidateSha256": "REPLACE_WITH_EXACT_64_CHARACTER_CANDIDATE_SHA256",
+  "gates": [
+    {
+      "id": "validate-production",
+      "command": "npm run validate:production",
+      "result": "pass",
+      "logs": [{"path": "/absolute/path/validate-production.log", "fileName": "validate-production.log", "size": 1, "sha256": "REPLACE_WITH_EXACT_64_CHARACTER_LOG_SHA256"}]
+    },
+    {
+      "id": "consumer-exact-candidate",
+      "command": "WEB_IDE_CANDIDATE_TARBALL=<candidate> npm run test:consumer",
+      "result": "pass",
+      "logs": [{"path": "/absolute/path/consumer-exact-candidate.log", "fileName": "consumer-exact-candidate.log", "size": 1, "sha256": "REPLACE_WITH_EXACT_64_CHARACTER_LOG_SHA256"}]
+    },
+    {
+      "id": "audit-production",
+      "command": "npm audit --omit=dev",
+      "result": "pass",
+      "logs": [{"path": "/absolute/path/audit-production.log", "fileName": "audit-production.log", "size": 1, "sha256": "REPLACE_WITH_EXACT_64_CHARACTER_LOG_SHA256"}]
+    },
+    {
+      "id": "audit-full",
+      "command": "npm audit",
+      "result": "pass",
+      "logs": [{"path": "/absolute/path/audit-full.log", "fileName": "audit-full.log", "size": 1, "sha256": "REPLACE_WITH_EXACT_64_CHARACTER_LOG_SHA256"}]
+    },
+    {
+      "id": "karel-compatibility",
+      "command": "Karel exact-candidate compatibility gate",
+      "result": "pass",
+      "logs": [{"path": "/absolute/path/karel-compatibility.log", "fileName": "karel-compatibility.log", "size": 1, "sha256": "REPLACE_WITH_EXACT_64_CHARACTER_LOG_SHA256"}]
+    }
+  ]
+}

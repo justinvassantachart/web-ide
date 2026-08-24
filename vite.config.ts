@@ -3,6 +3,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import dts from 'vite-plugin-dts'
+import { createReleaseProvenancePlugin } from './scripts/release/bundle-provenance.mjs'
+
+const releaseProvenancePath = process.env.WEB_IDE_RELEASE_PROVENANCE_PATH
+const releaseProvenancePlugin = releaseProvenancePath
+  ? await createReleaseProvenancePlugin(releaseProvenancePath)
+  : null
 
 export default defineConfig({
   base: './',
@@ -15,6 +21,7 @@ export default defineConfig({
       exclude: ['tests'],
       insertTypesEntry: true,
     }),
+    ...(releaseProvenancePlugin ? [releaseProvenancePlugin] : []),
   ],
   resolve: {
     alias: {

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "package": "web-ide",
+  "packageOverrides": {
+    "glob-to-regex.js": {
+      "licenseTextPaths": [
+        "node_modules/@jsonjoy.com/fs-core/LICENSE"
+      ]
+    }
+  },
+  "sourceAttributions": [
+    {
+      "name": "CycloneDX JSON schemas",
+      "version": "e02a34ae42a48239f54e04f75280b9000b29f1fb",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/CycloneDX/specification",
+      "sourcePaths": [
+        "release/schemas/cyclonedx-1.6.schema.json",
+        "release/schemas/cyclonedx-jsf-0.82.schema.json",
+        "release/schemas/cyclonedx-spdx.schema.json"
+      ],
+      "licenseTextPaths": [
+        "release/licenses/wasi-libc-2fc32bc-LICENSE-APACHE.txt"
+      ]
+    },
+    {
+      "name": "Microsoft Visual Studio Code theme defaults",
+      "version": "072586267e68ece9a47aa43f8c108e0dcbf44622",
+      "license": "MIT",
+      "repository": "https://github.com/microsoft/vscode",
+      "sourcePaths": [
+        "src/components/explorer/explorer.css",
+        "src/components/sidebar/sidebar.css",
+        "src/index.css"
+      ],
+      "licenseTextPaths": [
+        "release/licenses/VSCode-0725862-LICENSE.txt"
+      ]
+    },
+    {
+      "name": "clangd-in-browser",
+      "version": "4acd71dec6428906271e922f119d794344e0d35e",
+      "license": "MIT",
+      "repository": "https://github.com/Guyutongxue/clangd-in-browser",
+      "sourcePaths": [
+        "src/clangd/json-stream.ts"
+      ],
+      "licenseTextPaths": [
+        "release/licenses/clangd-in-browser-MIT.txt"
+      ]
+    }
+  ]
+}

@@ -12,10 +12,17 @@ isolated browser with the real execution backend.
 | `npm test` | Run Vitest contract, integration, workflow, and workbench tests once. |
 | `npm run test:watch` | Run Vitest while developing. |
 | `npm run test:consumer` | Pack Web IDE in an OS temp directory and build a locked fresh consumer without source aliases. |
+| `npm run test:release` | Run deterministic-evidence, safe-tar, runtime-lock, strict-schema, source-state, SBOM, and finalization-boundary tests. |
 | `npm run test:browser` | Build the library/basic example and run Playwright headlessly. |
 | `npm run test:browser:headed` | Run the same browser suite with a visible browser. |
 | `npm run validate` | Run lint, Vitest, types, builds, packed consumer, and package-content checks. |
 | `npm run validate:production` | Run `validate` and then the production-build browser suite. |
+| `npm run release:licenses:check` | Compare generated current-provenance license evidence with the shipped text. |
+| `npm run release:runtime-assets:verify` | Stream and verify every reviewed runtime-asset receipt into an external output directory. |
+| `npm run release:preflight` | Exercise candidate and finalization orchestration with disposable remote/tag/synthetic-log fixtures and mark outputs nonfinal. |
+| `npm run release:candidate` | Generate the final two-build candidate from clean, pushed, annotated-tagged source. |
+| `npm run release:gate -- <gate-id>` | Run one reviewed local gate and emit its bounded candidate/source-bound machine-receipted raw log only on success. |
+| `npm run release:finalize` | Independently rebuild/revalidate the candidate, verify machine-receipted raw logs, and transactionally close the strict artifact manifest. |
 
 For a fresh checkout:
 
@@ -29,9 +36,21 @@ Linux CI may need `npx playwright install --with-deps chromium`. The Python and
 C/C++ browser backends download toolchain/runtime assets, so runtime browser
 tests require network access unless those assets are explicitly self-hosted.
 
+Release scripts require absolute output/input paths outside the repository.
+The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
+runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
+`release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
+local/remote divergence, a wrong remote, a missing/lightweight/unpushed
+`v0.2.0` tag, or a toolchain mismatch. Use `release:preflight` before the real
+tag; its result is explicitly nonfinal and cannot be passed to
+`release:finalize`. See [Publishing readiness](publishing-readiness.md) for the
+exact five raw-log gates and release sequencing.
+
 The packed consumer uses its committed `tests/consumer/package-lock.json`,
 copies the candidate to the stable fixture name `web-ide.tgz`, and runs
-`npm ci --ignore-scripts` with a new temporary npm cache. Before npm runs, the
+`npm ci --ignore-scripts` with isolated home, temporary, cache, and user/global
+npm-config paths, an explicit registry, and no inherited build variables.
+Before npm runs, the
 gate requires both manifest and lock to resolve exactly `file:web-ide.tgz`,
 streams SHA-512 from the copied destination, and matches it to the committed
 lock integrity. Mismatched bytes are deleted without invoking installation, so
@@ -68,6 +87,16 @@ production source.
   declarations, styles, assets, and peer dependency workflow.
 - `tests/browser` exercises production-built examples in a real browser with
   the actual runtime dependency.
+- `tests/release` proves canonicalization, Rollup/lock ownership, fail-closed
+  archive parsing (including concatenated gzip and unused header/PAX/padding
+  channels), shared secret-like text rejection, bounded
+  subprocess logs with descendant process-group settlement, runtime streaming,
+  exact consumer-lock closure, executable byte pins for strict schemas,
+  hermetic Git control files, deterministic source archives,
+  Git-plus-independent-GitHub annotated remote tags, concurrent publication
+  and staging-inode ownership/recovery, prepublication source/inventory guards,
+  production rejection of every synthetic preflight
+  receipt, and nonfinal-preflight rejection.
 
 Prefer the lowest layer that can prove a behavior, then add a browser test when
 the behavior crosses a browser/runtime boundary. Do not replace focused

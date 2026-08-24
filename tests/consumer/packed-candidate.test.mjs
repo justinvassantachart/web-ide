@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -103,5 +103,19 @@ describe('packed candidate pre-install verification', () => {
     await expect(readFile(path.join(options.consumerRoot, 'web-ide.tgz'))).resolves.toEqual(
       candidateBytes,
     )
+  })
+
+  it('rejects a symlink candidate before invoking the installer', async () => {
+    const candidateBytes = Buffer.from('candidate bytes')
+    const options = await fixture({ candidateBytes, expectedBytes: candidateBytes })
+    const linkPath = path.join(path.dirname(options.candidatePath), 'candidate-link.tgz')
+    await symlink(options.candidatePath, linkPath)
+    const install = vi.fn()
+
+    await expect(withVerifiedPackedCandidate(
+      { ...options, candidatePath: linkPath },
+      install,
+    )).rejects.toThrow(/non-symlink/u)
+    expect(install).not.toHaveBeenCalled()
   })
 })
