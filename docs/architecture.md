@@ -27,6 +27,18 @@ settlement methods let capable providers expose one awaited `completed`,
 `stopped`, or `error` outcome for each start while legacy void stop/dispose and
 numeric exit events remain compatible.
 
+The optional transient-breakpoint overlay API is the generic boundary for a
+workflow that must add temporary debug stops without taking ownership of the
+editor gutter. Each contribution is keyed by an object-identity token scoped to
+one session. Replacement and clearing are atomic: browser providers normalize
+workspace paths and one-based lines, merge editor breakpoints with every owner,
+and apply the provider's byte quota to that complete candidate before changing
+state. Adapter validation updates only editor-owned lines, so overlay-only
+stops remain invisible to the editor event stream. Owners clear their overlay
+when their workflow settles or unmounts; session disposal clears every owner,
+and adapter reset/empty-set handling removes stale backend breakpoints. Custom
+providers may omit the two methods, preserving the existing session contract.
+
 `LanguageToolingProvider` is an independent optional selection. Its component
 publishes a provider-neutral editor service through the public callback prop,
 may lazily start on file engagement, and owns backend/Monaco cleanup. The
@@ -76,6 +88,12 @@ Monaco decorations on owner/editor/workspace disposal. Panel visibility may be
 gated by the same immutable workbench snapshot used by commands. The packaged
 Variables and Graph panels therefore disappear for a run-only runtime rather
 than presenting impossible debugging affordances.
+
+Web IDE pins the loader runtime to Monaco `0.56.0`, matching its reviewed
+editor API/types dependency. The React wrapper's module-global, path-keyed
+view-state cache is disabled: Monaco models retain content and undo state per
+IDE instance, while debug/source reveal requests own navigation without cross-
+instance view state or canceled restore work.
 
 `WebIDEInstanceHandle` is a per-mount host integration seam for snapshots,
 subscriptions, ensuring files are open, resetting a session, projecting only

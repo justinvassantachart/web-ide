@@ -8,6 +8,7 @@ import {
   type IDEPanelServices,
   type IDESourceDecoration,
   type IDESourceLocation,
+  type RuntimeBreakpointMap,
   type RuntimeOutcome,
   type WebIDEConfiguration,
   type WebIDEInstanceHandle,
@@ -38,6 +39,12 @@ const publicSourceDecoration: IDESourceDecoration = {
   ...publicSourceLocation,
   kind: 'current',
 }
+
+const publicBreakpointOverlay: RuntimeBreakpointMap = {
+  '/workspace/main.cpp': [1],
+}
+
+void publicBreakpointOverlay
 
 async function verifyPublicPanelServices(
   services: Pick<IDEPanelServices, 'execution' | 'source'>,

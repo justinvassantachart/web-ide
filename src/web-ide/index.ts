@@ -63,6 +63,7 @@ export type {
   DrawCommand,
   HeapAllocation,
   MemorySnapshot,
+  RuntimeBreakpointMap,
   RuntimeCapabilities,
   RuntimeDiagnostic,
   RuntimeExecutionMode,

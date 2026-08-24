@@ -22,6 +22,46 @@ function run(command, args) {
   return result.status === 0
 }
 
+function verifySingleReactIdentity() {
+  const result = spawnSync('npm', ['ls', 'react', 'react-dom', '--all', '--json'], {
+    cwd: temporaryConsumer,
+    encoding: 'utf8',
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    process.stderr.write(result.stderr)
+    return false
+  }
+
+  const versions = { react: new Set(), 'react-dom': new Set() }
+  const visit = (node) => {
+    for (const [name, dependency] of Object.entries(node.dependencies ?? {})) {
+      if (name in versions && typeof dependency.version === 'string') {
+        versions[name].add(dependency.version)
+      }
+      visit(dependency)
+    }
+  }
+  visit(JSON.parse(result.stdout))
+
+  const reactVersions = [...versions.react]
+  const reactDOMVersions = [...versions['react-dom']]
+  const valid = reactVersions.length === 1
+    && reactDOMVersions.length === 1
+    && reactVersions[0] === reactDOMVersions[0]
+  if (!valid) {
+    process.stderr.write(
+      `Packed consumer resolved unexpected React identities: ${JSON.stringify({
+        react: reactVersions,
+        'react-dom': reactDOMVersions,
+      })}\n`,
+    )
+    return false
+  }
+  process.stdout.write(`Packed consumer React identity: ${reactVersions[0]}\n`)
+  return true
+}
+
 try {
   await cp(fixtureRoot, temporaryConsumer, {
     recursive: true,
@@ -39,6 +79,8 @@ try {
   await writeFile(packagePath, `${JSON.stringify(manifest, null, 2)}\n`)
 
   if (!run('npm', ['install', '--no-fund', '--no-audit'])) {
+    process.exitCode ||= 1
+  } else if (!verifySingleReactIdentity()) {
     process.exitCode ||= 1
   } else if (!run('npm', ['audit', '--omit=dev', '--audit-level=low'])) {
     process.exitCode ||= 1

@@ -92,6 +92,12 @@ export interface RuntimeStartRequest {
   mode: RuntimeExecutionMode
 }
 
+/**
+ * Breakpoints contributed for one transient runtime workflow. Keys are
+ * workspace source paths and values are one-based source lines.
+ */
+export type RuntimeBreakpointMap = Readonly<Record<string, readonly number[]>>
+
 /** The terminal result of one runtime start request. */
 export type RuntimeOutcome =
   | { type: 'completed'; exitCode: number }
@@ -147,6 +153,16 @@ export interface RuntimeSession {
   stopAndWait?(): Promise<RuntimeOutcome>
 
   setBreakpoints(file: string, lines: number[]): Promise<void>
+  /**
+   * Atomically replaces one owner's transient breakpoint contribution.
+   * Owners are compared by object identity and are scoped to this session.
+   */
+  replaceBreakpointOverlay?(
+    owner: object,
+    breakpoints: RuntimeBreakpointMap,
+  ): Promise<void>
+  /** Removes only the matching owner's transient breakpoint contribution. */
+  clearBreakpointOverlay?(owner: object): Promise<void>
   stepInto(): Promise<void>
   stepOver(): Promise<void>
   stepOut(): Promise<void>

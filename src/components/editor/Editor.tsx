@@ -415,8 +415,11 @@ export function Editor() {
     return (
         <div className="h-full overflow-hidden bg-background flex flex-col">
             <EditorTabs />
-            {/* `path` makes Monaco keep one ITextModel per file (undo history,
-                scroll, cursor survive file switches via setModel). We pass
+            {/* `path` makes Monaco keep one ITextModel per file (including its
+                content and undo history). We disable the wrapper's module-global
+                path-keyed view-state cache: it crosses IDE instances and can
+                restore a canceled contribution while source playback switches
+                models. Explicit debug/source reveals own navigation instead. We pass
                 `defaultValue` for first-time model creation but deliberately
                 omit `value` — passing it would re-fire executeEdits on every
                 store update and wipe undo. The model is the source of truth. */}
@@ -425,6 +428,7 @@ export function Editor() {
                 <MonacoEditor
                     height="100%"
                     path={activeFile}
+                    saveViewState={false}
                     defaultValue={activeFileContent}
                     language={lang}
                     theme={theme === 'light' ? 'vs' : 'vs-dark'}

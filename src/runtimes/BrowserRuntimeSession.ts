@@ -7,6 +7,7 @@ import { EventEmitter } from '@/lib/event-emitter';
 import type { DirNode, Engine as EngineType, Lang } from 'debugger-sh';
 import {
     assertNoFlattenedRuntimePathCollisions,
+    canonicalWorkspaceFilePath,
     runtimeRelativeFilePath,
 } from '@/web-ide/core/workspace-path';
 import type {
@@ -16,6 +17,7 @@ import type {
     StackFrame,
     HeapAllocation,
     RuntimeExecutionPlan,
+    RuntimeBreakpointMap,
     RuntimePreparationResult,
     RuntimeOutcome,
     RuntimeSession,
@@ -58,6 +60,12 @@ interface RuntimeSettlementState {
     exitPublished: boolean;
 }
 
+interface BreakpointConfigurationChange {
+    readonly file: string;
+    readonly previousLines: number[];
+    readonly nextLines: number[];
+}
+
 interface BrowserRuntimeSessionProfile {
     readonly id: string;
     readonly languageIds: readonly string[];
@@ -90,7 +98,9 @@ function emptyDirectory(): DirNode {
 }
 
 function canonicalWorkspacePath(path: string): string {
-    if (path.startsWith('/workspace/') || path.startsWith('/sysroot/')) return path;
+    if (path.startsWith('/sysroot/')) {
+        return `/sysroot/${runtimeRelativeFilePath(path)}`;
+    }
     return `/workspace/${runtimeRelativeFilePath(path)}`;
 }
 
@@ -237,7 +247,14 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private readonly idleSettlement = Promise.resolve<RuntimeOutcome>({ type: 'stopped' });
     private disposalPromise: Promise<RuntimeOutcome> | null = null;
     private dapSeq = 1;
+    // Editor breakpoints stay separate from transient workflow overlays so
+    // adapter validation can never leak an overlay into the visible gutter.
     private activeBreakpoints: Record<string, number[]> = {};
+    private readonly breakpointOverlays = new Map<object, Record<string, number[]>>();
+    // A reused adapter must receive an explicit empty set for an overlay-only
+    // source after its owner clears. Profiles that reset their adapter discard
+    // these tombstones as soon as the reset completes.
+    private readonly breakpointClearTombstones = new Set<string>();
     private running = false;
     private debugPaused = false;
     private breakpointsDirty = false;
@@ -867,13 +884,47 @@ export class BrowserRuntimeSession implements RuntimeSession {
         }, delay);
     }
 
+    private mergedBreakpointConfiguration(
+        editorBreakpoints: Readonly<Record<string, readonly number[]>> = this.activeBreakpoints,
+        overlays: ReadonlyMap<object, Readonly<Record<string, readonly number[]>>> =
+            this.breakpointOverlays,
+        tombstones: ReadonlySet<string> = this.breakpointClearTombstones,
+    ): Record<string, number[]> {
+        const byRuntimePath = new Map<string, { file: string; lines: Set<number> }>();
+        const add = (file: string, lines: readonly number[]): void => {
+            const runtimePath = this.toRuntimePath(file);
+            let entry = byRuntimePath.get(runtimePath);
+            if (!entry) {
+                entry = { file, lines: new Set<number>() };
+                byRuntimePath.set(runtimePath, entry);
+            }
+            for (const line of lines) entry.lines.add(line);
+        };
+
+        // Add editor-owned entries first so their stable workspace spelling is
+        // retained for any breakpoint-validation event sent back to the UI.
+        for (const [file, lines] of Object.entries(editorBreakpoints)) add(file, lines);
+        for (const overlay of overlays.values()) {
+            for (const [file, lines] of Object.entries(overlay)) add(file, lines);
+        }
+        for (const file of tombstones) add(file, []);
+
+        return Object.fromEntries(
+            [...byRuntimePath.values()].map(({ file, lines }) => [
+                file,
+                [...lines].sort((a, b) => a - b),
+            ]),
+        );
+    }
+
     private configureDebugger(): boolean {
-        const configuredFiles = Object.keys(this.activeBreakpoints);
+        const breakpoints = this.mergedBreakpointConfiguration();
+        const configuredFiles = Object.keys(breakpoints);
         if (configuredFiles.length > 0) {
             // Empty sets matter: they remove breakpoints previously installed
             // for that source in a reused adapter.
             for (const file of configuredFiles) {
-                this.sendBreakpoints(file, this.activeBreakpoints[file]);
+                this.sendBreakpoints(file, breakpoints[file]);
             }
         } else {
             this.dapSend('setBreakpoints', {
@@ -901,18 +952,29 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (this.profile.trustBreakpointValidation === false) return;
         const results: Any[] = res?.body?.breakpoints ?? [];
         if (results.length !== lines.length) return;
-        const bound = lines.map((requested, i) => {
-            const r = results[i];
-            return r?.verified && typeof r.line === 'number' ? (r.line as number) : requested;
-        });
-        const validated = [...new Set(bound)].sort((a, b) => a - b);
-        this.activeBreakpoints[file] = validated;
-        this.onBreakpointsValidated.emit({ file, lines: validated });
+        const runtimePath = this.toRuntimePath(file);
+
+        // Validate only editor-owned requests. Overlay lines are intentionally
+        // invisible to the gutter and host breakpoint event stream.
+        for (const [editorFile, editorLines] of Object.entries(this.activeBreakpoints)) {
+            if (editorLines.length === 0 || this.toRuntimePath(editorFile) !== runtimePath) continue;
+            const bound = editorLines.map((requested) => {
+                const index = lines.indexOf(requested);
+                if (index < 0) return requested;
+                const result = results[index];
+                return result?.verified && typeof result.line === 'number'
+                    ? (result.line as number)
+                    : requested;
+            });
+            const validated = [...new Set(bound)].sort((a, b) => a - b);
+            this.activeBreakpoints[editorFile] = validated;
+            this.onBreakpointsValidated.emit({ file: editorFile, lines: validated });
+        }
     }
 
     private flushPendingBreakpoints(): void {
         if (!this.breakpointsDirty || !this.engine || !this.running) return;
-        for (const [file, lines] of Object.entries(this.activeBreakpoints)) {
+        for (const [file, lines] of Object.entries(this.mergedBreakpointConfiguration())) {
             this.sendBreakpoints(file, lines);
         }
         if (this.running) this.breakpointsDirty = false;
@@ -928,6 +990,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.activeBreakpoints = Object.fromEntries(
             Object.entries(this.activeBreakpoints).filter(([, lines]) => lines.length > 0),
         );
+        this.breakpointClearTombstones.clear();
         const engine = this.engine;
         if (!engine) return;
         this.engine = null;
@@ -1239,6 +1302,172 @@ export class BrowserRuntimeSession implements RuntimeSession {
         return Number.isFinite(n) ? n : 0;
     }
 
+    private normalizeBreakpointOverlay(
+        breakpoints: RuntimeBreakpointMap,
+    ): Record<string, number[]> {
+        if (typeof breakpoints !== 'object' || breakpoints === null || Array.isArray(breakpoints)) {
+            throw new TypeError('Breakpoint overlay must be a source-path map');
+        }
+        const normalized = Object.create(null) as Record<string, number[]>;
+        for (const [file, lines] of Object.entries(breakpoints)) {
+            const canonicalFile = canonicalWorkspaceFilePath(file);
+            if (canonicalFile !== file) {
+                throw new TypeError(
+                    `Breakpoint overlay path must be canonical under /workspace: ${JSON.stringify(file)}`,
+                );
+            }
+            if (!Array.isArray(lines)) {
+                throw new TypeError(`Breakpoint overlay lines must be an array: ${JSON.stringify(file)}`);
+            }
+            if (lines.some((line) => !Number.isSafeInteger(line) || line < 1)) {
+                throw new TypeError(
+                    `Breakpoint overlay lines must be positive safe integers: ${JSON.stringify(file)}`,
+                );
+            }
+            const normalizedLines = [...new Set(lines)].sort((a, b) => a - b);
+            if (normalizedLines.length === 0) continue;
+            normalized[canonicalFile] = [
+                ...new Set([...(normalized[canonicalFile] ?? []), ...normalizedLines]),
+            ].sort((a, b) => a - b);
+        }
+        return normalized;
+    }
+
+    private breakpointMapsEqual(
+        left: Readonly<Record<string, readonly number[]>> | undefined,
+        right: Readonly<Record<string, readonly number[]>> | undefined,
+    ): boolean {
+        const leftEntries = Object.entries(left ?? {});
+        const rightEntries = Object.entries(right ?? {});
+        if (leftEntries.length !== rightEntries.length) return false;
+        return leftEntries.every(([file, lines]) => {
+            const rightLines = right?.[file];
+            return rightLines !== undefined
+                && lines.length === rightLines.length
+                && lines.every((line, index) => line === rightLines[index]);
+        });
+    }
+
+    private breakpointConfigurationChanges(
+        previous: Readonly<Record<string, readonly number[]>>,
+        next: Readonly<Record<string, readonly number[]>>,
+    ): BreakpointConfigurationChange[] {
+        const index = (configuration: Readonly<Record<string, readonly number[]>>) => {
+            const byRuntimePath = new Map<string, { file: string; lines: number[] }>();
+            for (const [file, lines] of Object.entries(configuration)) {
+                byRuntimePath.set(this.toRuntimePath(file), { file, lines: [...lines] });
+            }
+            return byRuntimePath;
+        };
+        const previousByPath = index(previous);
+        const nextByPath = index(next);
+        const runtimePaths = new Set([...previousByPath.keys(), ...nextByPath.keys()]);
+        const changes: BreakpointConfigurationChange[] = [];
+        for (const runtimePath of runtimePaths) {
+            const before = previousByPath.get(runtimePath);
+            const after = nextByPath.get(runtimePath);
+            const previousLines = before?.lines ?? [];
+            const nextLines = after?.lines ?? [];
+            if (
+                previousLines.length === nextLines.length
+                && previousLines.every((line, index) => line === nextLines[index])
+            ) continue;
+            changes.push({
+                file: after?.file ?? before!.file,
+                previousLines,
+                nextLines,
+            });
+        }
+        return changes;
+    }
+
+    private assertBreakpointConfigurationWithinLimit(
+        breakpoints: Readonly<Record<string, readonly number[]>>,
+        rejectedEditorChange?: { file: string; lines: number[] },
+    ): void {
+        const maxBytes = this.profile.maxBreakpointConfigurationBytes;
+        if (maxBytes === undefined) return;
+        const runtimeBreakpoints = Object.fromEntries(
+            Object.entries(breakpoints).map(([file, lines]) => [
+                this.toRuntimePath(file),
+                lines,
+            ]),
+        );
+        const size = new TextEncoder().encode(JSON.stringify(runtimeBreakpoints)).byteLength;
+        if (size <= maxBytes) return;
+
+        const message =
+            `Breakpoint configuration is ${size} bytes; this runtime accepts at most ${maxBytes}.`;
+        if (rejectedEditorChange) {
+            this.onBreakpointsValidated.emit({
+                file: rejectedEditorChange.file,
+                lines: [...rejectedEditorChange.lines],
+            });
+        }
+        this.onDiagnostic.emit({
+            message,
+            severity: 'error',
+            phase: 'preparation',
+            mode: 'debug',
+        });
+        this.emitStream('stderr', `${message}\r\n`);
+        throw new Error(message);
+    }
+
+    private assertBreakpointChangesAllowed(
+        changes: readonly BreakpointConfigurationChange[],
+        rejectedEditorChange?: { file: string; lines: number[] },
+    ): void {
+        if (
+            changes.length === 0
+            || !this.engine
+            || !this.running
+            || !this.currentIsDebug
+            || !this.profile.breakpointChangesRequireRestart
+        ) return;
+        const message =
+            'Stop the current debug session before changing breakpoints; this runtime cannot replace them while execution is active.';
+        if (rejectedEditorChange) {
+            this.onBreakpointsValidated.emit({
+                file: rejectedEditorChange.file,
+                lines: [...rejectedEditorChange.lines],
+            });
+        }
+        this.onDiagnostic.emit({
+            message,
+            severity: 'warning',
+            phase: 'execution',
+            mode: 'debug',
+        });
+        this.emitStream('stderr', `${message}\r\n`);
+        throw new Error(message);
+    }
+
+    private applyBreakpointConfigurationChanges(
+        changes: readonly BreakpointConfigurationChange[],
+    ): void {
+        if (
+            changes.some(({ previousLines, nextLines }) => (
+                previousLines.length > 0 && nextLines.length === 0
+            ))
+            && this.engine
+            && this.profile.resetAdapterAfterBreakpointClear
+        ) {
+            this.breakpointAdapterResetPending = true;
+        }
+        if (changes.length > 0 && this.engine && this.running && this.currentIsDebug) {
+            if (this.profile.deferBreakpointUpdatesWhileRunning) {
+                this.breakpointsDirty = true;
+                if (this.debugPaused) this.flushPendingBreakpoints();
+            } else {
+                for (const { file, nextLines } of changes) {
+                    this.sendBreakpoints(file, nextLines);
+                }
+            }
+        }
+        this.resetBreakpointAdapterIfIdle();
+    }
+
     async setBreakpoints(file: string, lines: number[]): Promise<void> {
         if (!this.capabilities.breakpoints) {
             throw new Error(`Runtime provider "${this.id}" does not support breakpoints`);
@@ -1249,72 +1478,115 @@ export class BrowserRuntimeSession implements RuntimeSession {
             currentLines.length === normalizedLines.length
             && currentLines.every((line, index) => line === normalizedLines[index])
         ) return;
-        if (
-            this.engine
-            && this.running
-            && this.currentIsDebug
-            && this.profile.breakpointChangesRequireRestart
-        ) {
-            const message =
-                'Stop the current debug session before changing breakpoints; this runtime cannot replace them while execution is active.';
-            // The editor optimistically toggles first. Re-publish the accepted
-            // set so both the gutter and host event/replay streams compensate
-            // for the rejected toggle.
-            this.onBreakpointsValidated.emit({ file, lines: [...currentLines] });
-            this.onDiagnostic.emit({
-                message,
-                severity: 'warning',
-                phase: 'execution',
-                mode: 'debug',
-            });
-            this.emitStream('stderr', `${message}\r\n`);
-            throw new Error(message);
-        }
         const nextBreakpoints = { ...this.activeBreakpoints };
         if (normalizedLines.length === 0 && !this.engine) delete nextBreakpoints[file];
         else nextBreakpoints[file] = normalizedLines;
-        const maxBytes = this.profile.maxBreakpointConfigurationBytes;
-        if (maxBytes !== undefined) {
-            const runtimeBreakpoints = Object.fromEntries(
-                Object.entries(nextBreakpoints)
-                    .map(([configuredFile, configuredLines]) => [
-                        this.toRuntimePath(configuredFile),
-                        configuredLines,
-                    ]),
-            );
-            const size = new TextEncoder().encode(JSON.stringify(runtimeBreakpoints)).byteLength;
-            if (size > maxBytes) {
-                const message =
-                    `Breakpoint configuration is ${size} bytes; this runtime accepts at most ${maxBytes}.`;
-                this.onBreakpointsValidated.emit({ file, lines: [...currentLines] });
-                this.onDiagnostic.emit({
-                    message,
-                    severity: 'error',
-                    phase: 'preparation',
-                    mode: 'debug',
-                });
-                this.emitStream('stderr', `${message}\r\n`);
-                throw new Error(message);
-            }
-        }
+        const nextTombstones = new Set(this.breakpointClearTombstones);
+        if (normalizedLines.length > 0) nextTombstones.delete(canonicalWorkspacePath(file));
+        const previousConfiguration = this.mergedBreakpointConfiguration();
+        const nextConfiguration = this.mergedBreakpointConfiguration(
+            nextBreakpoints,
+            this.breakpointOverlays,
+            nextTombstones,
+        );
+        const changes = this.breakpointConfigurationChanges(
+            previousConfiguration,
+            nextConfiguration,
+        );
+        const rejectedEditorChange = { file, lines: [...currentLines] };
+        this.assertBreakpointChangesAllowed(changes, rejectedEditorChange);
+        this.assertBreakpointConfigurationWithinLimit(
+            nextConfiguration,
+            rejectedEditorChange,
+        );
+
         this.activeBreakpoints = nextBreakpoints;
-        if (
-            normalizedLines.length === 0
-            && currentLines.length > 0
-            && this.engine
-            && this.profile.resetAdapterAfterBreakpointClear
-        ) {
-            this.breakpointAdapterResetPending = true;
+        this.breakpointClearTombstones.clear();
+        for (const tombstone of nextTombstones) this.breakpointClearTombstones.add(tombstone);
+        this.applyBreakpointConfigurationChanges(changes);
+    }
+
+    async replaceBreakpointOverlay(
+        owner: object,
+        breakpoints: RuntimeBreakpointMap,
+    ): Promise<void> {
+        if (this.disposed) {
+            throw new Error('Cannot configure breakpoints on a disposed runtime session');
         }
-        if (this.engine && this.running && this.currentIsDebug) {
-            if (this.profile.deferBreakpointUpdatesWhileRunning) {
-                this.breakpointsDirty = true;
-                if (this.debugPaused) this.flushPendingBreakpoints();
-            } else {
-                this.sendBreakpoints(file, normalizedLines);
+        if (!this.capabilities.breakpoints) {
+            throw new Error(`Runtime provider "${this.id}" does not support breakpoints`);
+        }
+        if (typeof owner !== 'object' || owner === null) {
+            throw new TypeError('Breakpoint overlay owner must be a non-null object token');
+        }
+        const normalized = this.normalizeBreakpointOverlay(breakpoints);
+        this.updateBreakpointOverlay(
+            owner,
+            Object.keys(normalized).length > 0 ? normalized : undefined,
+        );
+    }
+
+    async clearBreakpointOverlay(owner: object): Promise<void> {
+        if (this.disposed) {
+            throw new Error('Cannot configure breakpoints on a disposed runtime session');
+        }
+        if (!this.capabilities.breakpoints) {
+            throw new Error(`Runtime provider "${this.id}" does not support breakpoints`);
+        }
+        if (typeof owner !== 'object' || owner === null) {
+            throw new TypeError('Breakpoint overlay owner must be a non-null object token');
+        }
+        this.updateBreakpointOverlay(owner, undefined);
+    }
+
+    private updateBreakpointOverlay(
+        owner: object,
+        nextOverlay: Record<string, number[]> | undefined,
+    ): void {
+        const currentOverlay = this.breakpointOverlays.get(owner);
+        if (this.breakpointMapsEqual(currentOverlay, nextOverlay)) return;
+
+        const previousConfiguration = this.mergedBreakpointConfiguration();
+        const nextOverlays = new Map(this.breakpointOverlays);
+        if (nextOverlay) nextOverlays.set(owner, nextOverlay);
+        else nextOverlays.delete(owner);
+
+        const nextTombstones = new Set(this.breakpointClearTombstones);
+        for (const file of Object.keys(nextOverlay ?? {})) nextTombstones.delete(file);
+        let nextConfiguration = this.mergedBreakpointConfiguration(
+            this.activeBreakpoints,
+            nextOverlays,
+            nextTombstones,
+        );
+        if (this.engine) {
+            for (const { file, previousLines, nextLines } of this.breakpointConfigurationChanges(
+                previousConfiguration,
+                nextConfiguration,
+            )) {
+                if (previousLines.length > 0 && nextLines.length === 0) {
+                    nextTombstones.add(canonicalWorkspacePath(file));
+                }
             }
+            nextConfiguration = this.mergedBreakpointConfiguration(
+                this.activeBreakpoints,
+                nextOverlays,
+                nextTombstones,
+            );
         }
-        this.resetBreakpointAdapterIfIdle();
+        const changes = this.breakpointConfigurationChanges(
+            previousConfiguration,
+            nextConfiguration,
+        );
+        this.assertBreakpointChangesAllowed(changes);
+        this.assertBreakpointConfigurationWithinLimit(nextConfiguration);
+
+        this.breakpointOverlays.clear();
+        for (const [token, overlay] of nextOverlays) {
+            this.breakpointOverlays.set(token, overlay);
+        }
+        this.breakpointClearTombstones.clear();
+        for (const tombstone of nextTombstones) this.breakpointClearTombstones.add(tombstone);
+        this.applyBreakpointConfigurationChanges(changes);
     }
 
     async stepInto(): Promise<void> {
@@ -1405,6 +1677,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         );
         const initialization = this.engineInit;
         this.disposed = true;
+        this.breakpointOverlays.clear();
+        this.breakpointClearTombstones.clear();
         const settlement = this.requestStop();
         if (!hadUnsettledStart) {
             try { this.engine?.stop(); } catch { /* ignore */ }

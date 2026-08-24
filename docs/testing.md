@@ -59,6 +59,7 @@ crosses their boundary.
 | Change | Required verification |
 | --- | --- |
 | Public contract, provider, or lifecycle | Contract tests, integration tests, typecheck, build, packed consumer. |
+| Transient breakpoint overlay | Owner/session isolation, editor-plus-overlay merge, atomic combined-quota rejection, hidden editor validation, clear/reset/dispose lifecycle, ordinary-breakpoint regression, packed public types, and a real-runtime browser workflow when an integration depends on the stops. |
 | Execution-only resource or persistence projection | Path/resource contracts, packed consumer, and a real-runtime production browser scenario proving execution succeeds while the resource remains absent from editable/persisted views. |
 | Debug protocol, runtime paths, stdin/stdout, worker, or WASM loading | Contract tests plus a real-browser scenario using the actual backend. |
 | Command, panel, capability, or contribution visibility | Integration test; add browser coverage when it controls a runtime workflow. |
@@ -97,6 +98,8 @@ Browser scenarios must:
 5. Fail on uncaught page errors, console errors, failed network requests, and
    HTTP error responses. If an upstream failure is intentionally tolerated,
    narrow and document the exception instead of broadly suppressing errors.
+   Source-switch scenarios must exercise the pinned Monaco `0.56.0` runtime;
+   canceled model/view-state work is a failure, not an allowed diagnostic.
 6. Assert both capability presence and absence. For example, Python exposes
    Debug and Variables but not the native-memory Graph panel.
 7. Leave tracing, screenshots, and video enabled on failure. Artifacts are

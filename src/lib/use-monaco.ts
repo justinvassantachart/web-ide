@@ -1,6 +1,15 @@
 import { loader, type Monaco } from '@monaco-editor/react'
 import { useEffect, useState } from 'react'
 
+// Keep the CDN runtime aligned with the reviewed Monaco API/types dependency.
+// The loader's older default can throw uncaught cancellation errors during
+// rapid, source-driven model switches.
+loader.config({
+    paths: {
+        vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.56.0/min/vs',
+    },
+})
+
 export function isMonacoCancellation(error: unknown): boolean {
     return (
         typeof error === 'object' &&

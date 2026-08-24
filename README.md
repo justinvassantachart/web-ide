@@ -156,6 +156,19 @@ resumes. The backend does not authoritatively relocate breakpoints from blank or
 non-executable lines, so Web IDE leaves those gutter markers at the requested
 line instead of claiming that they were bound.
 
+Generic runtime workflows that need temporary source stops can use the
+optional `RuntimeSession.replaceBreakpointOverlay(owner, breakpoints)` and
+`clearBreakpointOverlay(owner)` methods. `RuntimeBreakpointMap` contains
+canonical source paths and positive one-based lines. The owner must be a
+non-null object and is compared by identity within one session; replacing or
+clearing it cannot mutate another workflow's overlay or the editor's gutter
+breakpoints. The built-in browser sessions atomically merge the editor set and
+all owner overlays, reject the whole update if the provider's merged
+configuration quota would be exceeded, and never publish overlay-only lines as
+editor breakpoint-validation events. An empty replacement is a clear. The
+workflow should clear its owner during stop/unmount cleanup; session disposal
+also discards all remaining overlays.
+
 The validated C/C++ backend can add breakpoints during configuration but cannot
 replace or remove them safely inside an active debug run. Web IDE therefore
 rejects live C/C++ breakpoint edits and restores the existing gutter markers;
@@ -204,7 +217,10 @@ with the void `stop`/`dispose` methods. Providers that support deterministic
 cleanup may additionally expose `waitForSettlement`, `stopAndWait`, and
 `disposeAndWait`; those methods resolve one `RuntimeOutcome` (`completed`,
 `stopped`, or `error`) per start without changing numeric exit events. The
-session never receives React stores or host credentials. See
+transient-breakpoint overlay methods are additive and optional too, so an
+integrating workflow must feature-detect them and fail clearly when they are a
+required capability. The session never receives React stores or host
+credentials. See
 `src/web-ide/contracts/runtime.ts` and the contract tests under
 `tests/contracts` for the exact lifecycle.
 
@@ -411,7 +427,10 @@ Vite development and preview. The host is also responsible for compatible CSP,
 CORS/CORP, service-worker, authentication, and route policies.
 
 Monaco, Debugger.sh toolchains, and optional clangd assets are online runtime
-dependencies today. `VITE_CLANGD_WASM_URL` and `VITE_CLANGD_JS_URL` can point to
+dependencies today. Web IDE pins Monaco's loader runtime to `0.56.0` on
+jsDelivr, matching its reviewed editor API/types; production CSP and availability
+policy must admit or self-host that exact asset set. `VITE_CLANGD_WASM_URL` and
+`VITE_CLANGD_JS_URL` can point to
 host-owned, versioned clangd assets. The public upstream service is only a
 best-effort default.
 

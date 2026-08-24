@@ -8,7 +8,7 @@ vi.mock('debugger-sh', () => ({
   Engine: { create: engineCreate },
 }))
 
-import { cppRuntimeProvider } from '../../src/runtimes/providers'
+import { cppRuntimeProvider, pythonRuntimeProvider } from '../../src/runtimes/providers'
 import type {
   RuntimeExecutionMode,
   RuntimeSession,
@@ -670,5 +670,237 @@ describe('BrowserRuntimeSession run lifecycle', () => {
 
     engine.complete({ type: 'completed', exitCode: 0 })
     await thirdRun
+  })
+
+  it('merges editor breakpoints with two owner-isolated overlays without publishing overlay lines', async () => {
+    const engine = new FakeEngine()
+    const adapter = createSession()
+    const ownerA = {}
+    const ownerB = {}
+    const validated: { file: string; lines: number[] }[] = []
+    engineCreate.mockResolvedValueOnce(engine)
+    engine.debugger.responder = ({ command, arguments: args }) => {
+      if (command !== 'setBreakpoints') return { success: true }
+      const requested = (args?.breakpoints ?? []) as { line: number }[]
+      return {
+        success: true,
+        body: {
+          breakpoints: requested.map(({ line }) => ({
+            verified: true,
+            line: line === 2 ? 3 : line,
+          })),
+        },
+      }
+    }
+    adapter.events.breakpointsValidated.subscribe((event) => validated.push(event))
+
+    await adapter.setBreakpoints('/workspace/main.cpp', [2])
+    await adapter.replaceBreakpointOverlay!(ownerA, {
+      '/workspace/main.cpp': [4, 2],
+    })
+    await adapter.replaceBreakpointOverlay!(ownerB, {
+      '/workspace/main.cpp': [6],
+    })
+    const { running: firstRun } = await beginRun(adapter, engine, 'debug')
+    engine.debugger.emit('initialized')
+    await vi.waitFor(() => expect(commands(engine, 'configurationDone')).toHaveLength(1))
+
+    expect(commands(engine, 'setBreakpoints')[0]?.arguments).toEqual({
+      source: { path: '/main.cpp' },
+      breakpoints: [{ line: 2 }, { line: 4 }, { line: 6 }],
+    })
+    expect(validated).toEqual([{
+      file: '/workspace/main.cpp',
+      lines: [3],
+    }])
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await firstRun
+
+    await adapter.clearBreakpointOverlay!(ownerA)
+    const { running: secondRun } = await beginRun(adapter, engine, 'debug')
+    engine.debugger.emit('initialized')
+    await vi.waitFor(() => expect(commands(engine, 'configurationDone')).toHaveLength(2))
+    expect(commands(engine, 'setBreakpoints')[1]?.arguments).toEqual({
+      source: { path: '/main.cpp' },
+      breakpoints: [{ line: 3 }, { line: 6 }],
+    })
+
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await secondRun
+  })
+
+  it('clears an empty-replaced overlay through the Python adapter reset lifecycle', async () => {
+    const firstEngine = new FakeEngine()
+    const adapter = pythonRuntimeProvider.createSession()
+    const owner = {}
+    sessions.push(adapter)
+    engineCreate.mockResolvedValueOnce(firstEngine)
+
+    await adapter.prepare({
+      files: { '/workspace/main.py': 'print("overlay")' },
+      mode: 'debug',
+      entrypoint: '/workspace/main.py',
+    })
+    await adapter.replaceBreakpointOverlay!(owner, {
+      '/workspace/main.py': [1],
+    })
+    const firstRun = adapter.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(firstEngine.run).toHaveBeenCalledTimes(1))
+    firstEngine.debugger.emit('initialized')
+    await vi.waitFor(() => (
+      expect(commands(firstEngine, 'configurationDone')).toHaveLength(1)
+    ))
+    expect(commands(firstEngine, 'setBreakpoints')[0]?.arguments).toEqual({
+      source: { path: '/main.py' },
+      breakpoints: [{ line: 1 }],
+    })
+    firstEngine.complete({ type: 'completed', exitCode: 0 })
+    await firstRun
+
+    await adapter.replaceBreakpointOverlay!(owner, {})
+    expect(firstEngine.stop).toHaveBeenCalledTimes(1)
+
+    const secondEngine = new FakeEngine()
+    engineCreate.mockResolvedValueOnce(secondEngine)
+    const secondRun = adapter.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(secondEngine.run).toHaveBeenCalledTimes(1))
+    secondEngine.debugger.emit('initialized')
+    await vi.waitFor(() => (
+      expect(commands(secondEngine, 'configurationDone')).toHaveLength(1)
+    ))
+    expect(commands(secondEngine, 'setBreakpoints')[0]?.arguments).toEqual({
+      source: { path: '/main.py' },
+      breakpoints: [],
+    })
+    secondEngine.complete({ type: 'completed', exitCode: 0 })
+    await secondRun
+
+    await adapter.disposeAndWait!()
+    await expect(adapter.replaceBreakpointOverlay!(owner, {
+      '/workspace/main.py': [1],
+    })).rejects.toThrow('disposed runtime session')
+    await expect(adapter.clearBreakpointOverlay!(owner)).rejects.toThrow(
+      'disposed runtime session',
+    )
+  })
+
+  it('bounds overlays with the provider quota and isolates the same owner token per session', async () => {
+    const firstEngine = new FakeEngine()
+    const secondEngine = new FakeEngine()
+    const first = pythonRuntimeProvider.createSession()
+    const second = pythonRuntimeProvider.createSession()
+    const owner = {}
+    sessions.push(first, second)
+    engineCreate.mockResolvedValueOnce(firstEngine).mockResolvedValueOnce(secondEngine)
+
+    await expect(first.replaceBreakpointOverlay!(owner, {
+      [`/workspace/${'界'.repeat(1_200)}.py`]: [1],
+    })).rejects.toThrow(/accepts at most 3500/)
+    await first.replaceBreakpointOverlay!(owner, { '/workspace/main.py': [2] })
+    for (const invalidPath of [
+      'relative.py',
+      '/sysroot/private.py',
+      '/workspace/../outside.py',
+      '/workspace/a//b.py',
+      '/workspace/nul\0.py',
+    ]) {
+      await expect(first.replaceBreakpointOverlay!(owner, {
+        [invalidPath]: [1],
+      })).rejects.toThrow(/Breakpoint overlay|Workspace file path/u)
+    }
+    await Promise.all([
+      first.prepare({
+        files: { '/workspace/main.py': 'print("first")' },
+        mode: 'debug',
+        entrypoint: '/workspace/main.py',
+      }),
+      second.prepare({
+        files: { '/workspace/main.py': 'print("second")' },
+        mode: 'debug',
+        entrypoint: '/workspace/main.py',
+      }),
+    ])
+    const firstRun = first.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(firstEngine.run).toHaveBeenCalledTimes(1))
+    const secondRun = second.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(secondEngine.run).toHaveBeenCalledTimes(1))
+    firstEngine.debugger.emit('initialized')
+    secondEngine.debugger.emit('initialized')
+    await vi.waitFor(() => {
+      expect(commands(firstEngine, 'configurationDone')).toHaveLength(1)
+      expect(commands(secondEngine, 'configurationDone')).toHaveLength(1)
+    })
+
+    expect(commands(firstEngine, 'setBreakpoints')[0]?.arguments).toEqual({
+      source: { path: '/main.py' },
+      breakpoints: [{ line: 2 }],
+    })
+    expect(commands(secondEngine, 'setBreakpoints')[0]?.arguments).toEqual({
+      source: { path: '/main.py' },
+      breakpoints: [],
+    })
+    firstEngine.complete({ type: 'completed', exitCode: 0 })
+    secondEngine.complete({ type: 'completed', exitCode: 0 })
+    await Promise.all([firstRun, secondRun])
+  })
+
+  it('rejects an over-quota editor-plus-multiple-owner aggregate atomically', async () => {
+    const engine = new FakeEngine()
+    const adapter = pythonRuntimeProvider.createSession()
+    const ownerA = {}
+    const ownerB = {}
+    const editorFile = `/workspace/${'e'.repeat(1_000)}.py`
+    const ownerAFile = `/workspace/${'a'.repeat(1_000)}.py`
+    const rejectedOwnerBFile = `/workspace/${'b'.repeat(1_800)}.py`
+    sessions.push(adapter)
+    engineCreate.mockResolvedValueOnce(engine)
+
+    await adapter.setBreakpoints(editorFile, [1])
+    await adapter.replaceBreakpointOverlay!(ownerA, { [ownerAFile]: [2] })
+    await adapter.replaceBreakpointOverlay!(ownerB, { '/workspace/b.py': [3] })
+    await expect(adapter.replaceBreakpointOverlay!(ownerB, {
+      [rejectedOwnerBFile]: [4],
+    })).rejects.toThrow(/accepts at most 3500/)
+
+    await adapter.prepare({
+      files: { '/workspace/main.py': 'print("quota")' },
+      mode: 'debug',
+      entrypoint: '/workspace/main.py',
+    })
+    const running = adapter.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.debugger.emit('initialized')
+    await vi.waitFor(() => expect(commands(engine, 'configurationDone')).toHaveLength(1))
+
+    const configured = commands(engine, 'setBreakpoints').map(({ arguments: args }) => ({
+      file: (args?.source as { path?: string } | undefined)?.path,
+      lines: (args?.breakpoints as { line: number }[]).map(({ line }) => line),
+    }))
+    expect(configured).toEqual(expect.arrayContaining([
+      { file: editorFile.slice('/workspace'.length), lines: [1] },
+      { file: ownerAFile.slice('/workspace'.length), lines: [2] },
+      { file: '/b.py', lines: [3] },
+    ]))
+    expect(configured).toHaveLength(3)
+
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+  })
+
+  it('keeps the ordinary non-overlay breakpoint configuration unchanged', async () => {
+    const engine = new FakeEngine()
+    const adapter = createSession()
+    engineCreate.mockResolvedValueOnce(engine)
+    await adapter.setBreakpoints('/workspace/main.cpp', [8, 3, 8])
+
+    const { running } = await beginRun(adapter, engine, 'debug')
+    engine.debugger.emit('initialized')
+    await vi.waitFor(() => expect(commands(engine, 'configurationDone')).toHaveLength(1))
+    expect(commands(engine, 'setBreakpoints')[0]?.arguments).toEqual({
+      source: { path: '/main.cpp' },
+      breakpoints: [{ line: 3 }, { line: 8 }],
+    })
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
   })
 })
