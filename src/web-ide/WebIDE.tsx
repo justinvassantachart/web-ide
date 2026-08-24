@@ -34,6 +34,9 @@ import { createRuntimeSessionFactory } from './core/runtime-provider'
 import { createWebIDEInstanceController } from './core/instance-handle'
 import { SourcePresentationProvider } from './react/source-presentation-context'
 import { RunPipelineCoordinatorProvider } from '@/components/layout/RunPipelineCoordinator'
+import { resolveWebIDEInitialLayout } from './core/initial-layout'
+import { createPanelLayoutController } from './core/panel-layout'
+import { PanelLayoutContext } from './react/panel-layout-context'
 
 const runtimeMountKeys = new WeakMap<RuntimeProvider, number>()
 let nextRuntimeMountKey = 1
@@ -68,15 +71,27 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
   { configuration },
   instanceRef,
 ) {
-  const instanceController = useMemo(
-    () => createWebIDEInstanceController(),
-    [],
-  )
   const host = useWebIDEHost()
   const workspaceKey = host?.workspace?.id ?? 'default-project'
   const plugins = useMemo(
     () => new IDEPluginManager(configuration.plugins),
     [configuration.plugins],
+  )
+  const initialLayout = useMemo(
+    () => resolveWebIDEInitialLayout(configuration.initialLayout),
+    [configuration.initialLayout],
+  )
+  const panelLayoutController = useMemo(
+    () => createPanelLayoutController(initialLayout.selectedPanelId),
+    [initialLayout.selectedPanelId],
+  )
+  const panelLayoutContext = useMemo(
+    () => ({ controller: panelLayoutController, initialLayout }),
+    [initialLayout, panelLayoutController],
+  )
+  const instanceController = useMemo(
+    () => createWebIDEInstanceController(panelLayoutController),
+    [panelLayoutController],
   )
   const runtimeProvider = plugins.runtimeProviders.get(configuration.runtimeProvider)
   const createRuntimeSession = useMemo(
@@ -89,6 +104,14 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
   if (!runtimeProvider) {
     throw new Error(
       `No runtime provider contributed with id "${configuration.runtimeProvider}"`,
+    )
+  }
+  if (
+    initialLayout.selectedPanelId !== undefined
+    && !plugins.panels.has(initialLayout.selectedPanelId)
+  ) {
+    throw new Error(
+      `No panel contributed with id ${JSON.stringify(initialLayout.selectedPanelId)}`,
     )
   }
   const languageToolingProvider = resolveLanguageToolingProvider(
@@ -106,28 +129,30 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
   return (
     <WebIDEConfigurationContext.Provider value={configuration}>
       <IDEContributionContext.Provider value={plugins}>
-        <PluginManagerLifetime plugins={plugins} />
-        <WorkspaceHostBridge instanceController={instanceController} />
-        <InstanceHandleBridge
-          instanceRef={instanceRef}
-          handle={instanceController.handle}
-        />
-        <EngineProvider
-          key={runtimeMountKey}
-          createSession={createRuntimeSession!}
-        >
-          <RunPipelineCoordinatorProvider>
-            <PluginActivation plugins={plugins} />
-            <SourcePresentationProvider key={workspaceKey} workspaceKey={workspaceKey}>
-              <LanguageToolingMount
-                provider={languageToolingProvider}
-                supplementalFiles={testProvider?.editorSupportFiles}
-              >
-                <WorkbenchLayout />
-              </LanguageToolingMount>
-            </SourcePresentationProvider>
-          </RunPipelineCoordinatorProvider>
-        </EngineProvider>
+        <PanelLayoutContext.Provider value={panelLayoutContext}>
+          <PluginManagerLifetime plugins={plugins} />
+          <WorkspaceHostBridge instanceController={instanceController} />
+          <InstanceHandleBridge
+            instanceRef={instanceRef}
+            handle={instanceController.handle}
+          />
+          <EngineProvider
+            key={runtimeMountKey}
+            createSession={createRuntimeSession!}
+          >
+            <RunPipelineCoordinatorProvider>
+              <PluginActivation plugins={plugins} />
+              <SourcePresentationProvider key={workspaceKey} workspaceKey={workspaceKey}>
+                <LanguageToolingMount
+                  provider={languageToolingProvider}
+                  supplementalFiles={testProvider?.editorSupportFiles}
+                >
+                  <WorkbenchLayout />
+                </LanguageToolingMount>
+              </SourcePresentationProvider>
+            </RunPipelineCoordinatorProvider>
+          </EngineProvider>
+        </PanelLayoutContext.Provider>
       </IDEContributionContext.Provider>
     </WebIDEConfigurationContext.Provider>
   )

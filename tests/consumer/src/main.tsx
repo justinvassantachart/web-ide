@@ -11,6 +11,7 @@ import {
   type RuntimeOutcome,
   type WebIDEConfiguration,
   type WebIDEInstanceHandle,
+  type WebIDEInitialLayout,
 } from 'web-ide'
 import { WebIDEHostProvider, type WebIDEHost } from 'web-ide/host'
 import { cppRuntimePlugin } from 'web-ide/runtimes'
@@ -103,10 +104,17 @@ const hostActivity: IDEPlugin = {
   },
 }
 
+const initialLayout: WebIDEInitialLayout = {
+  selectedPanelId: 'variables',
+  panelColumnPercent: 50,
+  panelContentPercent: 85,
+}
+
 const configuration: WebIDEConfiguration = {
   runtimeProvider: 'web-ide.runtime.cpp',
   languageToolingProvider: 'web-ide.language-tooling.cpp',
   testProvider: 'web-ide.testing.cpp',
+  initialLayout,
   plugins: [
     cppRuntimePlugin,
     cppLanguageToolingPlugin,

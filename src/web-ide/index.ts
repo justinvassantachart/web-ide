@@ -5,7 +5,10 @@ export { useWebIDEHost } from './react/host-context'
 export { useLanguageTooling } from './react/language-tooling-context'
 export { initWebIDETheme } from './public/theme'
 
-export type { WebIDEConfiguration } from './contracts/configuration'
+export type {
+  WebIDEConfiguration,
+  WebIDEInitialLayout,
+} from './contracts/configuration'
 export type {
   LanguageToolingProvider,
   LanguageToolingProviderComponentProps,

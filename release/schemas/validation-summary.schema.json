@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.2.0-source-r4/release/schemas/validation-summary.schema.json",
-  "title": "Web IDE 0.2 normalized validation summary",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.3.0-source/release/schemas/validation-summary.schema.json",
+  "title": "Web IDE 0.3 normalized validation summary",
   "required": [
     "schemaVersion",
     "package",
@@ -18,7 +18,7 @@
       "const": 1
     },
     "package": {
-      "const": "web-ide@0.2.0"
+      "const": "web-ide@0.3.0"
     },
     "sourceCommit": {
       "type": "string",

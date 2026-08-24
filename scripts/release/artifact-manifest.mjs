@@ -50,6 +50,11 @@ const expectedValidationLogKinds = VALIDATION_GATES
   .map((gate) => `validation-log:${gate.id}:0`)
   .sort()
 
+const expectedCapabilityReleaseIds = Object.freeze([
+  'hamilton.python-karel/2',
+  'hamilton.python/1',
+])
+
 function validateDigest(value, location) {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value)) {
     throw new TypeError(`${location} must be lowercase SHA-256 hex`)
@@ -176,7 +181,7 @@ export function validateArtifactManifest(manifest, configuration) {
   assertExactKeys(
     manifest,
     [
-      'schemaVersion', 'manifestKind', 'manifestId', 'capabilityReleaseId',
+      'schemaVersion', 'manifestKind', 'manifestId', 'capabilityReleaseIds',
       'packageRole', 'package', 'source', 'toolchain', 'buildInputs',
       'distribution', 'runtime', 'validation', 'evidence',
     ],
@@ -184,9 +189,11 @@ export function validateArtifactManifest(manifest, configuration) {
     'artifact manifest',
   )
   if (
-    manifest.schemaVersion !== 1
+    manifest.schemaVersion !== 2
     || manifest.manifestKind !== 'hamilton-capability-package-artifact'
-    || manifest.capabilityReleaseId !== configuration.capabilityReleaseId
+    || canonicalJSONString(manifest.capabilityReleaseIds)
+      !== canonicalJSONString(expectedCapabilityReleaseIds)
+    || !manifest.capabilityReleaseIds.includes(configuration.capabilityReleaseId)
     || manifest.packageRole !== configuration.packageRole
   ) throw new TypeError('Artifact manifest identity is invalid')
   const { manifestId, ...identityInput } = manifest
@@ -327,7 +334,7 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
     'candidate-state': 'candidate-state.json',
-    'cyclonedx-sbom': 'web-ide-0.2.0.cdx.json',
+    'cyclonedx-sbom': 'web-ide-0.3.0.cdx.json',
     'deterministic-builds': 'deterministic-builds.json',
     'license-inventory': 'third-party-licenses.json',
     'package-inspection': 'package-inspection.json',
@@ -368,9 +375,9 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
     || validationSummary.candidateSha256 !== artifactEvidence.sha256
   ) throw new TypeError('Package inspection/validation identity does not match the exact candidate bytes')
   const draft = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifestKind: 'hamilton-capability-package-artifact',
-    capabilityReleaseId: configuration.capabilityReleaseId,
+    capabilityReleaseIds: expectedCapabilityReleaseIds,
     packageRole: configuration.packageRole,
     package: {
       name: packageManifest.name,

@@ -6,7 +6,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => {
-  const setRightTab = vi.fn()
+  const selectPanel = vi.fn()
   const setActiveView = vi.fn()
   const execution = Object.freeze({
     start: vi.fn(),
@@ -28,7 +28,7 @@ const harness = vi.hoisted(() => {
       },
     },
     setActiveView,
-    setRightTab,
+    selectPanel,
   }
 })
 
@@ -54,14 +54,28 @@ vi.mock('@/web-ide/react/contribution-context', () => ({
 vi.mock('@/store/execution-store', () => ({
   useExecutionStore: (selector?: (state: Record<string, unknown>) => unknown) => {
     const state = {
-      rightTab: 'host.panel',
-      setRightTab: harness.setRightTab,
       setIsRunning: vi.fn(),
       isCompiling: false,
       isRunning: false,
     }
     return selector ? selector(state) : state
   },
+}))
+
+vi.mock('@/web-ide/react/panel-layout-context', () => ({
+  usePanelLayout: () => ({
+    controller: {
+      domIdPrefix: 'contract-panel',
+      initialSelectedPanelId: 'host.panel',
+      assertInitialPanelAvailable: vi.fn(),
+      selectPanel: harness.selectPanel,
+    },
+    initialLayout: {
+      panelColumnPercent: 27,
+      panelContentPercent: 70,
+    },
+    selectedPanelId: 'host.panel',
+  }),
 }))
 
 vi.mock('@/store/compiler-store', () => ({
@@ -153,7 +167,7 @@ beforeEach(() => {
   harness.commands.length = 0
   harness.panels.length = 0
   harness.setActiveView.mockClear()
-  harness.setRightTab.mockClear()
+  harness.selectPanel.mockClear()
 })
 
 describe('panel execution services', () => {
@@ -192,7 +206,7 @@ describe('panel execution services', () => {
       '/workspace/main.py': 'print("instance")',
     })
     ;(selected?.props.revealPanel as (id: string) => void)('other.panel')
-    expect(harness.setRightTab).toHaveBeenCalledExactlyOnceWith('other.panel')
+    expect(harness.selectPanel).toHaveBeenCalledExactlyOnceWith('other.panel')
   })
 
   it('passes the selected runtime pipeline to sidebar activity contributions', () => {
@@ -213,6 +227,6 @@ describe('panel execution services', () => {
       '/workspace/main.py': 'print("instance")',
     })
     ;(selected?.props.revealPanel as (id: string) => void)('other.panel')
-    expect(harness.setRightTab).toHaveBeenCalledExactlyOnceWith('other.panel')
+    expect(harness.selectPanel).toHaveBeenCalledExactlyOnceWith('other.panel')
   })
 })

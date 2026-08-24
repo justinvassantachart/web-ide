@@ -13,6 +13,10 @@ import { pythonTestingPlugin, testingPlugin } from 'web-ide/testing'
 import { canvasPlugin, coreWorkbenchPlugin } from 'web-ide/plugins'
 import { ExampleApplication } from './ExampleApplication'
 import { ExecutionSourceProbe } from './ExecutionSourceProbe'
+import {
+  LayoutBrowserFixture,
+  type LayoutBrowserMode,
+} from './LayoutBrowserFixture'
 import 'web-ide/styles.css'
 
 const searchParams = new URLSearchParams(window.location.search)
@@ -21,6 +25,7 @@ const useFailingPythonTest = searchParams.get('tests') === 'failing'
 const useExecutionOnlyResource = searchParams.get('resources') === 'execution-only'
 const showLifecycleProbe = searchParams.get('lifecycle') === 'probe'
 const showExecutionSourceProbe = searchParams.get('source') === 'probe'
+const layoutMode = searchParams.get('layout') as LayoutBrowserMode | null
 
 const executionOnlyResourcePlugin: IDEPlugin = {
   id: 'web-ide.example.execution-resource',
@@ -179,11 +184,25 @@ const host: WebIDEHost = {
 initWebIDETheme()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ExampleApplication
-      configuration={configuration}
-      host={host}
-      lifecycleEvents={lifecycleEvents}
-      showLifecycleProbe={showLifecycleProbe}
-    />
+    {layoutMode === 'custom'
+      || layoutMode === 'invalid'
+      || layoutMode === 'multiple'
+      || layoutMode === 'remount'
+      || layoutMode === 'unavailable'
+      ? (
+          <LayoutBrowserFixture
+            mode={layoutMode}
+            configuration={configuration}
+            host={host}
+          />
+        )
+      : (
+          <ExampleApplication
+            configuration={configuration}
+            host={host}
+            lifecycleEvents={lifecycleEvents}
+            showLifecycleProbe={showLifecycleProbe}
+          />
+        )}
   </StrictMode>,
 )

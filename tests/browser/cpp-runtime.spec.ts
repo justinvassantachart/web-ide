@@ -21,8 +21,8 @@ test('runs and debugs C++ with the production runtime', async ({ page }) => {
   await expect(statusBar).toContainText('Ready')
   await expect(runCommand).toBeVisible()
   await expect(debugCommand).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Variables', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Graph', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Variables', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Graph', exact: true })).toBeVisible()
 
   await runCommand.click()
   await expect(terminal).toContainText('Double 5 is 10')

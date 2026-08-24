@@ -557,7 +557,7 @@ describe('bounded subprocess evidence', () => {
     const raw = Buffer.concat([
       splitRepositoryPath,
       Buffer.from([
-        `candidate: ${candidate}/web-ide-0.2.0.tgz`,
+        `candidate: ${candidate}/web-ide-0.3.0.tgz`,
         `home: ${home}/Library/Caches/ms-playwright`,
         `isolated home: ${isolatedHome}/.npmrc`,
         `temporary: ${temporary}/consumer/package.json`,
@@ -578,7 +578,7 @@ describe('bounded subprocess evidence', () => {
     const normalizedBytes = normalizeValidationGateLog(raw, { roots, receiptFooter })
     const normalized = normalizedBytes.toString('utf8')
     expect(normalized).toContain('stack: <repository-root>/src/index.ts:1')
-    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.2.0.tgz')
+    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.3.0.tgz')
     expect(normalized).toContain('home: <home>/Library/Caches/ms-playwright')
     expect(normalized).toContain('isolated home: <home>/.npmrc')
     expect(normalized).toContain('temporary: <execution-root>/consumer/package.json')
@@ -1317,7 +1317,7 @@ describe('SBOM and license gates', () => {
     ]) }
     const packageManifest = {
       name: 'web-ide',
-      version: '0.2.0',
+      version: '0.3.0',
       license: 'MIT',
       dependencies: { 'debugger-sh': '0.3.15' },
       peerDependencies: { react: '^1', 'react-dom': '^1' },
@@ -1328,7 +1328,7 @@ describe('SBOM and license gates', () => {
       packageManifest,
       packageLock,
       candidate: {
-        filename: 'web-ide-0.2.0.tgz',
+        filename: 'web-ide-0.3.0.tgz',
         size: 123,
         sha256: 'a'.repeat(64),
         sha512Integrity: integrity,
@@ -1413,7 +1413,7 @@ describe('validation summary', () => {
     const commit = 'a'.repeat(40)
     const summary = {
       schemaVersion: 1,
-      package: 'web-ide@0.2.0',
+      package: 'web-ide@0.3.0',
       sourceCommit: commit,
       candidateSha256: 'b'.repeat(64),
       gates: [
@@ -1473,8 +1473,8 @@ describe('validation summary', () => {
 
   it('does not allow a nonrelease preflight state into finalization', () => {
     const configuration = {
-      package: 'web-ide@0.2.0',
-      capabilityReleaseId: 'hamilton.python-karel/1',
+      package: 'web-ide@0.3.0',
+      capabilityReleaseId: 'hamilton.python-karel/2',
       packageRole: 'web-ide',
     }
     const source = { commit: 'a'.repeat(40), tree: 'b'.repeat(40) }
@@ -1569,19 +1569,19 @@ describe('artifact manifest', () => {
     const jsonEvidence = [
       'bundle-provenance.json',
       'candidate-state.json',
-      'web-ide-0.2.0.cdx.json',
+      'web-ide-0.3.0.cdx.json',
       'runtime-assets-verification.json',
       'runtime-source-provenance.json',
       'third-party-licenses.json',
     ]
     await Promise.all(jsonEvidence.map((name) => writeFile(path.join(directory, name), '{}\n')))
     await Promise.all([
-      writeFile(path.join(directory, 'web-ide-0.2.0.tgz'), candidateBytes),
-      writeFile(path.join(directory, 'web-ide-0.2.0-source.tar.gz'), sourceBytes),
+      writeFile(path.join(directory, 'web-ide-0.3.0.tgz'), candidateBytes),
+      writeFile(path.join(directory, 'web-ide-0.3.0-source.tar.gz'), sourceBytes),
       writeFile(path.join(directory, 'THIRD_PARTY_LICENSES.txt'), 'license evidence\n'),
       writeFile(path.join(directory, 'package-inspection.json'), JSON.stringify({
         tarball: {
-          filename: 'web-ide-0.2.0.tgz',
+          filename: 'web-ide-0.3.0.tgz',
           size: candidateBytes.length,
           sha256: candidateSha256,
           sha512Integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
@@ -1591,7 +1591,7 @@ describe('artifact manifest', () => {
       writeFile(path.join(directory, 'deterministic-builds.json'), JSON.stringify({ buildInputs })),
       writeFile(path.join(directory, 'validation-summary.json'), JSON.stringify({
         schemaVersion: 1,
-        package: 'web-ide@0.2.0',
+        package: 'web-ide@0.3.0',
         sourceCommit,
         candidateSha256,
         gateCount: 5,
@@ -1600,15 +1600,15 @@ describe('artifact manifest', () => {
       })),
     ])
     const configuration = {
-      package: 'web-ide@0.2.0',
+      package: 'web-ide@0.3.0',
       sourceRepository: 'https://github.com/justinvassantachart/web-ide.git',
-      sourceTag: 'web-ide-v0.2.0-source-r4',
-      sourceAssetFilename: 'web-ide-0.2.0-source.tar.gz',
-      capabilityReleaseId: 'hamilton.python-karel/1',
+      sourceTag: 'web-ide-v0.3.0-source',
+      sourceAssetFilename: 'web-ide-0.3.0-source.tar.gz',
+      capabilityReleaseId: 'hamilton.python-karel/2',
       packageRole: 'web-ide',
       releaseRepository: 'justinvassantachart/ths-ide',
-      releaseTag: 'web-ide-v0.2.0',
-      releaseAssetFilename: 'web-ide-0.2.0.tgz',
+      releaseTag: 'web-ide-v0.3.0',
+      releaseAssetFilename: 'web-ide-0.3.0.tgz',
       nodeVersion: '24.11.1',
       npmVersion: '11.6.2',
     }
@@ -1623,13 +1623,19 @@ describe('artifact manifest', () => {
         tree: sourceTree,
         commitTimestamp: 1,
         sourceDateEpoch: '1',
-        tag: { name: 'web-ide-v0.2.0-source-r4', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
+        tag: { name: 'web-ide-v0.3.0-source', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
         remote: configuration.sourceRepository,
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
       },
     })
     expect(manifest.manifestId).toMatch(/^urn:sha256:[a-f0-9]{64}$/u)
+    expect(manifest.schemaVersion).toBe(2)
+    expect(manifest.capabilityReleaseIds).toEqual([
+      'hamilton.python-karel/2',
+      'hamilton.python/1',
+    ])
+    expect(manifest).not.toHaveProperty('capabilityReleaseId')
     expect(manifest.distribution.artifact.sha256).toBe(candidateSha256)
     expect(manifest.source.archive.sha256).toBe(sourceSha256)
     expect(manifest.runtime.expectedRedirectCount).toBe(0)
@@ -1640,6 +1646,22 @@ describe('artifact manifest', () => {
       unknownNestedField,
       'fixture artifact manifest',
     )).rejects.toThrow(/additional properties/u)
+
+    for (const capabilityReleaseIds of [
+      ['hamilton.python/1', 'hamilton.python-karel/2'],
+      ['hamilton.python-karel/2', 'hamilton.python-karel/2'],
+      ['hamilton.python-karel/2'],
+    ]) {
+      const changedCapabilities = structuredClone(manifest)
+      changedCapabilities.capabilityReleaseIds = capabilityReleaseIds
+      await expect(validateReleaseSchema(
+        'artifact-manifest.schema.json',
+        changedCapabilities,
+        'fixture artifact manifest',
+      )).rejects.toThrow(/must be equal to constant/u)
+      expect(() => validateArtifactManifest(changedCapabilities, configuration))
+        .toThrow(/identity is invalid/u)
+    }
 
     const duplicatedGateEvidence = structuredClone(manifest)
     const karelLog = duplicatedGateEvidence.evidence.find(
@@ -1674,8 +1696,8 @@ describe('release source state', () => {
         ref: 'refs/heads/main',
         object: { type: 'commit', sha: commit },
       }],
-      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r4', {
-        ref: 'refs/tags/web-ide-v0.2.0-source-r4',
+      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.3.0-source', {
+        ref: 'refs/tags/web-ide-v0.3.0-source',
         object: { type: 'tag', sha: tagObjectId },
       }],
       [`https://api.github.com/repos/justinvassantachart/web-ide/git/tags/${tagObjectId}`, {
@@ -1700,16 +1722,16 @@ describe('release source state', () => {
       }
     }
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r4' },
+      { sourceRepository, sourceTag: 'web-ide-v0.3.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).resolves.toEqual({ branchCommit: commit, tagObjectId, peeledCommit: commit })
     expect(fetched).toEqual([...responses.keys()])
 
-    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r4')
+    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.3.0-source')
       .object.type = 'commit'
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r4' },
+      { sourceRepository, sourceTag: 'web-ide-v0.3.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).rejects.toThrow(/expected tag ref/u)
@@ -1738,20 +1760,20 @@ describe('release source state', () => {
       '-c', 'user.email=release-fixture@example.invalid',
       'commit', '-m', 'fixture',
     ], { cwd: checkout, env: gitIdentityEnvironment })
-    await run('git', ['tag', '-a', 'web-ide-v0.2.0-source-r4', '-m', 'Web IDE 0.2.0 fixture'], {
+    await run('git', ['tag', '-a', 'web-ide-v0.3.0-source', '-m', 'Web IDE 0.3.0 fixture'], {
       cwd: checkout,
       env: gitIdentityEnvironment,
     })
-    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.2.0-source-r4'], { cwd: checkout })
+    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.3.0-source'], { cwd: checkout })
     const configuration = {
       sourceRepository: bare,
-      sourceTag: 'web-ide-v0.2.0-source-r4',
+      sourceTag: 'web-ide-v0.3.0-source',
       nodeVersion: process.versions.node,
       npmVersion: process.env.npm_config_user_agent?.match(/^npm\/([^ ]+)/u)?.[1] ?? '11.6.2',
     }
     const fixtureOptions = { nonreleaseFixtureRemote: bare }
     const source = await verifyReleaseSourceState(configuration, checkout, fixtureOptions)
-    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.2.0-source-r4', objectType: 'tag' } })
+    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.3.0-source', objectType: 'tag' } })
     const [first, second] = await Promise.all([
       sourceArchiveBytes(configuration, checkout, fixtureOptions),
       sourceArchiveBytes(configuration, checkout, fixtureOptions),

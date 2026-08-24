@@ -37,7 +37,6 @@ const harness = vi.hoisted(() => {
     isRunning: false,
     setIsCompiling: vi.fn<(value: boolean) => void>(),
     setIsRunning: vi.fn<(value: boolean) => void>(),
-    setRightTab: vi.fn<(id: string) => void>(),
   }
   const debugState = {
     reset: vi.fn(),
@@ -60,6 +59,7 @@ const harness = vi.hoisted(() => {
     hosts: [] as Array<Record<string, unknown> | undefined>,
     prepareWorkbenchExecution: vi.fn(),
     resources: [] as Array<Record<string, unknown>>,
+    selectPanel: vi.fn<(id: string) => void>(),
     testState,
   }
 })
@@ -117,6 +117,12 @@ vi.mock('@/web-ide/react/contribution-context', () => ({
   useIDEWorkspaceResources: () => harness.resources,
 }))
 
+vi.mock('@/web-ide/react/panel-layout-context', () => ({
+  usePanelLayout: () => ({
+    controller: { selectPanel: harness.selectPanel },
+  }),
+}))
+
 import { useRunPipeline } from '../../src/components/layout/use-run-pipeline'
 import type { RuntimeSession } from '../../src/web-ide/contracts/runtime'
 
@@ -157,7 +163,7 @@ beforeEach(() => {
   harness.executionState.setIsRunning.mockImplementation((value) => {
     harness.executionState.isRunning = value
   })
-  harness.executionState.setRightTab.mockReset()
+  harness.selectPanel.mockReset()
   harness.debugState.reset.mockReset()
   harness.debugState.setDebugMode.mockReset()
   harness.testState.reset.mockReset()

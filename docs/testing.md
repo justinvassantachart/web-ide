@@ -203,6 +203,12 @@ clean up independently. Focused jsdom coverage executes React's development
 Strict Mode setup/cleanup replay, which a production build intentionally does
 not perform.
 
+`tests/browser/initial-layout.spec.ts` proves the production bundle preserves
+the 27/70 defaults, applies requested proportions, displays the exact initial
+panel without a click, rejects unknown or initially hidden panels before a
+usable workbench appears, supports keyboard tab navigation, resets on remount,
+and keeps simultaneous layout controllers independent.
+
 `tests/contracts/run-pipeline-execution.test.ts` also creates two controllers
 for one runtime, defers preparation through one, and stops through the other. It
 proves the mount-owned coordinator drains cancellation cleanup without allowing

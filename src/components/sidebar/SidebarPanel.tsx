@@ -6,11 +6,11 @@
 import { useSidebarStore } from './sidebar-store'
 import { useIDEActivities } from '@/web-ide/react/contribution-context'
 import { useEngine } from '@/engine/engine-context'
-import { useExecutionStore } from '@/store/execution-store'
 import { getAllFiles } from '@/vfs/volume'
 import { useEffect } from 'react'
 import { useRunPipeline } from '@/components/layout/use-run-pipeline'
 import { ContributionSurface } from '@/web-ide/react/ContributionSurface'
+import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
 
 export function SidebarPanel() {
     const activeView = useSidebarStore((s) => s.activeView)
@@ -18,7 +18,7 @@ export function SidebarPanel() {
     const activities = useIDEActivities()
     const runtime = useEngine()
     const { execution } = useRunPipeline()
-    const reveal = useExecutionStore((state) => state.setRightTab)
+    const { controller: panelLayout } = usePanelLayout()
     const selected = activities.find((activity) => activity.id === activeView) ?? activities[0]
     const SelectedActivity = selected?.component
 
@@ -35,7 +35,7 @@ export function SidebarPanel() {
                     runtime={runtime}
                     execution={execution}
                     snapshot={getAllFiles}
-                    revealPanel={reveal}
+                    revealPanel={panelLayout.selectPanel}
                 />
             )}
         </div>

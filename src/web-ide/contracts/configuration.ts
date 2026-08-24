@@ -1,5 +1,15 @@
 import type { IDEPlugin } from './plugin'
 
+/** Initial workbench presentation chosen by the embedding host. */
+export interface WebIDEInitialLayout {
+  /** Exact ID of an installed panel contribution to show on first mount. */
+  selectedPanelId?: string
+  /** Initial width of the contributed-panel column, as a percentage. */
+  panelColumnPercent?: number
+  /** Initial height of panel content above the terminal, as a percentage. */
+  panelContentPercent?: number
+}
+
 export interface WebIDEConfiguration {
   /** ID of a runtime provider contributed by one of `plugins`. */
   runtimeProvider: string
@@ -22,5 +32,10 @@ export interface WebIDEConfiguration {
    * Generic embeds should leave this false and configure headers themselves.
    */
   reloadWhenNotIsolated?: boolean
+  /**
+   * Optional per-mount presentation. Omitted fields retain the workbench's
+   * established defaults; user changes after mount are not persisted.
+   */
+  initialLayout?: WebIDEInitialLayout
   plugins: readonly IDEPlugin[]
 }

@@ -126,6 +126,16 @@ gated by the same immutable workbench snapshot used by commands. The packaged
 Variables and Graph panels therefore disappear for a run-only runtime rather
 than presenting impossible debugging affordances.
 
+`WebIDEConfiguration.initialLayout` is the narrow host-owned initial
+presentation boundary. Its exact contributed-panel ID is validated before a
+usable workbench commit, and its bounded panel-column and panel-content
+percentages feed the existing resizable groups. A small controller owns panel
+selection per mounted `WebIDE`; commands, tests, activities, the public
+instance snapshot, and accessible tabs use that controller instead of the
+execution store. The controller has no storage, synchronization, theme, or
+application-specific policy. This isolation applies to layout state only and
+does not change the known single-workbench-per-realm VFS/store boundary.
+
 Web IDE pins the loader runtime to Monaco `0.56.0`, matching its reviewed
 editor API/types dependency. The React wrapper's module-global, path-keyed
 view-state cache is disabled: Monaco models retain content and undo state per

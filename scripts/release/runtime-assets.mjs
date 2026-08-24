@@ -220,7 +220,7 @@ export async function verifyRuntimeAssets(
         headers: {
           accept: '*/*',
           'accept-encoding': 'identity',
-          'user-agent': 'web-ide-release-evidence/0.2.0',
+          'user-agent': 'web-ide-release-evidence/0.3.0',
         },
       })
       if (response.status !== 200) throw new TypeError(`${asset.id} returned HTTP ${response.status}`)

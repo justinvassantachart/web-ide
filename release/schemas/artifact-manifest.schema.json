@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.2.0-source-r4/release/schemas/artifact-manifest.schema.json",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.3.0-source/release/schemas/artifact-manifest.schema.json",
   "title": "Web IDE Hamilton artifact manifest",
   "type": "object",
   "additionalProperties": false,
@@ -8,7 +8,7 @@
     "schemaVersion",
     "manifestKind",
     "manifestId",
-    "capabilityReleaseId",
+    "capabilityReleaseIds",
     "packageRole",
     "package",
     "source",
@@ -21,7 +21,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "const": 2
     },
     "manifestKind": {
       "const": "hamilton-capability-package-artifact"
@@ -30,8 +30,11 @@
       "type": "string",
       "pattern": "^urn:sha256:[a-f0-9]{64}$"
     },
-    "capabilityReleaseId": {
-      "const": "hamilton.python-karel/1"
+    "capabilityReleaseIds": {
+      "const": [
+        "hamilton.python-karel/2",
+        "hamilton.python/1"
+      ]
     },
     "packageRole": {
       "const": "web-ide"
@@ -54,7 +57,7 @@
           "const": "web-ide"
         },
         "version": {
-          "const": "0.2.0"
+          "const": "0.3.0"
         },
         "private": {
           "const": true
@@ -158,7 +161,7 @@
           ],
           "properties": {
             "name": {
-              "const": "web-ide-v0.2.0-source-r4"
+              "const": "web-ide-v0.3.0-source"
             },
             "objectId": {
               "type": "string",
@@ -249,7 +252,7 @@
               "const": "source-archive"
             },
             "fileName": {
-              "const": "web-ide-0.2.0-source.tar.gz"
+              "const": "web-ide-0.3.0-source.tar.gz"
             },
             "size": {
               "type": "integer",
@@ -534,10 +537,10 @@
           "const": "justinvassantachart/ths-ide"
         },
         "intendedTag": {
-          "const": "web-ide-v0.2.0"
+          "const": "web-ide-v0.3.0"
         },
         "intendedAssetFilename": {
-          "const": "web-ide-0.2.0.tgz"
+          "const": "web-ide-0.3.0.tgz"
         },
         "artifact": {
           "type": "object",
@@ -555,7 +558,7 @@
               "const": "package-tarball"
             },
             "fileName": {
-              "const": "web-ide-0.2.0.tgz"
+              "const": "web-ide-0.3.0.tgz"
             },
             "size": {
               "type": "integer",
@@ -887,7 +890,7 @@
                 "const": "cyclonedx-sbom"
               },
               "fileName": {
-                "const": "web-ide-0.2.0.cdx.json"
+                "const": "web-ide-0.3.0.cdx.json"
               },
               "size": {
                 "type": "integer",

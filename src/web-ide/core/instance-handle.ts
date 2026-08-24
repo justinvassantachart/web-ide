@@ -14,11 +14,14 @@ import type {
   WebIDEInstanceHandle,
 } from '../contracts/instance'
 import { projectPersistedWorkspaceFiles } from './workspace-resources'
+import {
+  createPanelLayoutController,
+  type PanelLayoutController,
+} from './panel-layout'
 
-function snapshot(): IDEInstanceSnapshot {
+function snapshot(panelLayout: PanelLayoutController): IDEInstanceSnapshot {
   const editor = useEditorStore.getState()
   const debug = useDebugStore.getState()
-  const execution = useExecutionStore.getState()
   const tests = useTestStore.getState()
   const breakpoints = Object.fromEntries(
     Object.entries(debug.breakpoints).map(([path, lines]) => [
@@ -42,7 +45,7 @@ function snapshot(): IDEInstanceSnapshot {
       callStack: Object.freeze([...debug.callStack]),
       memorySnapshot: debug.memorySnapshot,
     },
-    rightPanel: execution.rightTab,
+    rightPanel: panelLayout.getSnapshot() ?? '',
     tests: Object.freeze(
       tests.tests.map(({ name, status }) => Object.freeze({
         name,
@@ -64,7 +67,9 @@ export interface WebIDEInstanceController {
 }
 
 /** Creates the stable public ref object for one Web IDE mount. */
-export function createWebIDEInstanceController(): WebIDEInstanceController {
+export function createWebIDEInstanceController(
+  panelLayout: PanelLayoutController = createPanelLayoutController(),
+): WebIDEInstanceController {
   let workspaceLifecycle: WorkspaceInstanceLifecycle | undefined
   let lifecycleToken: object | undefined
 
@@ -74,13 +79,14 @@ export function createWebIDEInstanceController(): WebIDEInstanceController {
   }
 
   const handle: WebIDEInstanceHandle = {
-    snapshot,
+    snapshot: () => snapshot(panelLayout),
     subscribe(listener) {
       const unsubscribers = [
         useEditorStore.subscribe(listener),
         useDebugStore.subscribe(listener),
         useExecutionStore.subscribe(listener),
         useTestStore.subscribe(listener),
+        panelLayout.subscribe(listener),
         subscribeWorkspaceChange(listener),
       ]
       return () => {

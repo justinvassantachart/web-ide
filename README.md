@@ -4,7 +4,7 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This public source repository is preparing the MIT-licensed `0.2.0` source
+This public source repository is preparing the MIT-licensed `0.3.0` source
 candidate. The package remains `private: true` and is not published to npm.
 Hamilton distribution is limited to exact integrity-checked tarballs from
 immutable releases in Hamilton's private repository. Deterministic P2.5
@@ -155,6 +155,32 @@ call stacks, and expandable variables. Its runtime does not expose the native
 address/heap model used by the C/C++ Graph panel, so Graph is hidden by a
 capability predicate while Variables remains available. Monaco supplies Python
 syntax support without requiring a separate language-tooling backend.
+
+## Initial workbench layout
+
+An embedding host may provide only the initial presentation it needs without
+importing workbench state:
+
+```tsx
+const configuration: WebIDEConfiguration = {
+  runtimeProvider: 'web-ide.runtime.python',
+  initialLayout: {
+    selectedPanelId: 'example.preview',
+    panelColumnPercent: 50,
+    panelContentPercent: 85,
+  },
+  plugins,
+}
+```
+
+`selectedPanelId` must exactly name an installed panel that is visible for the
+selected runtime. Unknown or initially unavailable panels reject the
+configuration; Web IDE does not silently choose another panel. The panel
+column accepts 15–57 percent so the existing editor/sidebar minimums remain
+possible, and panel content accepts 25–90 percent so both it and the terminal
+retain their existing minimums. Omitted fields preserve the established first
+visible panel and 27/70 proportions. These are per-mount initial values only:
+later tab selection and resizing remain local UI state and are not persisted.
 
 With the currently validated Python backend, breakpoint edits made while the
 program is freely running are queued and applied at the next pause before it

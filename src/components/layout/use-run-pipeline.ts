@@ -15,6 +15,7 @@ import { useIDEWorkspaceResources } from '@/web-ide/react/contribution-context'
 import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
 import type { IDEExecutionController } from '@/web-ide/contracts/contributions'
 import { useRunPipelineCoordinator } from './run-pipeline-context'
+import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
 
 // One coordinated compile-and-run path lets toolbar buttons, panels, and
 // hotkeys share cancellation and ordered transition state for this mount.
@@ -24,6 +25,7 @@ export function useRunPipeline() {
     const testProvider = useSelectedTestProvider()
     const resources = useIDEWorkspaceResources()
     const coordinator = useRunPipelineCoordinator()
+    const { controller: panelLayout } = usePanelLayout()
 
     const settleStop = useCallback(async () => {
         if (engine.stopAndWait) await engine.stopAndWait()
@@ -45,7 +47,7 @@ export function useRunPipeline() {
             if (!coordinator.isCurrent(generation)) return
             if (isTest) {
                 useTestStore.getState().reset()
-                exec.setRightTab('tests')
+                panelLayout.selectPanel('tests')
             }
             const mode: RuntimeExecutionMode = debug ? 'debug' : 'run'
             let prepared: RuntimePreparationResult
@@ -145,7 +147,7 @@ export function useRunPipeline() {
         } finally {
             coordinator.clearPendingRun(task)
         }
-    }, [coordinator, engine, host, resources, settleStop, testProvider])
+    }, [coordinator, engine, host, panelLayout, resources, settleStop, testProvider])
 
     const stop = useCallback(async () => {
         const generation = coordinator.beginTransition()

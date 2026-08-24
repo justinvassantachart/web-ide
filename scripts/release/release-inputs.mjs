@@ -60,20 +60,20 @@ export async function loadReleaseConfiguration() {
     [],
     'release input',
   )
-  if (input.schemaVersion !== 1 || input.package !== 'web-ide@0.2.0') {
+  if (input.schemaVersion !== 1 || input.package !== 'web-ide@0.3.0') {
     throw new TypeError('Unsupported release input identity')
   }
   for (const field of Object.keys(input).filter((key) => key !== 'schemaVersion')) {
     assertNonEmptyString(input[field], `release input.${field}`)
   }
-  if (input.capabilityReleaseId !== 'hamilton.python-karel/1' || input.packageRole !== 'web-ide') {
+  if (input.capabilityReleaseId !== 'hamilton.python-karel/2' || input.packageRole !== 'web-ide') {
     throw new TypeError('Release input does not match the accepted Hamilton composition identity')
   }
-  if (input.sourceTag !== 'web-ide-v0.2.0-source-r4') {
-    throw new TypeError('Release input does not use the forward-only Web IDE 0.2 source tag')
+  if (input.sourceTag !== 'web-ide-v0.3.0-source') {
+    throw new TypeError('Release input does not use the forward-only Web IDE 0.3 source tag')
   }
-  if (input.releaseAssetFilename !== 'web-ide-0.2.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.2.0-source.tar.gz') {
-    throw new TypeError('Release asset names do not match the accepted Web IDE 0.2 identity')
+  if (input.releaseAssetFilename !== 'web-ide-0.3.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.3.0-source.tar.gz') {
+    throw new TypeError('Release asset names do not match the accepted Web IDE 0.3 identity')
   }
   return input
 }
@@ -85,7 +85,7 @@ export function validateValidationSummary(summary, sourceCommit, candidateSha256
     [],
     'validation summary',
   )
-  if (summary.schemaVersion !== 1 || summary.package !== 'web-ide@0.2.0') {
+  if (summary.schemaVersion !== 1 || summary.package !== 'web-ide@0.3.0') {
     throw new TypeError('Unsupported validation summary identity')
   }
   if (summary.sourceCommit !== sourceCommit) throw new TypeError('Validation summary sourceCommit does not match HEAD')
@@ -174,7 +174,7 @@ export function validateFinalCandidateState(state, configuration, source) {
     'runtime-source-provenance.json',
     'third-party-licenses.json',
     'THIRD_PARTY_LICENSES.txt',
-    'web-ide-0.2.0.cdx.json',
+    'web-ide-0.3.0.cdx.json',
   ].sort()
   if (JSON.stringify(names) !== JSON.stringify(expectedNames) || new Set(names).size !== names.length) {
     throw new TypeError('Candidate state artifact identities are incomplete, duplicated, or unsorted')

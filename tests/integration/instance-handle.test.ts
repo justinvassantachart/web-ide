@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDebugStore } from '../../src/store/debug-store'
 import { useEditorStore } from '../../src/store/editor-store'
-import { useExecutionStore } from '../../src/store/execution-store'
 import { useTestStore } from '../../src/testing/test-store'
 import { initVFS, readFile } from '../../src/vfs/volume'
 import type { WebIDEInstanceHandle } from '../../src/web-ide/contracts/instance'
 import { createWebIDEInstanceController } from '../../src/web-ide/core/instance-handle'
+import {
+  createPanelLayoutController,
+  type PanelLayoutController,
+} from '../../src/web-ide/core/panel-layout'
 
 const files = {
   '/workspace/main.cpp': 'int main() {}',
@@ -13,9 +16,11 @@ const files = {
 }
 
 let webIDEInstanceHandle: WebIDEInstanceHandle
+let panelLayout: PanelLayoutController
 
 beforeEach(async () => {
-  webIDEInstanceHandle = createWebIDEInstanceController().handle
+  panelLayout = createPanelLayoutController('variables')
+  webIDEInstanceHandle = createWebIDEInstanceController(panelLayout).handle
   await initVFS({ projectId: 'instance-handle-test', initialFiles: files, ephemeral: true })
   useEditorStore.setState({
     activeFile: null,
@@ -26,7 +31,6 @@ beforeEach(async () => {
   })
   useDebugStore.getState().reset()
   useDebugStore.setState({ breakpoints: {} })
-  useExecutionStore.setState({ rightTab: 'variables' })
   useTestStore.getState().reset()
 })
 
@@ -60,9 +64,14 @@ describe('public Web IDE instance facade', () => {
     useEditorStore.setState({ cursorLine: 8 })
     expect(listener).toHaveBeenCalledTimes(1)
 
+    panelLayout.selectPanel('tests')
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(webIDEInstanceHandle.snapshot().rightPanel).toBe('tests')
+
     unsubscribe()
     useEditorStore.setState({ cursorLine: 9 })
-    expect(listener).toHaveBeenCalledTimes(1)
+    panelLayout.selectPanel('variables')
+    expect(listener).toHaveBeenCalledTimes(2)
 
     useDebugStore.getState().setFileBreakpoints('/workspace/main.cpp', [2, 4])
     useDebugStore.setState({ debugMode: 'paused', currentLine: 4 })
