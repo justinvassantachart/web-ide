@@ -69,6 +69,9 @@ export async function loadReleaseConfiguration() {
   if (input.capabilityReleaseId !== 'hamilton.python-karel/1' || input.packageRole !== 'web-ide') {
     throw new TypeError('Release input does not match the accepted Hamilton composition identity')
   }
+  if (input.sourceTag !== 'web-ide-v0.2.0-source') {
+    throw new TypeError('Release input does not use the forward-only Web IDE 0.2 source tag')
+  }
   if (input.releaseAssetFilename !== 'web-ide-0.2.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.2.0-source.tar.gz') {
     throw new TypeError('Release asset names do not match the accepted Web IDE 0.2 identity')
   }

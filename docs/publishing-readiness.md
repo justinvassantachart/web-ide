@@ -34,8 +34,13 @@ immutable release in Hamilton's private repository.
 The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
-`24.11.1`/npm `11.6.2`, with a pushed annotated `v0.2.0` tag object peeled to
-that exact commit. Candidate construction then:
+`24.11.1`/npm `11.6.2`, with a pushed annotated
+`web-ide-v0.2.0-source` tag object peeled to that exact commit. The earlier
+shared `v0.2.0` tag is an abandoned prepublication source checkpoint: its
+failed validation gate emitted no retained log, and no release or release
+asset was created from it. The shared tag is retained unchanged; the
+forward-only source tag is the sole final Web IDE 0.2 source identity.
+Candidate construction then:
 
 - makes two isolated no-hardlink checkouts, installs from `package-lock.json`
   with lifecycle scripts disabled and separate empty caches, and scrubs the
@@ -105,8 +110,9 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `v0.2.0` tag at that commit, and use an absent or empty
-plain directory outside the repository. Generation is staged beside that path.
+and push the annotated `web-ide-v0.2.0-source` tag at that commit, and use an
+absent or empty plain directory outside the repository. Generation is staged
+beside that path.
 Publication exclusively reserves the target name, verifies its inode while
 moving the exact regular-file set, pins and safely quarantines the staging
 directory by inode, keeps the reservation nonempty with a private sentinel,
@@ -134,7 +140,10 @@ and `audit-full`. The paired Karel gate emits its one log with the reviewed
 `karel:release-compatibility-gate@2` receipt contract. Each receipt is the final
 log line, has production mode `release-gate`, and binds the exact gate
 ID/command, Web source commit, candidate SHA-256, reviewed emitter identity,
-and exit code zero. The local emitter kills
+and exit code zero. The local emitter uses distinct empty, disposable npm
+user/global configuration files plus isolated home, temporary, cache, prefix,
+and XDG directories; the explicit Playwright browser cache is the only
+host-tool cache passed through. It kills
 the complete process group on a 30-minute timeout or a 16 MiB combined-log
 limit and removes every partial log on failure. Record exactly one raw
 UTF-8 log for each of the five gates in

@@ -41,10 +41,19 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`v0.2.0` tag, or a toolchain mismatch. Use `release:preflight` before the real
-tag; its result is explicitly nonfinal and cannot be passed to
+`web-ide-v0.2.0-source` tag, or a toolchain mismatch. The earlier `v0.2.0` tag
+is an abandoned prepublication checkpoint and is not an accepted candidate or
+release identity. Use `release:preflight` before the real source tag; its result
+is explicitly nonfinal and cannot be passed to
 `release:finalize`. See [Publishing readiness](publishing-readiness.md) for the
 exact five raw-log gates and release sequencing.
+
+`release:gate` runs npm with two distinct empty temporary user/global npmrc
+files and isolated home, temporary, cache, prefix, and XDG directories. It
+removes that workspace on success or failure. The configured or platform
+default Playwright browser cache is passed explicitly so production browser
+validation can use the already reviewed browser installation without exposing
+the user's npm configuration or cache.
 
 The packed consumer uses its committed `tests/consumer/package-lock.json`,
 copies the candidate to the stable fixture name `web-ide.tgz`, and runs

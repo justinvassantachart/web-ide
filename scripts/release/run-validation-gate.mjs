@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { link, lstat, rm, unlink } from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 
 import { runBoundedCommandLog } from './bounded-command-log.mjs'
@@ -22,6 +21,10 @@ import {
   createValidationGateReceipt,
   validationGateReceiptFooter,
 } from './validation-gate-receipt.mjs'
+import {
+  defaultPlaywrightBrowsersPath,
+  withValidationGateEnvironment,
+} from './validation-gate-environment.mjs'
 
 const localGateIds = new Set([
   'validate-production',
@@ -65,36 +68,15 @@ if (
 const gate = VALIDATION_GATES.find((candidate) => candidate.id === gateId)
 const npmExecutable = process.platform === 'win32' ? 'npm' : path.join(path.dirname(process.execPath), 'npm')
 const invocation = gateId === 'validate-production'
-  ? { arguments: ['run', 'validate:production'], environment: {} }
+  ? { arguments: ['run', 'validate:production'], candidateTarball: undefined }
   : gateId === 'consumer-exact-candidate'
     ? {
         arguments: ['run', 'test:consumer'],
-        environment: { WEB_IDE_CANDIDATE_TARBALL: candidatePath },
+        candidateTarball: candidatePath,
       }
     : gateId === 'audit-production'
-      ? { arguments: ['audit', '--omit=dev'], environment: {} }
-      : { arguments: ['audit'], environment: {} }
-const commandEnvironment = {
-  PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`,
-  HOME: process.env.HOME ?? os.homedir(),
-  TMPDIR: process.env.TMPDIR ?? '/tmp',
-  TZ: 'UTC',
-  LANG: 'C',
-  LC_ALL: 'C',
-  CI: 'true',
-  NO_UPDATE_NOTIFIER: '1',
-  npm_config_registry: 'https://registry.npmjs.org/',
-  npm_config_globalconfig: '/dev/null',
-  npm_config_userconfig: '/dev/null',
-  npm_config_strict_ssl: 'true',
-  npm_config_ignore_scripts: 'true',
-  npm_config_audit: 'false',
-  npm_config_fund: 'false',
-  ...(process.env.PLAYWRIGHT_BROWSERS_PATH
-    ? { PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH }
-    : {}),
-  ...invocation.environment,
-}
+      ? { arguments: ['audit', '--omit=dev'], candidateTarball: undefined }
+      : { arguments: ['audit'], candidateTarball: undefined }
 
 const temporaryLogPath = path.join(
   path.dirname(logPath),
@@ -102,31 +84,36 @@ const temporaryLogPath = path.join(
 )
 let logComplete = false
 try {
-  await runBoundedCommandLog({
-    command: npmExecutable,
-    arguments: invocation.arguments,
-    cwd: repositoryRoot,
-    env: commandEnvironment,
-    outputPath: temporaryLogPath,
-    maximumBytes: MAX_VALIDATION_GATE_LOG_BYTES,
-    timeoutMs: VALIDATION_GATE_TIMEOUT_MS,
-    footerForSuccessfulExit: async (exitCode) => {
-      const finalSource = await verifyReleaseSourceState(configuration)
-      if (finalSource.commit !== source.commit) throw new TypeError('Source identity changed during validation gate')
-      const finalCandidate = await hashFile(candidatePath)
-      if (
-        finalCandidate.size !== initialCandidate.size
-        || finalCandidate.digest !== initialCandidate.digest
-      ) throw new TypeError('Candidate package changed during validation gate')
-      const receipt = createValidationGateReceipt({
-        gateId,
-        sourceCommit: source.commit,
-        candidateSha256: candidateIdentity.sha256,
-        exitCode,
-        emitter: gate.receiptEmitter,
-      })
-      return Buffer.from(validationGateReceiptFooter(receipt))
-    },
+  await withValidationGateEnvironment({
+    candidateTarball: invocation.candidateTarball,
+    playwrightBrowsersPath: defaultPlaywrightBrowsersPath(),
+  }, async ({ environment }) => {
+    await runBoundedCommandLog({
+      command: npmExecutable,
+      arguments: invocation.arguments,
+      cwd: repositoryRoot,
+      env: environment,
+      outputPath: temporaryLogPath,
+      maximumBytes: MAX_VALIDATION_GATE_LOG_BYTES,
+      timeoutMs: VALIDATION_GATE_TIMEOUT_MS,
+      footerForSuccessfulExit: async (exitCode) => {
+        const finalSource = await verifyReleaseSourceState(configuration)
+        if (finalSource.commit !== source.commit) throw new TypeError('Source identity changed during validation gate')
+        const finalCandidate = await hashFile(candidatePath)
+        if (
+          finalCandidate.size !== initialCandidate.size
+          || finalCandidate.digest !== initialCandidate.digest
+        ) throw new TypeError('Candidate package changed during validation gate')
+        const receipt = createValidationGateReceipt({
+          gateId,
+          sourceCommit: source.commit,
+          candidateSha256: candidateIdentity.sha256,
+          exitCode,
+          emitter: gate.receiptEmitter,
+        })
+        return Buffer.from(validationGateReceiptFooter(receipt))
+      },
+    })
   })
   logComplete = true
 } finally {

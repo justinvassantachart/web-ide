@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -67,6 +67,10 @@ import {
   preflightValidationGateReceiptFooter,
   validationGateReceiptFooter,
 } from '../../scripts/release/validation-gate-receipt.mjs'
+import {
+  defaultPlaywrightBrowsersPath,
+  withValidationGateEnvironment,
+} from '../../scripts/release/validation-gate-environment.mjs'
 import { decodeValidationLog } from '../../scripts/release/validation-log.mjs'
 
 const temporaryDirectories = []
@@ -670,6 +674,69 @@ describe('bounded subprocess evidence', () => {
   }, 5_000)
 })
 
+describe('validation gate environment', () => {
+  it('runs npm with distinct empty isolated configs and removes the complete workspace', async () => {
+    let workspace
+    const npmExecutable = process.platform === 'win32'
+      ? 'npm'
+      : path.join(path.dirname(process.execPath), 'npm')
+    await withValidationGateEnvironment({
+      candidateTarball: path.join(tmpdir(), 'fixture-web-ide.tgz'),
+      playwrightBrowsersPath: defaultPlaywrightBrowsersPath(),
+    }, async ({ environment, paths }) => {
+      workspace = paths.workspace
+      expect(environment).toEqual({
+        PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`,
+        HOME: paths.home,
+        TMPDIR: paths.temporary,
+        XDG_CONFIG_HOME: paths.xdgConfig,
+        XDG_CACHE_HOME: paths.xdgCache,
+        TZ: 'UTC',
+        LANG: 'C',
+        LC_ALL: 'C',
+        CI: 'true',
+        NO_UPDATE_NOTIFIER: '1',
+        npm_config_cache: paths.npmCache,
+        npm_config_prefix: paths.npmPrefix,
+        npm_config_registry: 'https://registry.npmjs.org/',
+        npm_config_globalconfig: paths.npmGlobalConfig,
+        npm_config_userconfig: paths.npmUserConfig,
+        npm_config_strict_ssl: 'true',
+        npm_config_ignore_scripts: 'true',
+        npm_config_audit: 'false',
+        npm_config_fund: 'false',
+        npm_config_update_notifier: 'false',
+        ...(defaultPlaywrightBrowsersPath()
+          ? { PLAYWRIGHT_BROWSERS_PATH: defaultPlaywrightBrowsersPath() }
+          : {}),
+        WEB_IDE_CANDIDATE_TARBALL: path.join(tmpdir(), 'fixture-web-ide.tgz'),
+      })
+      expect(paths.npmGlobalConfig).not.toBe(paths.npmUserConfig)
+      await expect(readFile(paths.npmGlobalConfig, 'utf8')).resolves.toBe('')
+      await expect(readFile(paths.npmUserConfig, 'utf8')).resolves.toBe('')
+      const result = await run(npmExecutable, ['config', 'get', 'registry'], {
+        cwd: repositoryRoot,
+        env: environment,
+        timeoutMs: 10_000,
+      })
+      expect(result.stdout.trim()).toBe('https://registry.npmjs.org/')
+      await mkdir(path.join(paths.npmCache, 'nested'))
+      await writeFile(path.join(paths.npmCache, 'nested', 'fixture'), 'cache fixture')
+    })
+    await expect(lstat(workspace)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('removes the isolated workspace when the gate operation fails', async () => {
+    let workspace
+    await expect(withValidationGateEnvironment({}, async ({ paths }) => {
+      workspace = paths.workspace
+      await writeFile(path.join(paths.temporary, 'partial'), 'partial gate output')
+      throw new Error('fixture gate failure')
+    })).rejects.toThrow(/fixture gate failure/u)
+    await expect(lstat(workspace)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
 describe('transactional external evidence', () => {
   it('rolls failed generation back and transactionally commits complete output', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'web-ide-output-transaction-'))
@@ -1252,7 +1319,7 @@ describe('artifact manifest', () => {
     const configuration = {
       package: 'web-ide@0.2.0',
       sourceRepository: 'https://github.com/justinvassantachart/web-ide.git',
-      sourceTag: 'v0.2.0',
+      sourceTag: 'web-ide-v0.2.0-source',
       sourceAssetFilename: 'web-ide-0.2.0-source.tar.gz',
       capabilityReleaseId: 'hamilton.python-karel/1',
       packageRole: 'web-ide',
@@ -1273,7 +1340,7 @@ describe('artifact manifest', () => {
         tree: sourceTree,
         commitTimestamp: 1,
         sourceDateEpoch: '1',
-        tag: { name: 'v0.2.0', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
+        tag: { name: 'web-ide-v0.2.0-source', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
         remote: configuration.sourceRepository,
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
@@ -1324,8 +1391,8 @@ describe('release source state', () => {
         ref: 'refs/heads/main',
         object: { type: 'commit', sha: commit },
       }],
-      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/v0.2.0', {
-        ref: 'refs/tags/v0.2.0',
+      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source', {
+        ref: 'refs/tags/web-ide-v0.2.0-source',
         object: { type: 'tag', sha: tagObjectId },
       }],
       [`https://api.github.com/repos/justinvassantachart/web-ide/git/tags/${tagObjectId}`, {
@@ -1350,16 +1417,16 @@ describe('release source state', () => {
       }
     }
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'v0.2.0' },
+      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).resolves.toEqual({ branchCommit: commit, tagObjectId, peeledCommit: commit })
     expect(fetched).toEqual([...responses.keys()])
 
-    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/v0.2.0')
+    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source')
       .object.type = 'commit'
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'v0.2.0' },
+      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).rejects.toThrow(/expected tag ref/u)
@@ -1388,20 +1455,20 @@ describe('release source state', () => {
       '-c', 'user.email=release-fixture@example.invalid',
       'commit', '-m', 'fixture',
     ], { cwd: checkout, env: gitIdentityEnvironment })
-    await run('git', ['tag', '-a', 'v0.2.0', '-m', 'Web IDE 0.2.0 fixture'], {
+    await run('git', ['tag', '-a', 'web-ide-v0.2.0-source', '-m', 'Web IDE 0.2.0 fixture'], {
       cwd: checkout,
       env: gitIdentityEnvironment,
     })
-    await run('git', ['push', 'origin', 'main', 'refs/tags/v0.2.0'], { cwd: checkout })
+    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.2.0-source'], { cwd: checkout })
     const configuration = {
       sourceRepository: bare,
-      sourceTag: 'v0.2.0',
+      sourceTag: 'web-ide-v0.2.0-source',
       nodeVersion: process.versions.node,
       npmVersion: process.env.npm_config_user_agent?.match(/^npm\/([^ ]+)/u)?.[1] ?? '11.6.2',
     }
     const fixtureOptions = { nonreleaseFixtureRemote: bare }
     const source = await verifyReleaseSourceState(configuration, checkout, fixtureOptions)
-    expect(source).toMatchObject({ branch: 'main', tag: { name: 'v0.2.0', objectType: 'tag' } })
+    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.2.0-source', objectType: 'tag' } })
     const [first, second] = await Promise.all([
       sourceArchiveBytes(configuration, checkout, fixtureOptions),
       sourceArchiveBytes(configuration, checkout, fixtureOptions),

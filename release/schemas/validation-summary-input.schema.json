@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/v0.2.0/release/schemas/validation-summary-input.schema.json",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.2.0-source/release/schemas/validation-summary-input.schema.json",
   "title": "Web IDE 0.2 validation summary input",
   "required": [
     "schemaVersion",
