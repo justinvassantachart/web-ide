@@ -27,7 +27,7 @@ const LOCAL_PATH_PATTERNS = Object.freeze([
   /\/(?:Users|home|root|tmp|Volumes)(?:\/|$)/gimu,
   /\/(?:private\/(?:tmp|var)|var\/folders)(?:\/|$)/gimu,
   /(?:^|[\s("'`=:\u005b{@,])[A-Za-z]:[\\/]/gimu,
-  /(?:^|[\s("'`=:\u005b{@,])(?:\\\\|\/\/)[^\s\\/<>:"'`]+[\\/][^\s<>:"'`]+/gimu,
+  /(?:^|[\s("'`=\u005b{@,])(?:\\\\|\/\/)[^\s\\/<>:"'`]+[\\/][^\s<>:"'`]+/gimu,
   /(?:^|[\s("'`=:\u005b{@,])~[\\/]/gimu,
   /file:(?:[\\/]|%(?:2f|5c))/gimu,
   /[A-Za-z]%3a%(?:2f|5c)/gimu,

@@ -693,6 +693,12 @@ describe('bounded subprocess evidence', () => {
     expect(encodedRoots).toContain('<repository-root>/package.json')
     expect(encodedRoots).toContain('file:<repository-root>/package.json')
 
+    const documentedHttpsUrl = 'https://vite.dev/guide/troubleshooting.html'
+    expect(() => decodeValidationLog(
+      Buffer.from(documentedHttpsUrl),
+      'documented-url.log',
+    )).not.toThrow()
+
     const ansiSplitGitHubToken = `ghp_${'a'.repeat(10)}\u001b[31m${'b'.repeat(12)}`
     expect(() => decodeValidationLog(Buffer.from(ansiSplitGitHubToken), 'ansi-secret.log'))
       .toThrow(/GitHub token/u)
@@ -1590,7 +1596,7 @@ describe('artifact manifest', () => {
     const configuration = {
       package: 'web-ide@0.2.0',
       sourceRepository: 'https://github.com/justinvassantachart/web-ide.git',
-      sourceTag: 'web-ide-v0.2.0-source-r2',
+      sourceTag: 'web-ide-v0.2.0-source-r3',
       sourceAssetFilename: 'web-ide-0.2.0-source.tar.gz',
       capabilityReleaseId: 'hamilton.python-karel/1',
       packageRole: 'web-ide',
@@ -1611,7 +1617,7 @@ describe('artifact manifest', () => {
         tree: sourceTree,
         commitTimestamp: 1,
         sourceDateEpoch: '1',
-        tag: { name: 'web-ide-v0.2.0-source-r2', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
+        tag: { name: 'web-ide-v0.2.0-source-r3', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
         remote: configuration.sourceRepository,
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
@@ -1662,8 +1668,8 @@ describe('release source state', () => {
         ref: 'refs/heads/main',
         object: { type: 'commit', sha: commit },
       }],
-      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r2', {
-        ref: 'refs/tags/web-ide-v0.2.0-source-r2',
+      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r3', {
+        ref: 'refs/tags/web-ide-v0.2.0-source-r3',
         object: { type: 'tag', sha: tagObjectId },
       }],
       [`https://api.github.com/repos/justinvassantachart/web-ide/git/tags/${tagObjectId}`, {
@@ -1688,16 +1694,16 @@ describe('release source state', () => {
       }
     }
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r2' },
+      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r3' },
       { commit, tagObjectId },
       fakeFetch,
     )).resolves.toEqual({ branchCommit: commit, tagObjectId, peeledCommit: commit })
     expect(fetched).toEqual([...responses.keys()])
 
-    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r2')
+    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.2.0-source-r3')
       .object.type = 'commit'
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r2' },
+      { sourceRepository, sourceTag: 'web-ide-v0.2.0-source-r3' },
       { commit, tagObjectId },
       fakeFetch,
     )).rejects.toThrow(/expected tag ref/u)
@@ -1726,20 +1732,20 @@ describe('release source state', () => {
       '-c', 'user.email=release-fixture@example.invalid',
       'commit', '-m', 'fixture',
     ], { cwd: checkout, env: gitIdentityEnvironment })
-    await run('git', ['tag', '-a', 'web-ide-v0.2.0-source-r2', '-m', 'Web IDE 0.2.0 fixture'], {
+    await run('git', ['tag', '-a', 'web-ide-v0.2.0-source-r3', '-m', 'Web IDE 0.2.0 fixture'], {
       cwd: checkout,
       env: gitIdentityEnvironment,
     })
-    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.2.0-source-r2'], { cwd: checkout })
+    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.2.0-source-r3'], { cwd: checkout })
     const configuration = {
       sourceRepository: bare,
-      sourceTag: 'web-ide-v0.2.0-source-r2',
+      sourceTag: 'web-ide-v0.2.0-source-r3',
       nodeVersion: process.versions.node,
       npmVersion: process.env.npm_config_user_agent?.match(/^npm\/([^ ]+)/u)?.[1] ?? '11.6.2',
     }
     const fixtureOptions = { nonreleaseFixtureRemote: bare }
     const source = await verifyReleaseSourceState(configuration, checkout, fixtureOptions)
-    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.2.0-source-r2', objectType: 'tag' } })
+    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.2.0-source-r3', objectType: 'tag' } })
     const [first, second] = await Promise.all([
       sourceArchiveBytes(configuration, checkout, fixtureOptions),
       sourceArchiveBytes(configuration, checkout, fixtureOptions),

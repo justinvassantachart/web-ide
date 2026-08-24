@@ -41,11 +41,12 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.2.0-source-r2` tag, or a toolchain mismatch. The earlier `v0.2.0`
-and `web-ide-v0.2.0-source` tags are retained abandoned prepublication source
-checkpoints; the latter's evidence was withheld before publication because its
-capture did not yet enforce normalized paths. Neither is an accepted candidate
-or release identity. Use
+`web-ide-v0.2.0-source-r3` tag, or a toolchain mismatch. The earlier `v0.2.0`
+`web-ide-v0.2.0-source`, and `web-ide-v0.2.0-source-r2` tags are retained
+abandoned prepublication source checkpoints. The first path-normalization
+revision emitted no retained log because its real gate capture failed closed
+on a public HTTPS documentation URL misclassified as a UNC path. None is an
+accepted candidate or release identity. Use
 `release:preflight` before the real source tag; its result is explicitly
 nonfinal and cannot be passed to
 `release:finalize`. See [Publishing readiness](publishing-readiness.md) for the
