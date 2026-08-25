@@ -79,7 +79,7 @@ async function boundedGitHubJson(url, fetchImplementation) {
   const response = await fetchImplementation(url, {
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'web-ide-release-evidence/0.3.0',
+      'User-Agent': 'web-ide-release-evidence/0.3.1',
       'X-GitHub-Api-Version': '2022-11-28',
     },
     redirect: 'error',
@@ -409,7 +409,7 @@ export async function sourceArchiveBytes(configuration, root = repositoryRoot, o
     const child = spawn(executable, [
       'archive',
       '--format=tar',
-      '--prefix=web-ide-0.3.0/',
+      '--prefix=web-ide-0.3.1/',
       configuration.sourceTag,
     ], {
       cwd: root,

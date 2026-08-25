@@ -122,7 +122,7 @@ const sbom = await generateCycloneDx({
   candidate: candidate.inspection.tarball,
 })
 await validateCycloneDx(sbom)
-await writeCanonicalJSON(path.join(outputDirectory, 'web-ide-0.3.0.cdx.json'), sbom)
+await writeCanonicalJSON(path.join(outputDirectory, 'web-ide-0.3.1.cdx.json'), sbom)
 
 const shippedLicenseText = await readFile(path.join(repositoryRoot, 'THIRD_PARTY_LICENSES.txt'), 'utf8')
 if (candidate.licenseTextBytes.toString('utf8') !== shippedLicenseText) {
@@ -153,7 +153,7 @@ const artifactFiles = [
   'runtime-source-provenance.json',
   'third-party-licenses.json',
   'THIRD_PARTY_LICENSES.txt',
-  'web-ide-0.3.0.cdx.json',
+  'web-ide-0.3.1.cdx.json',
 ]
 const artifacts = []
 for (const fileName of artifactFiles.sort()) {

@@ -41,8 +41,9 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.2.0-source-r4` tag, or a toolchain mismatch. The earlier `v0.2.0`
-`web-ide-v0.2.0-source`, `web-ide-v0.2.0-source-r2`, and
+`web-ide-v0.3.1-source` tag, or a toolchain mismatch. The immutable
+`web-ide-v0.3.0-source` tag remains the previous release's source identity. The
+earlier `v0.2.0`, `web-ide-v0.2.0-source`, `web-ide-v0.2.0-source-r2`, and
 `web-ide-v0.2.0-source-r3` tags are retained
 abandoned prepublication source checkpoints. The first path-normalization
 revision emitted no retained log because its real gate capture failed closed
@@ -87,7 +88,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.2.0.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.3.1.tgz \
   npm run test:consumer
 ```
 
@@ -205,7 +206,8 @@ not perform.
 
 `tests/browser/initial-layout.spec.ts` proves the production bundle preserves
 the 27/70 defaults, applies requested proportions, displays the exact initial
-panel without a click, rejects unknown or initially hidden panels before a
+activity and panel without a click, rejects unknown activities and unknown or
+initially hidden panels before a
 usable workbench appears, supports keyboard tab navigation, resets on remount,
 and keeps simultaneous layout controllers independent.
 

@@ -105,6 +105,7 @@ const hostActivity: IDEPlugin = {
 }
 
 const initialLayout: WebIDEInitialLayout = {
+  selectedActivityId: 'consumer.activity',
   selectedPanelId: 'variables',
   panelColumnPercent: 50,
   panelContentPercent: 85,

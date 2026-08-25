@@ -287,7 +287,7 @@ export async function generateLicenseEvidence({
   const report = { schemaVersion: 1, package: 'web-ide', records: machineRecords }
 
   const sections = [
-    'WEB IDE 0.3.0 THIRD-PARTY LICENSE EVIDENCE',
+    'WEB IDE 0.3.1 THIRD-PARTY LICENSE EVIDENCE',
     '',
     'Generated deterministically from the exact Rollup bundle provenance, package lock,',
     'runtime-asset lock, and reviewed source-attribution policy.',

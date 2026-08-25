@@ -2,6 +2,8 @@ import type { IDEPlugin } from './plugin'
 
 /** Initial workbench presentation chosen by the embedding host. */
 export interface WebIDEInitialLayout {
+  /** Exact ID of an installed activity contribution to show on first mount. */
+  selectedActivityId?: string
   /** Exact ID of an installed panel contribution to show on first mount. */
   selectedPanelId?: string
   /** Initial width of the contributed-panel column, as a percentage. */

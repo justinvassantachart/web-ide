@@ -1,6 +1,6 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.2.0` source candidate is
+Web IDE's source repository is public and its `0.3.1` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
 checkpoint does not authorize or configure an npm publication. Hamilton's
 accepted distribution path is an exact integrity-checked tarball attached to an
@@ -35,8 +35,9 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.2.0-source-r4` tag object peeled to that exact commit. The earlier
-shared `v0.2.0`, `web-ide-v0.2.0-source`,
+`web-ide-v0.3.1-source` tag object peeled to that exact commit. The immutable
+`web-ide-v0.3.0-source` tag remains the previous release's source identity. The
+earlier shared `v0.2.0`, `web-ide-v0.2.0-source`,
 `web-ide-v0.2.0-source-r2`, and `web-ide-v0.2.0-source-r3` tags are abandoned
 prepublication source checkpoints. The first failed before retained gate
 evidence; the second was
@@ -117,7 +118,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.2.0-source-r4` tag at that commit, and use an
+and push the annotated `web-ide-v0.3.1-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while

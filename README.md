@@ -4,7 +4,7 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This public source repository is preparing the MIT-licensed `0.3.0` source
+This public source repository is preparing the MIT-licensed `0.3.1` source
 candidate. The package remains `private: true` and is not published to npm.
 Hamilton distribution is limited to exact integrity-checked tarballs from
 immutable releases in Hamilton's private repository. Deterministic P2.5
@@ -165,6 +165,7 @@ importing workbench state:
 const configuration: WebIDEConfiguration = {
   runtimeProvider: 'web-ide.runtime.python',
   initialLayout: {
+    selectedActivityId: 'example.instructions',
     selectedPanelId: 'example.preview',
     panelColumnPercent: 50,
     panelContentPercent: 85,
@@ -173,14 +174,18 @@ const configuration: WebIDEConfiguration = {
 }
 ```
 
+`selectedActivityId` must exactly name an installed activity and opens its
+sidebar on the first render, before later user selection takes over.
 `selectedPanelId` must exactly name an installed panel that is visible for the
-selected runtime. Unknown or initially unavailable panels reject the
-configuration; Web IDE does not silently choose another panel. The panel
-column accepts 15–57 percent so the existing editor/sidebar minimums remain
+selected runtime. Unknown activities or unknown/initially unavailable panels
+reject the configuration; Web IDE does not silently choose another surface.
+The panel column accepts 15–57 percent so the existing editor/sidebar minimums remain
 possible, and panel content accepts 25–90 percent so both it and the terminal
-retain their existing minimums. Omitted fields preserve the established first
-visible panel and 27/70 proportions. These are per-mount initial values only:
-later tab selection and resizing remain local UI state and are not persisted.
+retain their existing minimums. Omitted fields preserve the established
+persisted sidebar choice, first visible panel, and 27/70 proportions. These are
+per-mount initial values only: later activity/tab selection and resizing remain
+local UI state; sidebar choices retain their established best-effort
+persistence.
 
 With the currently validated Python backend, breakpoint edits made while the
 program is freely running are queued and applied at the next pause before it

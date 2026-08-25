@@ -3,7 +3,6 @@
 // own titlebar and body chrome — SidebarPanel is just the outer container
 // so it stays out of the way for resizing.
 
-import { useSidebarStore } from './sidebar-store'
 import { useIDEActivities } from '@/web-ide/react/contribution-context'
 import { useEngine } from '@/engine/engine-context'
 import { getAllFiles } from '@/vfs/volume'
@@ -11,20 +10,24 @@ import { useEffect } from 'react'
 import { useRunPipeline } from '@/components/layout/use-run-pipeline'
 import { ContributionSurface } from '@/web-ide/react/ContributionSurface'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
+import { useSidebarLayout } from '@/web-ide/react/sidebar-layout-context'
 
 export function SidebarPanel() {
-    const activeView = useSidebarStore((s) => s.activeView)
-    const setActiveView = useSidebarStore((s) => s.setActiveView)
+    const { controller: sidebarLayout, snapshot: sidebarSnapshot } = useSidebarLayout()
     const activities = useIDEActivities()
     const runtime = useEngine()
     const { execution } = useRunPipeline()
     const { controller: panelLayout } = usePanelLayout()
-    const selected = activities.find((activity) => activity.id === activeView) ?? activities[0]
+    const selected = activities.find(
+        (activity) => activity.id === sidebarSnapshot.selectedActivityId,
+    ) ?? activities[0]
     const SelectedActivity = selected?.component
 
     useEffect(() => {
-        if (selected && selected.id !== activeView) setActiveView(selected.id)
-    }, [activeView, selected, setActiveView])
+        if (selected && selected.id !== sidebarSnapshot.selectedActivityId) {
+            sidebarLayout.selectActivity(selected.id)
+        }
+    }, [selected, sidebarLayout, sidebarSnapshot.selectedActivityId])
 
     return (
         <div className="nova-sidebar">

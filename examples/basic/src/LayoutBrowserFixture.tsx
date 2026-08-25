@@ -2,6 +2,7 @@ import { Component, useState, type ReactNode } from 'react'
 import {
   WebIDE,
   WebIDEHostProvider,
+  type IDEPlugin,
   type WebIDEConfiguration,
   type WebIDEHost,
 } from 'web-ide'
@@ -9,9 +10,32 @@ import {
 export type LayoutBrowserMode =
   | 'custom'
   | 'invalid'
+  | 'invalid-activity'
   | 'multiple'
   | 'remount'
   | 'unavailable'
+
+function HostInstructionsActivity() {
+  return (
+    <section aria-labelledby="host-instructions-title" style={{ padding: 16 }}>
+      <h2 id="host-instructions-title">Host instructions</h2>
+      <p>This activity was selected by the embedding host.</p>
+    </section>
+  )
+}
+
+const hostInstructionsPlugin: IDEPlugin = {
+  id: 'example.host-instructions',
+  contributes: {
+    activities: [{
+      id: 'example.host-instructions.activity',
+      title: 'Instructions',
+      icon: 'book',
+      component: HostInstructionsActivity,
+      order: 10,
+    }],
+  },
+}
 
 function workspaceHost(host: WebIDEHost, id: string): WebIDEHost {
   if (!host.workspace) return host
@@ -77,17 +101,20 @@ export function LayoutBrowserFixture({
 }) {
   const [mountKey, setMountKey] = useState(0)
 
-  if (mode === 'invalid' || mode === 'unavailable') {
+  if (mode === 'invalid' || mode === 'invalid-activity' || mode === 'unavailable') {
     const invalidConfiguration: WebIDEConfiguration = {
       ...configuration,
+      plugins: [hostInstructionsPlugin, ...configuration.plugins],
       initialLayout: {
-        selectedPanelId: mode === 'invalid' ? 'fixture.unknown-panel' : 'graph',
+        ...(mode === 'invalid-activity'
+          ? { selectedActivityId: 'fixture.unknown-activity' }
+          : { selectedPanelId: mode === 'invalid' ? 'fixture.unknown-panel' : 'graph' }),
       },
     }
     return (
       <LayoutErrorBoundary>
         <WorkbenchFixture
-          label={mode === 'invalid' ? 'Invalid layout workbench' : 'Unavailable layout workbench'}
+          label={mode === 'unavailable' ? 'Unavailable layout workbench' : 'Invalid layout workbench'}
           configuration={invalidConfiguration}
           host={workspaceHost(host, 'layout-invalid')}
         />
@@ -133,7 +160,9 @@ export function LayoutBrowserFixture({
 
   const customConfiguration: WebIDEConfiguration = {
     ...configuration,
+    plugins: [hostInstructionsPlugin, ...configuration.plugins],
     initialLayout: {
+      selectedActivityId: 'example.host-instructions.activity',
       selectedPanelId: 'canvas',
       panelColumnPercent: 50,
       panelContentPercent: 85,

@@ -116,12 +116,11 @@ vi.mock('@/vfs/volume', () => ({
   getAllFiles: () => ({ '/workspace/main.py': 'print("instance")' }),
 }))
 
-vi.mock('@/components/sidebar/sidebar-store', () => ({
-  useSidebarStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({
-      activeView: 'host.activity',
-      setActiveView: harness.setActiveView,
-    }),
+vi.mock('@/web-ide/react/sidebar-layout-context', () => ({
+  useSidebarLayout: () => ({
+    controller: { selectActivity: harness.setActiveView },
+    snapshot: { selectedActivityId: 'host.activity', collapsed: false },
+  }),
 }))
 
 vi.mock('@/components/ui/resizable', () => ({

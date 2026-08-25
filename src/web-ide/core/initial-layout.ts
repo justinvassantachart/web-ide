@@ -8,12 +8,14 @@ const MAX_PANEL_COLUMN_PERCENT = 57
 const MIN_PANEL_CONTENT_PERCENT = 25
 const MAX_PANEL_CONTENT_PERCENT = 90
 const INITIAL_LAYOUT_KEYS = new Set([
+  'selectedActivityId',
   'selectedPanelId',
   'panelColumnPercent',
   'panelContentPercent',
 ])
 
 export interface ResolvedWebIDEInitialLayout {
+  readonly selectedActivityId?: string
   readonly selectedPanelId?: string
   readonly panelColumnPercent: number
   readonly panelContentPercent: number
@@ -58,6 +60,14 @@ export function resolveWebIDEInitialLayout(
     }
   }
 
+  const selectedActivityId = value.selectedActivityId
+  if (
+    selectedActivityId !== undefined
+    && (typeof selectedActivityId !== 'string' || selectedActivityId.length === 0)
+  ) {
+    throw new TypeError('initialLayout.selectedActivityId must be a non-empty string')
+  }
+
   const selectedPanelId = value.selectedPanelId
   if (
     selectedPanelId !== undefined
@@ -81,6 +91,7 @@ export function resolveWebIDEInitialLayout(
       MAX_PANEL_CONTENT_PERCENT,
       DEFAULT_PANEL_CONTENT_PERCENT,
     ),
+    ...(selectedActivityId === undefined ? {} : { selectedActivityId }),
     ...(selectedPanelId === undefined ? {} : { selectedPanelId }),
   }
   return Object.freeze(resolved)

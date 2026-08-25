@@ -51,8 +51,8 @@ const expectedValidationLogKinds = VALIDATION_GATES
   .sort()
 
 const expectedCapabilityReleaseIds = Object.freeze([
-  'hamilton.python-karel/2',
-  'hamilton.python/1',
+  'hamilton.python-karel/4',
+  'hamilton.python/2',
 ])
 
 function validateDigest(value, location) {
@@ -334,7 +334,7 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
     'candidate-state': 'candidate-state.json',
-    'cyclonedx-sbom': 'web-ide-0.3.0.cdx.json',
+    'cyclonedx-sbom': 'web-ide-0.3.1.cdx.json',
     'deterministic-builds': 'deterministic-builds.json',
     'license-inventory': 'third-party-licenses.json',
     'package-inspection': 'package-inspection.json',

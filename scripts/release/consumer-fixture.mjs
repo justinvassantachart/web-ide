@@ -9,7 +9,7 @@ import {
 } from './release-utils.mjs'
 
 const CANDIDATE_REFERENCE = 'file:web-ide.tgz'
-const NORMALIZED_LOCK_SHA256 = '6af9d98a1efb4a083b11f9d9dfdf1dc94739b1a28c495b89d7be3cac711b497c'
+const NORMALIZED_LOCK_SHA256 = '2c1058ee6ca7bebff2a509f2fb9419af19ec2211d6ff85b0e9dbe8c38c3a3c70'
 const CANDIDATE_INTEGRITY_PLACEHOLDER = '<candidate-sha512-integrity>'
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u
 const PACKAGE_PATH_PATTERN = /^node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+(?:\/node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)*$/u
@@ -62,7 +62,7 @@ const EXPECTED_MANIFEST = {
 }
 
 const EXPECTED_CANDIDATE = {
-  version: '0.3.0',
+  version: '0.3.1',
   resolved: CANDIDATE_REFERENCE,
   integrity: CANDIDATE_INTEGRITY_PLACEHOLDER,
   license: 'MIT',

@@ -22,10 +22,12 @@ describe('initial workbench layout contract', () => {
 
   it('accepts an exact initial panel and proportions within existing minimums', () => {
     expect(resolveWebIDEInitialLayout({
+      selectedActivityId: 'example.instructions',
       selectedPanelId: 'example.preview',
       panelColumnPercent: 50,
       panelContentPercent: 85,
     })).toEqual({
+      selectedActivityId: 'example.instructions',
       selectedPanelId: 'example.preview',
       panelColumnPercent: 50,
       panelContentPercent: 85,
@@ -39,6 +41,7 @@ describe('initial workbench layout contract', () => {
     [{ panelColumnPercent: 57.01 }, 'must be between 15 and 57'],
     [{ panelContentPercent: 24.99 }, 'must be between 25 and 90'],
     [{ panelContentPercent: 90.01 }, 'must be between 25 and 90'],
+    [{ selectedActivityId: '' }, 'must be a non-empty string'],
     [{ selectedPanelId: '' }, 'must be a non-empty string'],
     [{ unexpected: true }, 'contains unsupported field "unexpected"'],
   ])('rejects invalid configuration %#', (value, message) => {

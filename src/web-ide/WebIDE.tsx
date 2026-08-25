@@ -37,6 +37,8 @@ import { RunPipelineCoordinatorProvider } from '@/components/layout/RunPipelineC
 import { resolveWebIDEInitialLayout } from './core/initial-layout'
 import { createPanelLayoutController } from './core/panel-layout'
 import { PanelLayoutContext } from './react/panel-layout-context'
+import { createSidebarLayoutController } from './core/sidebar-layout'
+import { SidebarLayoutContext } from './react/sidebar-layout-context'
 
 const runtimeMountKeys = new WeakMap<RuntimeProvider, number>()
 let nextRuntimeMountKey = 1
@@ -85,6 +87,10 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
     () => createPanelLayoutController(initialLayout.selectedPanelId),
     [initialLayout.selectedPanelId],
   )
+  const sidebarLayoutController = useMemo(
+    () => createSidebarLayoutController(initialLayout.selectedActivityId),
+    [initialLayout.selectedActivityId],
+  )
   const panelLayoutContext = useMemo(
     () => ({ controller: panelLayoutController, initialLayout }),
     [initialLayout, panelLayoutController],
@@ -104,6 +110,14 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
   if (!runtimeProvider) {
     throw new Error(
       `No runtime provider contributed with id "${configuration.runtimeProvider}"`,
+    )
+  }
+  if (
+    initialLayout.selectedActivityId !== undefined
+    && !plugins.activities.has(initialLayout.selectedActivityId)
+  ) {
+    throw new Error(
+      `No activity contributed with id ${JSON.stringify(initialLayout.selectedActivityId)}`,
     )
   }
   if (
@@ -130,28 +144,30 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
     <WebIDEConfigurationContext.Provider value={configuration}>
       <IDEContributionContext.Provider value={plugins}>
         <PanelLayoutContext.Provider value={panelLayoutContext}>
-          <PluginManagerLifetime plugins={plugins} />
-          <WorkspaceHostBridge instanceController={instanceController} />
-          <InstanceHandleBridge
-            instanceRef={instanceRef}
-            handle={instanceController.handle}
-          />
-          <EngineProvider
-            key={runtimeMountKey}
-            createSession={createRuntimeSession!}
-          >
-            <RunPipelineCoordinatorProvider>
-              <PluginActivation plugins={plugins} />
-              <SourcePresentationProvider key={workspaceKey} workspaceKey={workspaceKey}>
-                <LanguageToolingMount
-                  provider={languageToolingProvider}
-                  supplementalFiles={testProvider?.editorSupportFiles}
-                >
-                  <WorkbenchLayout />
-                </LanguageToolingMount>
-              </SourcePresentationProvider>
-            </RunPipelineCoordinatorProvider>
-          </EngineProvider>
+          <SidebarLayoutContext.Provider value={sidebarLayoutController}>
+            <PluginManagerLifetime plugins={plugins} />
+            <WorkspaceHostBridge instanceController={instanceController} />
+            <InstanceHandleBridge
+              instanceRef={instanceRef}
+              handle={instanceController.handle}
+            />
+            <EngineProvider
+              key={runtimeMountKey}
+              createSession={createRuntimeSession!}
+            >
+              <RunPipelineCoordinatorProvider>
+                <PluginActivation plugins={plugins} />
+                <SourcePresentationProvider key={workspaceKey} workspaceKey={workspaceKey}>
+                  <LanguageToolingMount
+                    provider={languageToolingProvider}
+                    supplementalFiles={testProvider?.editorSupportFiles}
+                  >
+                    <WorkbenchLayout />
+                  </LanguageToolingMount>
+                </SourcePresentationProvider>
+              </RunPipelineCoordinatorProvider>
+            </EngineProvider>
+          </SidebarLayoutContext.Provider>
         </PanelLayoutContext.Provider>
       </IDEContributionContext.Provider>
     </WebIDEConfigurationContext.Provider>

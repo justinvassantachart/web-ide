@@ -6,7 +6,6 @@ import { GlobalHotkeys } from '@/components/layout/GlobalHotkeys'
 import { HostEventBridge } from '@/components/layout/HostEventBridge'
 import { ActivityBar } from '@/components/sidebar/ActivityBar'
 import { SidebarPanel } from '@/components/sidebar/SidebarPanel'
-import { useSidebarStore } from '@/components/sidebar/sidebar-store'
 import { Editor } from '@/components/editor/Editor'
 import { RightPanel } from '@/components/layout/RightPanel'
 import {
@@ -18,13 +17,15 @@ import { useWebIDEHost } from './host-context'
 import { useWebIDEConfiguration } from './configuration-context'
 import { usePanelLayout } from './panel-layout-context'
 import '@/components/sidebar/sidebar.css'
+import { useSidebarLayout } from './sidebar-layout-context'
 
 /** Reusable workbench UI. Runtime and contribution providers sit above it. */
 export function WorkbenchLayout() {
   const host = useWebIDEHost()
   const configuration = useWebIDEConfiguration()
   const { initialLayout } = usePanelLayout()
-  const sidebarCollapsed = useSidebarStore((state) => state.collapsed)
+  const { snapshot: sidebarLayout } = useSidebarLayout()
+  const sidebarCollapsed = sidebarLayout.collapsed
   const chromeSidebar = host?.chrome?.sidebar !== false
   const chromeStatusBar = host?.chrome?.statusBar !== false
   const sidebarVisible = chromeSidebar && !sidebarCollapsed

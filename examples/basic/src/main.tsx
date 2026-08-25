@@ -186,6 +186,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {layoutMode === 'custom'
       || layoutMode === 'invalid'
+      || layoutMode === 'invalid-activity'
       || layoutMode === 'multiple'
       || layoutMode === 'remount'
       || layoutMode === 'unavailable'

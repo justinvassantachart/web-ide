@@ -57,6 +57,11 @@ test('applies requested ratios and shows the exact initial panel without a click
 
   const canvas = page.getByRole('tab', { name: 'Canvas', exact: true })
   await expect(canvas).toHaveAttribute('aria-selected', 'true')
+  const activities = page.getByRole('navigation', { name: 'Activity Bar' }).getByRole('button')
+  await expect(activities.nth(0)).toHaveAccessibleName('Instructions')
+  await expect(activities.nth(0)).toHaveAttribute('aria-pressed', 'true')
+  await expect(activities.nth(1)).toHaveAccessibleName('Explorer')
+  await expect(page.getByRole('heading', { name: 'Host instructions' })).toBeVisible()
   await expectPercent(page.locator('[data-web-ide-region="panel-column"]'), 'width', 50)
   await expectPercent(page.locator('[data-web-ide-region="panel-content"]'), 'height', 85)
 
@@ -74,6 +79,7 @@ test('applies requested ratios and shows the exact initial panel without a click
 test('rejects unknown and currently unavailable initial panels without a usable mount', async ({ page }) => {
   for (const [mode, message] of [
     ['invalid', 'No panel contributed with id "fixture.unknown-panel"'],
+    ['invalid-activity', 'No activity contributed with id "fixture.unknown-activity"'],
     ['unavailable', 'Initial panel "graph" is not visible'],
   ] as const) {
     const diagnostics = observeBrowserDiagnostics(page)
@@ -107,6 +113,10 @@ test('restores requested state on remount and isolates simultaneous workbenches'
   await page.getByRole('button', { name: 'Remount workbench' }).click()
   await expect(page.getByRole('tab', { name: 'Canvas', exact: true })).toHaveAttribute(
     'aria-selected',
+    'true',
+  )
+  await expect(page.getByRole('button', { name: 'Instructions' })).toHaveAttribute(
+    'aria-pressed',
     'true',
   )
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.3.0-source/release/schemas/artifact-manifest.schema.json",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.3.1-source/release/schemas/artifact-manifest.schema.json",
   "title": "Web IDE Hamilton artifact manifest",
   "type": "object",
   "additionalProperties": false,
@@ -32,8 +32,8 @@
     },
     "capabilityReleaseIds": {
       "const": [
-        "hamilton.python-karel/2",
-        "hamilton.python/1"
+        "hamilton.python-karel/4",
+        "hamilton.python/2"
       ]
     },
     "packageRole": {
@@ -57,7 +57,7 @@
           "const": "web-ide"
         },
         "version": {
-          "const": "0.3.0"
+          "const": "0.3.1"
         },
         "private": {
           "const": true
@@ -161,7 +161,7 @@
           ],
           "properties": {
             "name": {
-              "const": "web-ide-v0.3.0-source"
+              "const": "web-ide-v0.3.1-source"
             },
             "objectId": {
               "type": "string",
@@ -252,7 +252,7 @@
               "const": "source-archive"
             },
             "fileName": {
-              "const": "web-ide-0.3.0-source.tar.gz"
+              "const": "web-ide-0.3.1-source.tar.gz"
             },
             "size": {
               "type": "integer",
@@ -537,10 +537,10 @@
           "const": "justinvassantachart/ths-ide"
         },
         "intendedTag": {
-          "const": "web-ide-v0.3.0"
+          "const": "web-ide-v0.3.1"
         },
         "intendedAssetFilename": {
-          "const": "web-ide-0.3.0.tgz"
+          "const": "web-ide-0.3.1.tgz"
         },
         "artifact": {
           "type": "object",
@@ -558,7 +558,7 @@
               "const": "package-tarball"
             },
             "fileName": {
-              "const": "web-ide-0.3.0.tgz"
+              "const": "web-ide-0.3.1.tgz"
             },
             "size": {
               "type": "integer",
@@ -890,7 +890,7 @@
                 "const": "cyclonedx-sbom"
               },
               "fileName": {
-                "const": "web-ide-0.3.0.cdx.json"
+                "const": "web-ide-0.3.1.cdx.json"
               },
               "size": {
                 "type": "integer",

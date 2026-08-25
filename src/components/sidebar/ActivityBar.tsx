@@ -4,24 +4,25 @@
 
 import { Codicon } from '@/components/ui/codicon'
 import { useIDEActivities } from '@/web-ide/react/contribution-context'
-import { useSidebarStore } from './sidebar-store'
 import { SettingsMenu } from './SettingsMenu'
+import { useSidebarLayout } from '@/web-ide/react/sidebar-layout-context'
 
 export function ActivityBar() {
-    const { activeView, collapsed, onActivityClick } = useSidebarStore()
+    const { controller, snapshot } = useSidebarLayout()
     const activities = useIDEActivities()
 
     return (
         <div className="nova-activitybar" role="navigation" aria-label="Activity Bar">
             <div className="nova-ab-section">
                 {activities.map((activity) => {
-                    const isActive = !collapsed && activeView === activity.id
+                    const isActive = !snapshot.collapsed
+                        && snapshot.selectedActivityId === activity.id
                     return (
                         <button
                             key={activity.id}
                             type="button"
                             className={`nova-ab-btn${isActive ? ' active' : ''}`}
-                            onClick={() => onActivityClick(activity.id)}
+                            onClick={() => controller.handleActivityClick(activity.id)}
                             aria-label={activity.title}
                             aria-pressed={isActive}
                         >

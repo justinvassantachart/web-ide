@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "package": "web-ide@0.3.0",
+  "package": "web-ide@0.3.1",
   "sourceCommit": "REPLACE_WITH_EXACT_40_CHARACTER_SOURCE_COMMIT",
   "candidateSha256": "REPLACE_WITH_EXACT_64_CHARACTER_CANDIDATE_SHA256",
   "gates": [

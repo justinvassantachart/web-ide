@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "package": "web-ide@0.3.0",
+  "package": "web-ide@0.3.1",
   "sourceRepository": "https://github.com/justinvassantachart/web-ide.git",
-  "sourceTag": "web-ide-v0.3.0-source",
-  "sourceAssetFilename": "web-ide-0.3.0-source.tar.gz",
-  "capabilityReleaseId": "hamilton.python-karel/2",
+  "sourceTag": "web-ide-v0.3.1-source",
+  "sourceAssetFilename": "web-ide-0.3.1-source.tar.gz",
+  "capabilityReleaseId": "hamilton.python/2",
   "packageRole": "web-ide",
   "releaseRepository": "justinvassantachart/ths-ide",
-  "releaseTag": "web-ide-v0.3.0",
-  "releaseAssetFilename": "web-ide-0.3.0.tgz",
+  "releaseTag": "web-ide-v0.3.1",
+  "releaseAssetFilename": "web-ide-0.3.1.tgz",
   "nodeVersion": "24.11.1",
   "npmVersion": "11.6.2"
 }
