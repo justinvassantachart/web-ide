@@ -20,9 +20,12 @@ import type {
     RuntimeBreakpointMap,
     RuntimePreparationResult,
     RuntimeOutcome,
+    RuntimeHostServiceV1,
     RuntimeSession,
     RuntimeStartRequest,
 } from '@/web-ide/contracts/runtime';
+import type { Disposable } from '@/web-ide/core/disposable';
+import { validateRuntimeHostServiceV1 } from './host-service';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -42,6 +45,16 @@ interface DapEvent {
 }
 
 type ScheduledTask = ReturnType<typeof setTimeout>;
+
+interface HostServiceRegistration {
+    readonly service: RuntimeHostServiceV1;
+    engine?: EngineType;
+    engineRegistration?: Disposable;
+}
+
+type HostServiceCapableEngine = EngineType & {
+    registerHostService?: (service: RuntimeHostServiceV1) => Disposable;
+};
 
 interface DebugConfigurationState {
     session: number;
@@ -285,12 +298,108 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private debugConfiguration: DebugConfigurationState | null = null;
     private disposed = false;
     private readonly profile: BrowserRuntimeSessionProfile;
+    private readonly hostServices = new Map<string, HostServiceRegistration>();
 
     constructor(profile: BrowserRuntimeSessionProfile) {
         this.profile = profile;
         this.id = profile.id;
         this.languageIds = profile.languageIds;
         this.capabilities = profile.capabilities;
+    }
+
+    registerHostService(service: RuntimeHostServiceV1): Disposable {
+        if (this.disposed) throw new Error('Cannot register a host service on a disposed runtime session');
+        if (this.capabilities.hostChannels !== true) {
+            throw new Error(`Runtime provider "${this.id}" does not support host services`);
+        }
+        validateRuntimeHostServiceV1(service);
+        if (this.hostServices.has(service.capability)) {
+            throw new TypeError(`host service capability is already registered: ${service.capability}`);
+        }
+        if (this.engine && (this.running || this.currentRun)) {
+            throw new Error('host services cannot change during a run');
+        }
+        const registered: RuntimeHostServiceV1 = Object.freeze({
+            capability: service.capability,
+            version: service.version,
+            ...(service.limits === undefined ? {} : { limits: Object.freeze({ ...service.limits }) }),
+            open: service.open.bind(service),
+        });
+        const record: HostServiceRegistration = { service: registered };
+        this.hostServices.set(registered.capability, record);
+        try {
+            if (this.engine) this.attachHostService(this.engine, record);
+        } catch (error) {
+            this.hostServices.delete(registered.capability);
+            throw error;
+        }
+        let active = true;
+        return {
+            dispose: () => {
+                if (!active) return;
+                active = false;
+                if (this.hostServices.get(registered.capability) === record) {
+                    this.hostServices.delete(registered.capability);
+                }
+                this.releaseHostServiceRegistration(record);
+            },
+        };
+    }
+
+    private attachHostService(engine: EngineType, record: HostServiceRegistration): void {
+        if (record.engineRegistration) return;
+        const register = (engine as HostServiceCapableEngine).registerHostService;
+        if (typeof register !== 'function') {
+            throw new Error('The loaded runtime engine does not support configured host services');
+        }
+        const registration = register.call(engine, record.service);
+        if (!registration || typeof registration.dispose !== 'function') {
+            throw new TypeError('Runtime engine host-service registration must return a Disposable');
+        }
+        record.engine = engine;
+        record.engineRegistration = registration;
+    }
+
+    private attachHostServices(engine: EngineType): void {
+        const attached: HostServiceRegistration[] = [];
+        try {
+            for (const record of this.hostServices.values()) {
+                this.attachHostService(engine, record);
+                attached.push(record);
+            }
+        } catch (error) {
+            for (const record of attached) this.releaseHostServiceRegistration(record, false);
+            throw error;
+        }
+    }
+
+    private releaseHostServiceRegistration(
+        record: HostServiceRegistration,
+        deferDuringRun = true,
+    ): void {
+        const registration = record.engineRegistration;
+        const engine = record.engine;
+        if (!registration) return;
+        record.engineRegistration = undefined;
+        record.engine = undefined;
+        const release = () => {
+            try {
+                registration.dispose();
+            } catch (error) {
+                console.error('[BrowserRuntimeSession] host-service cleanup failed', error);
+            }
+        };
+        if (deferDuringRun && engine === this.engine && this.currentRun) {
+            void this.currentRun.finally(release);
+        } else {
+            release();
+        }
+    }
+
+    private releaseEngineHostServices(engine: EngineType, deferDuringRun = true): void {
+        for (const record of this.hostServices.values()) {
+            if (record.engine === engine) this.releaseHostServiceRegistration(record, deferDuringRun);
+        }
     }
 
     private static readonly DEBUG_CONFIGURATION_RETRY_MS = 50;
@@ -587,6 +696,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
             error: { type: 'DebuggerError', message },
         });
         if (settlement) settlement.stopRequested = true;
+        this.releaseEngineHostServices(engine);
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
@@ -620,12 +730,19 @@ export class BrowserRuntimeSession implements RuntimeSession {
                     try { engine.stop(); } catch { /* ignore */ }
                     throw new Error('Runtime session was disposed during initialization');
                 }
-                this.attachListeners(engine);
-                if (this.profile.filterInternals) {
-                    engine.debugger.filterInternals = true;
+                try {
+                    this.attachListeners(engine);
+                    if (this.profile.filterInternals) {
+                        engine.debugger.filterInternals = true;
+                    }
+                    this.attachHostServices(engine);
+                    this.engine = engine;
+                    return engine;
+                } catch (error) {
+                    this.releaseEngineHostServices(engine, false);
+                    try { engine.stop(); } catch { /* ignore */ }
+                    throw error;
                 }
-                this.engine = engine;
-                return engine;
             });
             this.engineInit = adoption.catch((error: unknown) => {
                 if (this.engineInitToken === token) {
@@ -993,6 +1110,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.breakpointClearTombstones.clear();
         const engine = this.engine;
         if (!engine) return;
+        this.releaseEngineHostServices(engine, false);
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
@@ -1691,6 +1809,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
             }
             this.cancelScheduledTasks();
             this.debugConfiguration = null;
+            if (this.engine) this.releaseEngineHostServices(this.engine, false);
+            this.hostServices.clear();
             this.engine = null;
             this.engineInit = null;
             this.engineInitToken = null;

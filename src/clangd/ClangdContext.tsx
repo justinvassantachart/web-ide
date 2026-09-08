@@ -28,6 +28,7 @@ import { isClangdEnabled } from './preferences'
 import { clearClangdMarkers, registerClangdProviders } from './providers'
 import { CLANGD_SETTING, CPP_LANGUAGE_TOOLING_PROVIDER_ID } from './plugin-config'
 import { attachClangdWorkspaceSync } from './workspace-sync'
+import { collectClangdInitialFiles } from './initial-files'
 
 const IDLE_STATUS: ClangdStatus = { state: 'idle' }
 const DISABLED_STATUS: ClangdStatus = { state: 'disabled' }
@@ -82,7 +83,7 @@ export function ClangdProvider({
 
         // Drop cache entries from prior versions in parallel with the boot.
         void purgeOldClangdCaches()
-        bootClangd(collectInitialFiles(
+        bootClangd(collectClangdInitialFiles(
             workspace?.snapshot() ?? {},
             supplementalFiles,
             configuration,
@@ -137,7 +138,7 @@ export function ClangdProvider({
         const synchronization = attachClangdWorkspaceSync({
             workspace,
             client,
-            readFiles: () => collectInitialFiles(
+            readFiles: () => collectClangdInitialFiles(
                 workspace?.snapshot() ?? {},
                 supplementalFiles,
                 configuration,
@@ -162,27 +163,4 @@ export function ClangdProvider({
     }, [publishService, value])
 
     return null
-}
-
-function collectInitialFiles(
-    workspaceFiles: Readonly<Record<string, string>>,
-    supplementalFiles?: Readonly<Record<string, string>>,
-    configuration: ClangdProviderConfiguration = DEFAULT_CONFIGURATION,
-): Record<string, string> {
-    const out: Record<string, string> = {}
-    for (const [path, content] of Object.entries(workspaceFiles)) {
-        if (isCppPath(path)) out[path] = content
-    }
-    // Provider-owned declarations live only in clangd's in-memory FS. They do
-    // not appear in the explorer, VFS, host snapshots, or persistence.
-    for (const [path, content] of Object.entries(supplementalFiles ?? {})) {
-        if (isCppPath(path)) out[path] = content
-    }
-    for (const [path, content] of Object.entries(configuration.supportFiles ?? {})) {
-        if (isCppPath(path)) out[path] = content
-    }
-    out['/workspace/.clangd'] = JSON.stringify({
-        CompileFlags: { Add: [...configuration.compileFlags] },
-    })
-    return out
 }

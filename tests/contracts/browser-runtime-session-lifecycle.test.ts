@@ -9,8 +9,11 @@ vi.mock('debugger-sh', () => ({
 }))
 
 import { cppRuntimeProvider, pythonRuntimeProvider } from '../../src/runtimes/providers'
+import { BrowserRuntimeSession } from '../../src/runtimes/BrowserRuntimeSession'
+import { registerRuntimeHostService } from '../../src/runtimes/host-service'
 import type {
   RuntimeExecutionMode,
+  RuntimeHostServiceV1,
   RuntimeSession,
 } from '../../src/web-ide/contracts/runtime'
 
@@ -110,6 +113,8 @@ class FakeEngine {
   readonly calls: string[] = []
   settleRunOnStop = true
   private readonly runs: Deferred<FakeRunResult>[] = []
+  readonly hostServices = new Map<string, RuntimeHostServiceV1>()
+  readonly hostServiceDisposals = vi.fn<(capability: string) => void>()
 
   readonly run = vi.fn((): Promise<FakeRunResult> => {
     this.calls.push('run')
@@ -120,6 +125,22 @@ class FakeEngine {
 
   readonly stop = vi.fn((): void => {
     if (this.settleRunOnStop) this.activeRun()?.resolve({ type: 'stopped' })
+  })
+
+  readonly registerHostService = vi.fn((service: RuntimeHostServiceV1) => {
+    if (this.activeRun()) throw new Error('host services cannot change during a run')
+    if (this.hostServices.has(service.capability)) throw new Error('duplicate host service')
+    this.hostServices.set(service.capability, service)
+    let active = true
+    return {
+      dispose: () => {
+        if (!active) return
+        if (this.activeRun()) throw new Error('host services cannot change during a run')
+        active = false
+        this.hostServices.delete(service.capability)
+        this.hostServiceDisposals(service.capability)
+      },
+    }
   })
 
   complete(result: FakeRunResult): void {
@@ -140,6 +161,34 @@ function createSession(): RuntimeSession {
   const session = cppRuntimeProvider.createSession()
   sessions.push(session)
   return session
+}
+
+function createHostSession(): RuntimeSession {
+  const session = new BrowserRuntimeSession({
+    id: 'synthetic.runtime.host',
+    languageIds: ['cpp'],
+    engineLanguage: 'c',
+    capabilities: {
+      debug: true,
+      breakpoints: true,
+      stdin: true,
+      graphics: false,
+      hostChannels: true,
+    },
+  })
+  sessions.push(session)
+  return session
+}
+
+const hostService: RuntimeHostServiceV1 = {
+  capability: 'synthetic.host',
+  version: 1,
+  limits: {
+    maxFrameBytes: 16 * 1024,
+    maxPendingSends: 8,
+    maxInFlightRequests: 8,
+  },
+  open: () => ({ dispose() {} }),
 }
 
 async function beginRun(
@@ -167,6 +216,99 @@ afterEach(() => {
 })
 
 describe('BrowserRuntimeSession run lifecycle', () => {
+  it('keeps default providers unsupported without loading or mutating an engine', () => {
+    const adapter = createSession()
+    expect(() => registerRuntimeHostService(adapter, hostService)).toThrow(/does not support host services/)
+    expect(engineCreate).not.toHaveBeenCalled()
+  })
+
+  it('registers configured services on the adopted engine and defers close until run teardown', async () => {
+    const engine = new FakeEngine()
+    const adapter = createHostSession()
+    engineCreate.mockResolvedValueOnce(engine)
+    const registration = registerRuntimeHostService(adapter, hostService)
+
+    const { running } = await beginRun(adapter, engine, 'run')
+    expect(engine.hostServices.get(hostService.capability)).toMatchObject({
+      capability: hostService.capability,
+      version: 1,
+      limits: hostService.limits,
+    })
+    registration.dispose()
+    registration.dispose()
+    expect(engine.hostServices.has(hostService.capability)).toBe(true)
+
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+    await vi.waitFor(() => expect(engine.hostServices.size).toBe(0))
+    expect(engine.hostServiceDisposals).toHaveBeenCalledExactlyOnceWith(hostService.capability)
+  })
+
+  it('keeps identical configured services isolated across two runtime instances', async () => {
+    const firstEngine = new FakeEngine()
+    const secondEngine = new FakeEngine()
+    const first = createHostSession()
+    const second = createHostSession()
+    engineCreate.mockResolvedValueOnce(firstEngine).mockResolvedValueOnce(secondEngine)
+    const firstRegistration = registerRuntimeHostService(first, hostService)
+    const secondRegistration = registerRuntimeHostService(second, hostService)
+
+    const firstRun = await beginRun(first, firstEngine, 'run')
+    const secondRun = await beginRun(second, secondEngine, 'run')
+    expect(firstEngine.hostServices.size).toBe(1)
+    expect(secondEngine.hostServices.size).toBe(1)
+
+    firstRegistration.dispose()
+    firstEngine.complete({ type: 'completed', exitCode: 0 })
+    await firstRun.running
+    await vi.waitFor(() => expect(firstEngine.hostServices.size).toBe(0))
+    expect(secondEngine.hostServices.size).toBe(1)
+
+    secondEngine.complete({ type: 'completed', exitCode: 0 })
+    await secondRun.running
+    secondRegistration.dispose()
+    expect(secondEngine.hostServices.size).toBe(0)
+  })
+
+  it('unregisters configured services exactly once when the owning session closes', async () => {
+    const engine = new FakeEngine()
+    const adapter = createHostSession()
+    engineCreate.mockResolvedValueOnce(engine)
+    registerRuntimeHostService(adapter, hostService)
+    const { running } = await beginRun(adapter, engine, 'run')
+
+    const firstDisposal = adapter.disposeAndWait!()
+    expect(adapter.disposeAndWait!()).toBe(firstDisposal)
+    await running
+    await firstDisposal
+
+    expect(engine.hostServices.size).toBe(0)
+    expect(engine.hostServiceDisposals).toHaveBeenCalledExactlyOnceWith(hostService.capability)
+  })
+
+  it('fails safely when a configured engine version lacks the host-service bridge', async () => {
+    const engine = new FakeEngine()
+    Object.defineProperty(engine, 'registerHostService', { value: undefined })
+    const adapter = createHostSession()
+    engineCreate.mockResolvedValueOnce(engine)
+    registerRuntimeHostService(adapter, hostService)
+    await adapter.prepare({ files: workspace, mode: 'run' })
+
+    const running = adapter.start({ mode: 'run' })
+    const settlement = adapter.waitForSettlement!()
+    await running
+
+    await expect(settlement).resolves.toEqual({
+      type: 'error',
+      error: {
+        type: 'Error',
+        message: 'The loaded runtime engine does not support configured host services',
+      },
+    })
+    expect(engine.run).not.toHaveBeenCalled()
+    expect(engine.stop).toHaveBeenCalledTimes(1)
+  })
+
   it('publishes one stable completed settlement without changing the void start API', async () => {
     const engine = new FakeEngine()
     const adapter = createSession()

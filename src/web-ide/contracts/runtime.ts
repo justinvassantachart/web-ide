@@ -113,11 +113,9 @@ export interface RuntimeHostChannelV1 {
 }
 
 export interface RuntimeHostChannelLimitsV1 {
-  readonly maximumFrameBytes: number
-  readonly maximumQueuedBytes: number
-  readonly maximumInflightRequests: number
-  readonly maximumMessagesPerSecond: number
-  readonly handlerTimeoutMs: number
+  readonly maxFrameBytes: number
+  readonly maxPendingSends: number
+  readonly maxInFlightRequests: number
 }
 
 export interface RuntimeHostServiceV1 {

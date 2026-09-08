@@ -1,7 +1,14 @@
 import type { FunctionComponent, ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createCppClangdProvider } from '../../src/clangd/plugin'
-import type { ClangdProviderConfiguration } from '../../src/clangd/ClangdContext'
+import {
+  createCppClangdProvider,
+  MAX_CLANGD_SUPPORT_FILES,
+  MAX_CLANGD_SUPPORT_FILE_BYTES,
+} from '../../src/clangd/plugin'
+import {
+  type ClangdProviderConfiguration,
+} from '../../src/clangd/ClangdContext'
+import { collectClangdInitialFiles } from '../../src/clangd/initial-files'
 import { attachClangdWorkspaceSync } from '../../src/clangd/workspace-sync'
 import type { CppCompileProfileV1 } from '../../src/web-ide/contracts/cpp'
 import type { LanguageToolingProviderComponentProps } from '../../src/web-ide/contracts/language-tooling'
@@ -69,6 +76,73 @@ describe('configurable clangd provider', () => {
     })).toThrow('cannot replace clangd configuration')
   })
 
+  it('bounds reviewed support roots, file counts, per-file bytes, and aggregate bytes', () => {
+    expect(() => createCppClangdProvider({
+      id: 'synthetic.invalid-root',
+      label: 'Invalid root',
+      profile,
+      supportFiles: { '/workspace/injected.h': 'unsafe' },
+    })).toThrow(/reviewed support root/)
+
+    const tooMany = Object.fromEntries(Array.from(
+      { length: MAX_CLANGD_SUPPORT_FILES + 1 },
+      (_, index) => [`/support/include/f${index}.h`, ''],
+    ))
+    expect(() => createCppClangdProvider({
+      id: 'synthetic.too-many',
+      label: 'Too many',
+      profile,
+      supportFiles: tooMany,
+    })).toThrow(/file limit/)
+
+    expect(() => createCppClangdProvider({
+      id: 'synthetic.too-large',
+      label: 'Too large',
+      profile,
+      supportFiles: { '/support/include/large.h': 'x'.repeat(MAX_CLANGD_SUPPORT_FILE_BYTES + 1) },
+    })).toThrow(/per-file byte limit/)
+
+    const twoMegabytes = 'x'.repeat(MAX_CLANGD_SUPPORT_FILE_BYTES)
+    const aggregate = Object.fromEntries(Array.from(
+      { length: 17 },
+      (_, index) => [`/support/include/aggregate-${index}.h`, twoMegabytes],
+    ))
+    expect(() => createCppClangdProvider({
+      id: 'synthetic.aggregate',
+      label: 'Aggregate',
+      profile,
+      supportFiles: aggregate,
+    })).toThrow(/aggregate byte limit/)
+  })
+
+  it('rejects every initial-file collision before clangd boot', () => {
+    const configuration: ClangdProviderConfiguration = {
+      providerId: 'synthetic.clangd',
+      compileFlags: [],
+      supportFiles: { '/support/include/shared.h': 'provider' },
+    }
+    expect(() => collectClangdInitialFiles(
+      { '/workspace/main.cpp': 'int main() {}' },
+      { '/support/include/shared.h': 'supplemental' },
+      configuration,
+    )).toThrow(/collides/)
+    expect(() => collectClangdInitialFiles(
+      { '/workspace/.clangd': 'student config' },
+      undefined,
+      configuration,
+    )).toThrow(/generated configuration collides/)
+    expect(() => collectClangdInitialFiles(
+      { '/workspace/main.cpp': 'int main() {}' },
+      { '/unreviewed/provider.h': 'unsafe' },
+      configuration,
+    )).toThrow(/reviewed support root/)
+    expect(() => collectClangdInitialFiles(
+      { '/workspace/main.cpp': 'int main() {}' },
+      { '/workspace/provider.h': 'x'.repeat(MAX_CLANGD_SUPPORT_FILE_BYTES + 1) },
+      configuration,
+    )).toThrow(/per-file byte limit/)
+  })
+
   it('invalidates through the same feed for authoritative external changes', async () => {
     vi.useFakeTimers()
     const instance = createWorkbenchInstance()
@@ -100,8 +174,8 @@ describe('configurable clangd provider', () => {
       origin: { kind: 'external-authority', source: 'remote-clangd' },
       operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'int value = 2;\n' }],
     })
-    await vi.runAllTimersAsync()
-
+    // Authoritative feed changes invalidate synchronously; no local-edit
+    // debounce window can expose stale clangd files.
     expect(writeFiles).toHaveBeenLastCalledWith({ '/workspace/main.cpp': 'int value = 2;\n' })
     expect(deleteFile).not.toHaveBeenCalled()
     subscription.dispose()

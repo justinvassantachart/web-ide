@@ -36,7 +36,19 @@ export function attachClangdWorkspaceSync(options: {
     if (timer) clearTimeout(timer)
     timer = setTimeout(flush, debounceMs)
   }
-  const unsubscribe = options.workspace.subscribe(schedule)
+  const unsubscribe = options.workspace.subscribe((change) => {
+    if (change.origin.kind === 'local-user') {
+      schedule()
+      return
+    }
+    // Restore/provider/external transactions are already atomic snapshots and
+    // must invalidate clangd before another UI action can observe stale files.
+    if (timer) {
+      clearTimeout(timer)
+      timer = undefined
+    }
+    flush()
+  })
   schedule()
 
   return {

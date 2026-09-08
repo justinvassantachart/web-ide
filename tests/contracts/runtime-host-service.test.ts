@@ -8,6 +8,7 @@ import type {
 import {
   registerRuntimeHostService,
   RuntimeHostServicesUnavailableError,
+  validateRuntimeHostServiceV1,
 } from '../../src/runtimes/host-service'
 import { IDEPluginManager } from '../../src/web-ide/core/plugin-manager'
 
@@ -65,12 +66,43 @@ function createSession(hostChannels: boolean) {
 }
 
 const service: RuntimeHostServiceV1 = {
-  capability: 'synthetic.graphics.v1',
+  capability: 'synthetic.graphics',
   version: 1,
+  limits: {
+    maxFrameBytes: 16 * 1024,
+    maxPendingSends: 32,
+    maxInFlightRequests: 32,
+  },
   open: () => ({ dispose: () => undefined }),
 }
 
 describe('optional runtime host-service bridge', () => {
+  it('binds the exact R-P01 limit names and validates descriptor bounds', () => {
+    expect(() => validateRuntimeHostServiceV1(service)).not.toThrow()
+    expect(Object.keys(service.limits!)).toEqual([
+      'maxFrameBytes',
+      'maxPendingSends',
+      'maxInFlightRequests',
+    ])
+    expect(() => validateRuntimeHostServiceV1({
+      ...service,
+      capability: 'not_reverse_dns',
+    })).toThrow(/reverse-DNS/)
+    expect(() => validateRuntimeHostServiceV1({ ...service, version: 0 })).toThrow(/positive/)
+    expect(() => validateRuntimeHostServiceV1({
+      ...service,
+      limits: { ...service.limits, maxPendingSends: 1025 },
+    })).toThrow(/between 0 and 1024/)
+    expect(() => validateRuntimeHostServiceV1({
+      ...service,
+      limits: { maximumFrameBytes: 1024 } as never,
+    })).toThrow(/unknown/)
+    expect(() => validateRuntimeHostServiceV1({
+      ...service,
+      limits: { maxFrameBytes: 1 },
+    })).toThrow(/must be at least/)
+  })
+
   it('reports a legacy provider without host-channel support cleanly', () => {
     const { session } = createSession(false)
     expect(() => registerRuntimeHostService(session, service))

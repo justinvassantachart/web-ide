@@ -6,9 +6,17 @@ import type {
 } from '@/web-ide/contracts/language-tooling'
 import type { WorkspaceFiles } from '@/web-ide/contracts/host'
 import type { CppCompileProfileV1 } from '@/web-ide/contracts/cpp'
-import { cppCompileFlags, normalizeContractVfsPath, validateCppCompileProfile } from '@/web-ide/core/cpp-contracts'
+import { cppCompileFlags, validateCppCompileProfile } from '@/web-ide/core/cpp-contracts'
 import { ClangdProvider, type ClangdProviderConfiguration } from './ClangdContext'
 import { CPP_LANGUAGE_TOOLING_PROVIDER_ID } from './plugin-config'
+import { normalizeClangdSupportFiles } from './initial-files'
+
+export {
+  CLANGD_SUPPORT_ROOTS,
+  MAX_CLANGD_SUPPORT_FILES,
+  MAX_CLANGD_SUPPORT_FILE_BYTES,
+  MAX_CLANGD_SUPPORT_TOTAL_BYTES,
+} from './initial-files'
 
 export const cppLanguageToolingProvider: LanguageToolingProvider = {
   id: CPP_LANGUAGE_TOOLING_PROVIDER_ID,
@@ -36,15 +44,7 @@ export function createCppClangdProvider(
     throw new TypeError('clangd provider label is invalid')
   }
   validateCppCompileProfile(options.profile)
-  const supportFiles: WorkspaceFiles = Object.create(null)
-  for (const [inputPath, content] of Object.entries(options.supportFiles ?? {})) {
-    const path = normalizeContractVfsPath(inputPath)
-    if (path === '/workspace/.clangd' || path.endsWith('/.clangd')) {
-      throw new TypeError('support files cannot replace clangd configuration')
-    }
-    if (typeof content !== 'string') throw new TypeError(`support file ${path} is not text`)
-    supportFiles[path] = content
-  }
+  const supportFiles = normalizeClangdSupportFiles(options.supportFiles, false)
   const configuration: ClangdProviderConfiguration = Object.freeze({
     providerId: options.id,
     compileFlags: cppCompileFlags(options.profile),

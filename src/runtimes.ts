@@ -7,4 +7,5 @@ export {
 export {
   registerRuntimeHostService,
   RuntimeHostServicesUnavailableError,
+  validateRuntimeHostServiceV1,
 } from './runtimes/host-service'
