@@ -2,13 +2,16 @@
 // there is no dirty-dot state — every tab just shows icon · name · close.
 // Middle-click closes a tab, like VS Code.
 
-import { useEditorStore } from '@/store/editor-store'
-import { readFile } from '@/vfs/volume'
+import {
+    useWorkbenchEditorStore,
+    useWorkbenchInstance,
+} from '@/web-ide/react/workbench-instance-context'
 import { getFileIconUrl } from '@/lib/vscode-icons'
 import { Codicon } from '@/components/ui/codicon'
 
 export function EditorTabs() {
-    const { openFiles, activeFile, setActiveFile, closeFile } = useEditorStore()
+    const { openFiles, activeFile, setActiveFile, closeFile } = useWorkbenchEditorStore()
+    const { workspace } = useWorkbenchInstance()
 
     if (openFiles.length === 0) return null
 
@@ -25,10 +28,10 @@ export function EditorTabs() {
                         title={path.replace('/workspace/', '')}
                         className={`nova-tab${active ? ' active' : ''}`}
                         onClick={() => {
-                            if (!active) setActiveFile(path, readFile(path) ?? '')
+                            if (!active) setActiveFile(path, workspace.readFile(path) ?? '')
                         }}
                         onAuxClick={(e) => {
-                            if (e.button === 1) closeFile(path, readFile)
+                            if (e.button === 1) closeFile(path, (candidate) => workspace.readFile(candidate))
                         }}
                     >
                         <img src={getFileIconUrl(name)} className="h-4 w-4" alt="" draggable={false} />
@@ -39,7 +42,7 @@ export function EditorTabs() {
                             className="nova-tab-close"
                             onClick={(e) => {
                                 e.stopPropagation()
-                                closeFile(path, readFile)
+                                closeFile(path, (candidate) => workspace.readFile(candidate))
                             }}
                         >
                             <Codicon name="close" size={14} />

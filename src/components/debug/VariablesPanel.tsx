@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useDebugStore } from '@/store/debug-store'
+import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
 import type {
     HeapAllocation,
     StackFrame,
@@ -8,7 +8,7 @@ import type {
 import { VariableRow } from './VariableRow'
 
 export function VariablesPanel() {
-    const { callStack, debugMode, memorySnapshot } = useDebugStore()
+    const { callStack, debugMode, memorySnapshot } = useWorkbenchDebugStore()
     const frames: StackFrame[] = useMemo(
         () => callStack,
         [callStack],

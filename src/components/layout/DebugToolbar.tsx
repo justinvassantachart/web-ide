@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Codicon } from '@/components/ui/codicon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useDebugStore } from '@/store/debug-store'
+import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
 import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { useRunPipeline } from './use-run-pipeline'
@@ -163,7 +163,7 @@ function useDraggablePill() {
 }
 
 export function DebugToolbar() {
-    const { debugMode, stepHistory, stepIndex, stepBack, stepForward } = useDebugStore()
+    const { debugMode, stepHistory, stepIndex, stepBack, stepForward } = useWorkbenchDebugStore()
     const engine = useEngine()
     const host = useIDEHost()
     const { stop, restart } = useRunPipeline()

@@ -1,9 +1,6 @@
 import MonacoEditor, { type OnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
-import { useEditorStore } from '@/store/editor-store'
-import { useDebugStore } from '@/store/debug-store'
 import { useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react'
-import { writeFile, fileExists, readFile, subscribeWorkspaceChange } from '@/vfs/volume'
 import { Codicon } from '@/components/ui/codicon'
 import { EditorTabs } from './EditorTabs'
 import { useEngine } from '@/engine/engine-context'
@@ -15,6 +12,11 @@ import { DebugToolbar } from '@/components/layout/DebugToolbar'
 import { useSafeMonaco } from '@/lib/use-monaco'
 import { monacoLanguageForPath } from '@/web-ide/core/monaco-language'
 import { useSourcePresentationState } from '@/web-ide/react/source-presentation-state'
+import {
+    useWorkbenchDebugStore,
+    useWorkbenchEditorStore,
+    useWorkbenchInstance,
+} from '@/web-ide/react/workbench-instance-context'
 
 // Decorations are tracked per file URI so they survive model switching — when
 // the user flips between files we leave each model's gutter/line state intact
@@ -22,8 +24,10 @@ import { useSourcePresentationState } from '@/web-ide/react/source-presentation-
 type DecoIds = { bp: string[]; step: string[]; source: string[] }
 
 export function Editor() {
-    const { activeFile, activeFileContent, setActiveFileContent, setActiveFile } = useEditorStore()
-    const { currentLine, currentFile, debugMode, breakpoints, toggleBreakpoint } = useDebugStore()
+    const { activeFile, activeFileContent, setActiveFile } = useWorkbenchEditorStore()
+    const { currentLine, currentFile, debugMode, breakpoints, toggleBreakpoint } = useWorkbenchDebugStore()
+    const instance = useWorkbenchInstance()
+    const { workspace } = instance
     const monaco = useSafeMonaco()
     const theme = useThemeStore((s) => s.theme)
     const engine = useEngine()
@@ -41,6 +45,7 @@ export function Editor() {
     const decoIdsByPath = useRef<Map<string, DecoIds>>(new Map())
     const ghostIdsRef = useRef<string[]>([])
     const [editorReady, setEditorReady] = useState(false)
+    const pendingModelDisposal = useRef<{ cancelled: boolean } | undefined>(undefined)
 
     useLayoutEffect(() => {
         languageToolingRef.current = languageTooling
@@ -59,11 +64,11 @@ export function Editor() {
     // (model is already equal to activeFileContent at that point).
     useEffect(() => {
         if (!monaco || !activeFile) return
-        const model = monaco.editor.getModel(monaco.Uri.parse(activeFile))
+        const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(activeFile)))
         if (!model) return
         if (model.getValue() === activeFileContent) return
         model.setValue(activeFileContent)
-    }, [activeFile, activeFileContent, monaco])
+    }, [activeFile, activeFileContent, monaco, workspace])
 
     // Dispose Monaco models for files that no longer exist in the VFS.
     // Monaco caches one ITextModel per URI for the lifetime of the editor
@@ -75,11 +80,15 @@ export function Editor() {
     // switch, so this runs at the right moments without extra plumbing.
     useEffect(() => {
         if (!monaco) return
+        if (pendingModelDisposal.current) {
+            pendingModelDisposal.current.cancelled = true
+            pendingModelDisposal.current = undefined
+        }
         const sweep = () => {
             for (const model of monaco.editor.getModels()) {
                 const path = model.uri.path
-                if (!path.startsWith('/workspace/')) continue
-                if (fileExists(path)) continue
+                if (!workspace.ownsMonacoUri(model.uri)) continue
+                if (workspace.fileExists(path)) continue
                 model.dispose()
                 decoIdsByPath.current.delete(path)
                 delete lastEditEmit.current[path]
@@ -90,24 +99,38 @@ export function Editor() {
                 delete editTrailing.current[path]
             }
             // Tabs for deleted/renamed files close with their models.
-            useEditorStore.getState().pruneTabs(fileExists, readFile)
+            instance.editorStore.getState().pruneTabs(
+                (path) => workspace.fileExists(path),
+                (path) => workspace.fileExists(path) ? workspace.readFile(path) : null,
+            )
         }
-        return subscribeWorkspaceChange(sweep)
-    }, [monaco])
+        const unsubscribe = workspace.subscribe(sweep)
+        return () => {
+            unsubscribe()
+            const ticket = { cancelled: false }
+            pendingModelDisposal.current = ticket
+            queueMicrotask(() => {
+                if (ticket.cancelled) return
+                for (const model of monaco.editor.getModels()) {
+                    if (workspace.ownsMonacoUri(model.uri)) model.dispose()
+                }
+            })
+        }
+    }, [instance, monaco, workspace])
 
     useEffect(() => {
         if (debugMode === 'paused' && currentFile && currentLine !== null) {
             const stepped = lastDebugState.current.file !== currentFile || lastDebugState.current.line !== currentLine
             if (stepped) {
                 lastDebugState.current = { file: currentFile, line: currentLine }
-                if (currentFile !== useEditorStore.getState().activeFile) {
-                    if (fileExists(currentFile)) setActiveFile(currentFile, readFile(currentFile))
+                if (currentFile !== instance.editorStore.getState().activeFile) {
+                    if (workspace.fileExists(currentFile)) setActiveFile(currentFile, workspace.readFile(currentFile))
                 }
             }
         } else if (debugMode !== 'paused') {
             lastDebugState.current = { file: null, line: null }
         }
-    }, [debugMode, currentFile, currentLine, setActiveFile])
+    }, [debugMode, currentFile, currentLine, instance, setActiveFile, workspace])
 
     const getDecoIds = (path: string): DecoIds => {
         let entry = decoIdsByPath.current.get(path)
@@ -124,7 +147,7 @@ export function Editor() {
         // Let the optional selected tooling provider lazily start when the
         // user engages with a supported file. Monaco owns these listeners.
         const armLanguageTooling = () => {
-            const path = useEditorStore.getState().activeFile
+            const path = instance.editorStore.getState().activeFile
             if (path) languageToolingRef.current.arm(path)
         }
         editorInstance.onDidFocusEditorWidget(armLanguageTooling)
@@ -138,12 +161,12 @@ export function Editor() {
             const MouseTargetType = monacoInstance.editor.MouseTargetType
 
             if (e.target.type === MouseTargetType.GUTTER_GLYPH_MARGIN) {
-                if (readOnly || !engine.capabilities.breakpoints) return
+                if (!engine.capabilities.breakpoints) return
                 const line = e.target.position.lineNumber
-                const file = useEditorStore.getState().activeFile
+                const file = instance.editorStore.getState().activeFile
                 if (line && file) {
                     toggleBreakpoint(file, line)
-                    const on = (useDebugStore.getState().breakpoints[file] ?? []).includes(line)
+                    const on = (instance.debugStore.getState().breakpoints[file] ?? []).includes(line)
                     host?.events?.emit('breakpoint_toggle', { file, line, on })
                 }
             }
@@ -159,8 +182,8 @@ export function Editor() {
             if (isGutter) {
                 if (!engine.capabilities.breakpoints) return
                 const line = e.target.position.lineNumber
-                const file = useEditorStore.getState().activeFile
-                const bps = useDebugStore.getState().breakpoints
+                const file = instance.editorStore.getState().activeFile
+                const bps = instance.debugStore.getState().breakpoints
                 const fileBps = file ? bps[file] || [] : []
 
                 if (!fileBps.includes(line)) {
@@ -181,19 +204,19 @@ export function Editor() {
 
         // F9 toggles a breakpoint on the cursor's line, like VS Code.
         editorInstance.addCommand(monacoInstance.KeyCode.F9, () => {
-            if (readOnly || !engine.capabilities.breakpoints) return
+            if (!engine.capabilities.breakpoints) return
             const line = editorInstance.getPosition()?.lineNumber
-            const file = useEditorStore.getState().activeFile
+            const file = instance.editorStore.getState().activeFile
             if (line && file) {
-                useDebugStore.getState().toggleBreakpoint(file, line)
-                const on = (useDebugStore.getState().breakpoints[file] ?? []).includes(line)
+                instance.debugStore.getState().toggleBreakpoint(file, line)
+                const on = (instance.debugStore.getState().breakpoints[file] ?? []).includes(line)
                 host?.events?.emit('breakpoint_toggle', { file, line, on })
             }
         })
 
         // Mirror the caret into the store for the status bar's Ln/Col.
         editorInstance.onDidChangeCursorPosition((e) => {
-            useEditorStore.getState().setCursor(e.position.lineNumber, e.position.column)
+            instance.editorStore.getState().setCursor(e.position.lineNumber, e.position.column)
         })
 
         setEditorReady(true)
@@ -206,7 +229,7 @@ export function Editor() {
         if (!monaco || !editorReady || !engine.capabilities.breakpoints) return
 
         for (const [path, lines] of Object.entries(breakpoints)) {
-            const model = monaco.editor.getModel(monaco.Uri.parse(path))
+            const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(path)))
             if (!model) continue
             const decos = (lines ?? []).map((line) => ({
                 range: new monaco.Range(line, 1, line, 1),
@@ -228,13 +251,13 @@ export function Editor() {
             }).catch((error: unknown) => {
                 console.warn(error)
                 if (breakpointSyncTokens.current[file] !== token) return
-                useDebugStore.getState().setFileBreakpoints(
+                instance.debugStore.getState().setFileBreakpoints(
                     file,
                     acceptedBreakpoints.current[file] ?? [],
                 )
             })
         }
-    }, [breakpoints, monaco, editorReady, activeFile, engine])
+    }, [activeFile, breakpoints, editorReady, engine, instance, monaco, workspace])
 
     // Step indicator: paint the paused line on its own model, clear everywhere
     // else. Reveal the line only when the user is actively viewing that file.
@@ -247,13 +270,13 @@ export function Editor() {
         for (const [path, ids] of decoIdsByPath.current.entries()) {
             if (path === currentFile && debugMode === 'paused') continue
             if (ids.step.length === 0) continue
-            const model = monaco.editor.getModel(monaco.Uri.parse(path))
+            const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(path)))
             if (model) ids.step = model.deltaDecorations(ids.step, [])
             else ids.step = []
         }
 
         if (debugMode === 'paused' && currentFile && currentLine !== null) {
-            const model = monaco.editor.getModel(monaco.Uri.parse(currentFile))
+            const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(currentFile)))
             if (model) {
                 const ids = getDecoIds(currentFile)
                 ids.step = model.deltaDecorations(ids.step, [{
@@ -269,7 +292,7 @@ export function Editor() {
                 }
             }
         }
-    }, [debugMode, currentLine, currentFile, activeFile, monaco, editorReady])
+    }, [activeFile, currentFile, currentLine, debugMode, editorReady, monaco, workspace])
 
     // Render owner-scoped plugin decorations without exposing Monaco or this
     // per-file identifier map through the public contribution API.
@@ -291,7 +314,7 @@ export function Editor() {
         const paths = new Set([...decoIdsByPath.current.keys(), ...byPath.keys()])
 
         for (const path of paths) {
-            const model = monaco.editor.getModel(monaco.Uri.parse(path))
+            const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(path)))
             if (!model) continue
             const ids = getDecoIds(path)
             const decorations = (byPath.get(path) ?? []).flatMap((decoration) => {
@@ -316,7 +339,7 @@ export function Editor() {
             })
             ids.source = model.deltaDecorations(ids.source, decorations)
         }
-    }, [activeFile, editorReady, monaco, sourcePresentation])
+    }, [activeFile, editorReady, monaco, sourcePresentation, workspace])
 
     useEffect(() => {
         const decorations = decoIdsByPath.current
@@ -324,12 +347,12 @@ export function Editor() {
             if (!monaco) return
             for (const [path, ids] of decorations.entries()) {
                 if (ids.source.length === 0) continue
-                const model = monaco.editor.getModel(monaco.Uri.parse(path))
+                const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(path)))
                 if (model) ids.source = model.deltaDecorations(ids.source, [])
                 else ids.source = []
             }
         }
-    }, [monaco])
+    }, [monaco, workspace])
 
     // A reveal request is distinct from a decoration update. Repeated reveals
     // of the same location still move the caret and center that exact source.
@@ -358,11 +381,23 @@ export function Editor() {
 
     const handleChange = useCallback((value: string | undefined) => {
         if (value === undefined || !activeFile) return
-        setActiveFileContent(value)
-        // writeFile owns local persistence — it coalesces the OPFS write
-        // and fires the workspace-change event. The editor stays a thin
-        // caller; nothing here touches OPFS directly.
-        writeFile(activeFile, value)
+        // A controller-driven model update (restore/external authority) fires
+        // Monaco's onChange callback too. Equal VFS content is that update's
+        // acknowledgement, not a new local-user transaction.
+        if (workspace.fileExists(activeFile) && workspace.readFile(activeFile) === value) return
+        try {
+            // The workspace controller owns both the VFS commit and editor-store
+            // reconciliation. A denied/invalid edit must not update either one.
+            workspace.writeLocal(activeFile, value)
+        } catch (error) {
+            const committed = workspace.fileExists(activeFile)
+                ? workspace.readFile(activeFile)
+                : ''
+            const model = editorRef.current?.getModel()
+            if (model && model.getValue() !== committed) model.setValue(committed)
+            console.warn('[web-ide] local workspace edit rejected', error)
+            return
+        }
 
         // Leading + trailing throttle (1s window). The leading emit gives
         // hosts periodic snapshots during a long typing burst; the trailing
@@ -392,7 +427,7 @@ export function Editor() {
                 1000 - (now - last),
             )
         }
-    }, [activeFile, setActiveFileContent, host])
+    }, [activeFile, host, workspace])
 
     // Pending trailing edit-emits must not outlive the editor (the host
     // callback would fire against an unmounted surface).
@@ -427,7 +462,7 @@ export function Editor() {
                 <DebugToolbar />
                 <MonacoEditor
                     height="100%"
-                    path={activeFile}
+                    path={workspace.toMonacoUri(activeFile)}
                     saveViewState={false}
                     defaultValue={activeFileContent}
                     language={lang}

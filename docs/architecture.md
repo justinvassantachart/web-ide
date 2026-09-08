@@ -113,6 +113,15 @@ prepare. The boundary rejects traversal, invalid bytes, exact plan overlap, and
 flattened cross-plane collisions. It prevents accidental editing/persistence;
 it does not claim secrecy from code executing in the browser.
 
+Each `WebIDE` mount owns its workspace controller, in-memory volume, workbench
+stores, subscriptions, persistence attachment, and Monaco URI authority. The
+controller is the only mutable-workspace path and publishes a canonical,
+atomic, revisioned transaction feed. The public instance handle also provides
+a narrow authoritative external-application seam; local read-only policy does
+not prevent a validated external synchronization update. See
+[`collaboration-readiness.md`](collaboration-readiness.md) for the compatibility
+boundary and executable proof.
+
 `IDEPanelServices` is the shared public component facade for panels and sidebar
 activities: selected runtime, the same instance-bound execution pipeline used
 by commands, one automatically revoked source-presentation owner, immutable
@@ -192,9 +201,9 @@ workbench, testing providers, or Karel companion.
 
 ## Known extraction boundary
 
-This is a behavior-preserving first package, not the final multi-package split.
-Runtime/plugin manager instances are isolated, while VFS and UI stores remain
-module singletons. The supported topology is therefore one workbench per realm.
-Before stable 1.0, move those services behind an instance context. The C++
-language tooling/runtime/testing implementations have separate opt-in subpaths
-but are not yet independently versioned packages.
+This is a behavior-preserving package boundary, not the final multi-package
+split. Runtime/plugin managers, workspace/VFS, workbench stores, persistence,
+and Monaco models are isolated per mount; legacy singleton store exports remain
+only as source-compatible low-level exports and are not consumed by a mounted
+`WebIDE`. The C++ language tooling/runtime/testing implementations have separate
+opt-in subpaths but are not yet independently versioned packages.

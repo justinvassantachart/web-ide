@@ -3,16 +3,11 @@ import { Codicon } from '@/components/ui/codicon'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useExecutionStore } from '@/store/execution-store'
-import { useCompilerStore } from '@/store/compiler-store'
-import { useDebugStore } from '@/store/debug-store'
 import { useEngine } from '@/engine/engine-context'
-import { useTestStore } from '@/testing/test-store'
 import { SaveStatus } from './SaveStatus'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { useWebIDEConfiguration } from '@/web-ide/react/configuration-context'
 import { useRunPipeline } from './use-run-pipeline'
-import { getAllFiles } from '@/vfs/volume'
 import { useIDECommands } from '@/web-ide/react/contribution-context'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import type {
@@ -20,15 +15,22 @@ import type {
     IDEWorkbenchSnapshot,
 } from '@/web-ide/contracts/contributions'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
+import {
+    useWorkbenchCompilerStore,
+    useWorkbenchDebugStore,
+    useWorkbenchExecutionStore,
+    useWorkbenchInstance,
+} from '@/web-ide/react/workbench-instance-context'
 
 export function Toolbar() {
     const configuration = useWebIDEConfiguration()
     const engine = useEngine()
     const host = useIDEHost()
-    const { isCompiling, isRunning, setIsRunning } = useExecutionStore()
+    const { isCompiling, isRunning, setIsRunning } = useWorkbenchExecutionStore()
     const { controller: panelLayout } = usePanelLayout()
-    const { cacheState, downloadProgress } = useCompilerStore()
-    const { debugMode, pushHistoryState, setDebugMode } = useDebugStore()
+    const { cacheState, downloadProgress } = useWorkbenchCompilerStore()
+    const { debugMode, pushHistoryState, setDebugMode } = useWorkbenchDebugStore()
+    const instance = useWorkbenchInstance()
     const { execution } = useRunPipeline()
     const commands = useIDECommands()
     const testProvider = useSelectedTestProvider()
@@ -39,11 +41,11 @@ export function Toolbar() {
         const u2 = engine.events.debugResumed.subscribe(() => setDebugMode('running'))
         const u3 = engine.events.exit.subscribe(() => {
             setIsRunning(false)
-            if (useDebugStore.getState().debugMode !== 'idle') setDebugMode('idle')
+            if (instance.debugStore.getState().debugMode !== 'idle') setDebugMode('idle')
             // If a test crashed mid-flight the engine never emits SUITE_END, so
             // promote the unfinished case to a failure rather than leaving the
             // panel spinning forever.
-            useTestStore.getState().finalize()
+            instance.testStore.getState().finalize()
         })
         const u4 = engine.events.diagnostic.subscribe((diagnostic) => {
             if (diagnostic.severity === 'error') {
@@ -54,11 +56,11 @@ export function Toolbar() {
         // executable line, move the gutter dot to where it actually bound —
         // and tell the host, so recorded traces carry the authoritative set.
         const u5 = engine.events.breakpointsValidated.subscribe(({ file, lines }) => {
-            useDebugStore.getState().setFileBreakpoints(file, lines)
+            instance.debugStore.getState().setFileBreakpoints(file, lines)
             host?.events?.emit('breakpoints_validated', { file, lines })
         })
         return () => { u1(); u2(); u3(); u4(); u5() }
-    }, [engine, host, pushHistoryState, setDebugMode, setIsRunning])
+    }, [engine, host, instance, pushHistoryState, setDebugMode, setIsRunning])
 
     const workbenchSnapshot: IDEWorkbenchSnapshot = {
         runState: debugMode === 'paused' ? 'paused' : isRunning ? 'running' : 'idle',
@@ -69,7 +71,11 @@ export function Toolbar() {
     }
     const commandContext: IDECommandContext = {
         execution,
-        workspace: { snapshot: getAllFiles },
+        workspace: {
+            snapshot: () => instance.workspace.snapshot(),
+            revision: () => instance.workspace.revision,
+            subscribe: (listener) => instance.workspace.subscribe(listener),
+        },
         panels: { reveal: panelLayout.selectPanel },
     }
     const toolbarCommands = commands.filter((command) =>

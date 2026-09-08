@@ -1,5 +1,7 @@
 import type { EventSource } from './events'
 import type { WorkspaceFiles } from './host'
+import type { Disposable } from '../core/disposable'
+import type { CppBuildPlanV1 } from './cpp'
 
 export interface RuntimePreparationResult {
   success: boolean
@@ -86,6 +88,43 @@ export interface RuntimeExecutionPlan {
    */
   entrypoint?: string
   streamInterceptor?: RuntimeStreamInterceptor
+  /** Optional validated structured build; omission preserves legacy compilation. */
+  cppBuildPlan?: CppBuildPlanV1
+  /** Binary inputs stay separate from editor/persistence text files. */
+  binaryFiles?: Readonly<Record<string, Uint8Array>>
+}
+
+export interface RuntimeHostRequestV1 {
+  readonly requestId: number
+  readonly opcode: number
+  readonly payload: Uint8Array
+}
+
+export interface RuntimeHostChannelV1 {
+  readonly runId: number
+  readonly capability: string
+  readonly version: number
+  readonly signal: AbortSignal
+  onRequest(listener: (request: RuntimeHostRequestV1) => void | Promise<void>): Disposable
+  respond(requestId: number, opcode: number, payload?: Uint8Array): Promise<void>
+  fail(requestId: number, code: number, message: string): Promise<void>
+  sendEvent(opcode: number, payload?: Uint8Array): Promise<void>
+  close(code?: number, reason?: string): void
+}
+
+export interface RuntimeHostChannelLimitsV1 {
+  readonly maximumFrameBytes: number
+  readonly maximumQueuedBytes: number
+  readonly maximumInflightRequests: number
+  readonly maximumMessagesPerSecond: number
+  readonly handlerTimeoutMs: number
+}
+
+export interface RuntimeHostServiceV1 {
+  readonly capability: string
+  readonly version: number
+  readonly limits?: Partial<RuntimeHostChannelLimitsV1>
+  open(channel: RuntimeHostChannelV1): Disposable
 }
 
 export interface RuntimeStartRequest {
@@ -116,6 +155,8 @@ export interface RuntimeCapabilities {
    * should explicitly set it false.
    */
   memoryVisualization?: boolean
+  /** Optional generic duplex guest/host services. */
+  hostChannels?: boolean
 }
 
 export interface RuntimeDiagnostic {
@@ -168,6 +209,8 @@ export interface RuntimeSession {
   stepOut(): Promise<void>
   continueExecution(): Promise<void>
   writeStdin?(data: string): void
+  /** Registers one instance-scoped service; absent means unsupported. */
+  registerHostService?(service: RuntimeHostServiceV1): Disposable
   dispose?(): void
   /** Disposes the session and resolves after any initialization/run cleanup. */
   disposeAndWait?(): Promise<RuntimeOutcome>

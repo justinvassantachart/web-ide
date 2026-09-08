@@ -5,7 +5,16 @@ import type {
   RuntimeExecutionMode,
   RuntimeSession,
 } from './runtime'
+import type { RuntimeExecutionPlan } from './runtime'
 import type { IDESourcePresentationOwner } from './source-presentation'
+import type { WorkspaceChangeV1 } from './workspace'
+
+/** Existing snapshot facade with additive feed methods for modern providers. */
+export interface IDEContributionWorkspace {
+  snapshot(): WorkspaceFiles
+  revision?(): number
+  subscribe?(listener: (change: WorkspaceChangeV1) => void): () => void
+}
 
 export type IDEWorkbenchRunState = 'idle' | 'running' | 'paused'
 export type IDEExecutionMode = RuntimeExecutionMode | 'test'
@@ -24,13 +33,18 @@ export interface IDEExecutionController {
   /** Existing synchronous implementations remain valid; callers may await cleanup. */
   stop(): void | Promise<void>
   restart(mode: RuntimeExecutionMode): Promise<void>
+  /** Additive bridge for provider-prepared plans such as Testing V2. */
+  executePrepared?(request: IDEPreparedExecutionRequest): Promise<void>
+}
+
+export interface IDEPreparedExecutionRequest {
+  readonly plan: RuntimeExecutionPlan
+  readonly workflow?: 'default' | 'test'
 }
 
 export interface IDECommandContext {
   readonly execution: IDEExecutionController
-  readonly workspace: {
-    snapshot(): WorkspaceFiles
-  }
+  readonly workspace: IDEContributionWorkspace
   readonly panels: {
     reveal(id: string): void
   }
@@ -59,9 +73,7 @@ export interface IDEPanelServices {
   readonly execution: IDEExecutionController
   /** Owner-bound navigation/decorations facade; the host revokes it on unmount. */
   readonly source: IDESourcePresentationOwner
-  readonly workspace: {
-    snapshot(): WorkspaceFiles
-  }
+  readonly workspace: IDEContributionWorkspace
   readonly panels: {
     reveal(id: string): void
   }

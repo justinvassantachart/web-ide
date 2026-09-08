@@ -6,24 +6,13 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { useEditorStore } from '@/store/editor-store'
-import { fileExists, readFile, subscribeWorkspaceChange } from '@/vfs/volume'
 import type { IDESourceLocation } from '../contracts/source-presentation'
 import { SourcePresentationController } from '../core/source-presentation'
 import {
   SourcePresentationContext,
   type SourceRevealRequest,
 } from './source-presentation-state'
-
-function readVisibleSource(path: string): string | undefined {
-  if (!fileExists(path)) return undefined
-  try {
-    return readFile(path)
-  } catch {
-    // Directories and files removed between exists/read are not source files.
-    return undefined
-  }
-}
+import { useWorkbenchInstance } from './workbench-instance-context'
 
 /** Owns one source controller for one Web IDE mount/workspace identity. */
 export function SourcePresentationProvider({
@@ -34,20 +23,29 @@ export function SourcePresentationProvider({
   children: ReactNode
 }) {
   const [revealRequest, setRevealRequest] = useState<SourceRevealRequest | null>(null)
+  const instance = useWorkbenchInstance()
+  const readVisibleSource = useCallback((path: string): string | undefined => {
+    if (!instance.workspace.fileExists(path)) return undefined
+    try {
+      return instance.workspace.readFile(path)
+    } catch {
+      return undefined
+    }
+  }, [instance])
   const pendingDisposal = useRef<
     { controller: SourcePresentationController; cancelled: boolean } | undefined
   >(undefined)
 
   const reveal = useCallback((location: IDESourceLocation) => {
-    if (!fileExists(location.path)) {
+    if (!instance.workspace.fileExists(location.path)) {
       throw new TypeError(`Source path is no longer visible: ${JSON.stringify(location.path)}`)
     }
-    useEditorStore.getState().setActiveFile(location.path, readFile(location.path))
+    instance.editorStore.getState().setActiveFile(location.path, instance.workspace.readFile(location.path))
     setRevealRequest((previous) => Object.freeze({
       sequence: (previous?.sequence ?? 0) + 1,
       location,
     }))
-  }, [])
+  }, [instance])
 
   const controller = useMemo(
     () => new SourcePresentationController({
@@ -76,8 +74,8 @@ export function SourcePresentationProvider({
   }, [controller])
 
   useEffect(
-    () => subscribeWorkspaceChange(controller.pruneInvalid),
-    [controller],
+    () => instance.workspace.subscribe(controller.pruneInvalid),
+    [controller, instance],
   )
 
   const value = useMemo(

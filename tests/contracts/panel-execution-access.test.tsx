@@ -13,11 +13,31 @@ const harness = vi.hoisted(() => {
     stop: vi.fn(),
     restart: vi.fn(),
   })
+  const executionState = {
+    setIsRunning: vi.fn(),
+    isCompiling: false,
+    isRunning: false,
+  }
+  const compilerState = { cacheState: 'ready', downloadProgress: 100 }
+  const debugState = {
+    debugMode: 'idle',
+    pushHistoryState: vi.fn(),
+    setDebugMode: vi.fn(),
+    setFileBreakpoints: vi.fn(),
+  }
+  const workspace = {
+    snapshot: () => ({ '/workspace/main.py': 'print("instance")' }),
+    revision: 1,
+    subscribe: () => () => undefined,
+  }
   return {
     activities: [] as Array<Record<string, unknown>>,
     commands: [] as Array<Record<string, unknown>>,
+    compilerState,
+    debugState,
     panels: [] as Array<Record<string, unknown>>,
     execution,
+    executionState,
     runtime: {
       id: 'runtime.instance',
       capabilities: {
@@ -29,6 +49,7 @@ const harness = vi.hoisted(() => {
     },
     setActiveView,
     selectPanel,
+    workspace,
   }
 })
 
@@ -43,6 +64,20 @@ vi.mock('@/engine/engine-context', () => ({
 
 vi.mock('@/components/layout/use-run-pipeline', () => ({
   useRunPipeline: () => ({ execution: harness.execution }),
+}))
+
+vi.mock('@/web-ide/react/workbench-instance-context', () => ({
+  useWorkbenchInstance: () => ({
+    workspace: harness.workspace,
+    debugStore: { getState: () => harness.debugState },
+    testStore: { getState: () => ({ finalize: vi.fn() }) },
+  }),
+  useWorkbenchExecutionStore: (selector?: (state: typeof harness.executionState) => unknown) =>
+    selector ? selector(harness.executionState) : harness.executionState,
+  useWorkbenchCompilerStore: (selector?: (state: typeof harness.compilerState) => unknown) =>
+    selector ? selector(harness.compilerState) : harness.compilerState,
+  useWorkbenchDebugStore: (selector?: (state: typeof harness.debugState) => unknown) =>
+    selector ? selector(harness.debugState) : harness.debugState,
 }))
 
 vi.mock('@/web-ide/react/contribution-context', () => ({
@@ -201,7 +236,7 @@ describe('panel execution services', () => {
     expect(selected?.props.component).toBe(Panel)
     expect(selected?.props.runtime).toBe(harness.runtime)
     expect(selected?.props.execution).toBe(harness.execution)
-    expect((selected?.props.snapshot as () => unknown)()).toEqual({
+    expect((selected?.props.workspace as { snapshot(): unknown }).snapshot()).toEqual({
       '/workspace/main.py': 'print("instance")',
     })
     ;(selected?.props.revealPanel as (id: string) => void)('other.panel')
@@ -222,7 +257,7 @@ describe('panel execution services', () => {
     expect(selected?.props.component).toBe(Activity)
     expect(selected?.props.runtime).toBe(harness.runtime)
     expect(selected?.props.execution).toBe(harness.execution)
-    expect((selected?.props.snapshot as () => unknown)()).toEqual({
+    expect((selected?.props.workspace as { snapshot(): unknown }).snapshot()).toEqual({
       '/workspace/main.py': 'print("instance")',
     })
     ;(selected?.props.revealPanel as (id: string) => void)('other.panel')

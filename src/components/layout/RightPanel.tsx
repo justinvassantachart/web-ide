@@ -1,12 +1,8 @@
 import { useEffect, type KeyboardEvent } from 'react'
-import { useExecutionStore } from '@/store/execution-store'
-import { useCompilerStore } from '@/store/compiler-store'
-import { useDebugStore } from '@/store/debug-store'
 import { Terminal } from '@/components/terminal/Terminal'
 import { useIDEPanels } from '@/web-ide/react/contribution-context'
 import { useEngine } from '@/engine/engine-context'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
-import { getAllFiles } from '@/vfs/volume'
 import { useRunPipeline } from './use-run-pipeline'
 import { ContributionSurface } from '@/web-ide/react/ContributionSurface'
 import {
@@ -15,19 +11,26 @@ import {
     ResizablePanelGroup,
 } from '@/components/ui/resizable'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
+import {
+    useWorkbenchCompilerStore,
+    useWorkbenchDebugStore,
+    useWorkbenchExecutionStore,
+    useWorkbenchInstance,
+} from '@/web-ide/react/workbench-instance-context'
 
 export function RightPanel() {
     const runtime = useEngine()
     const { execution } = useRunPipeline()
-    const { isCompiling, isRunning } = useExecutionStore()
+    const { isCompiling, isRunning } = useWorkbenchExecutionStore()
+    const instance = useWorkbenchInstance()
     const {
         controller,
         initialLayout,
         selectedPanelId: activeTab,
     } = usePanelLayout()
     const setActiveTab = controller.selectPanel
-    const compilerReady = useCompilerStore(({ cacheState }) => cacheState === 'ready')
-    const debugMode = useDebugStore(({ debugMode: mode }) => mode)
+    const compilerReady = useWorkbenchCompilerStore(({ cacheState }) => cacheState === 'ready')
+    const debugMode = useWorkbenchDebugStore(({ debugMode: mode }) => mode)
     const testProvider = useSelectedTestProvider()
     const panels = useIDEPanels().filter((panel) => panel.when?.({
         runState: debugMode === 'paused' ? 'paused' : isRunning ? 'running' : 'idle',
@@ -127,7 +130,11 @@ export function RightPanel() {
                                 component={SelectedPanel}
                                 runtime={runtime}
                                 execution={execution}
-                                snapshot={getAllFiles}
+                                workspace={{
+                                    snapshot: () => instance.workspace.snapshot(),
+                                    revision: () => instance.workspace.revision,
+                                    subscribe: (listener) => instance.workspace.subscribe(listener),
+                                }}
                                 revealPanel={setActiveTab}
                             />
                         )}

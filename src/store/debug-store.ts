@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { createStore, type StoreApi } from 'zustand/vanilla'
 import type {
     DebugPauseState,
     MemorySnapshot,
@@ -26,13 +27,18 @@ export interface DebugState {
     toggleBreakpoint: (file: string, line: number) => void
     // Replace one file's breakpoints with the engine-verified set (no-op if equal).
     setFileBreakpoints: (file: string, lines: number[]) => void
+    renameFileBreakpoints: (from: string, to: string) => void
+    pruneBreakpointFiles: (exists: (path: string) => boolean) => void
     pushHistoryState: (state: DebugPauseState) => void
     stepBack: () => void
     stepForward: () => void
     reset: () => void
 }
 
-export const useDebugStore = create<DebugState>((set, get) => ({
+const createDebugState = (
+    set: StoreApi<DebugState>['setState'],
+    get: StoreApi<DebugState>['getState'],
+): DebugState => ({
     debugMode: 'idle',
     currentLine: null,
     currentFunc: null,
@@ -60,6 +66,22 @@ export const useDebugStore = create<DebugState>((set, get) => ({
         if (current.length === next.length && current.every((v, i) => v === next[i])) return
         set((s) => ({ breakpoints: { ...s.breakpoints, [file]: next } }))
     },
+
+    renameFileBreakpoints: (from, to) => set((state) => {
+        if (!Object.hasOwn(state.breakpoints, from)) return state
+        const breakpoints = { ...state.breakpoints }
+        const moved = breakpoints[from] ?? []
+        const existing = breakpoints[to] ?? []
+        delete breakpoints[from]
+        breakpoints[to] = [...new Set([...existing, ...moved])].sort((a, b) => a - b)
+        return { breakpoints }
+    }),
+
+    pruneBreakpointFiles: (exists) => set((state) => {
+        const entries = Object.entries(state.breakpoints).filter(([path]) => exists(path))
+        if (entries.length === Object.keys(state.breakpoints).length) return state
+        return { breakpoints: Object.fromEntries(entries) }
+    }),
 
     pushHistoryState: (state) => {
         const s = get()
@@ -96,15 +118,12 @@ export const useDebugStore = create<DebugState>((set, get) => ({
     },
 
     reset: () => set({ debugMode: 'idle', currentLine: null, currentFunc: null, currentFile: null, callStack: [], memorySnapshot: null, stepHistory: [], stepIndex: -1 }),
-}))
+})
 
-if (import.meta.env.DEV && typeof window !== 'undefined') {
-    // Console access for manual debugging / browser-driven tests in dev.
-    // Importing '/src/store/debug-store.ts' from the console resolves to a
-    // SECOND module instance (different from the app's aliased import), so
-    // tests must use this handle instead of importing the module themselves.
-    // ??= so a console-triggered duplicate evaluation can't clobber the
-    // app's instance.
-    const w = window as unknown as { __debugStore?: unknown }
-    w.__debugStore ??= useDebugStore
+/** Creates debugger state owned by one Web IDE mount. */
+export function createDebugStore(): StoreApi<DebugState> {
+    return createStore<DebugState>(createDebugState)
 }
+
+/** Legacy singleton retained for source compatibility outside mounted WebIDE components. */
+export const useDebugStore = create<DebugState>(createDebugState)

@@ -3,16 +3,18 @@
 // session is live — the same at-a-glance signal VS Code users rely on.
 
 import { Codicon } from '@/components/ui/codicon'
-import { useDebugStore } from '@/store/debug-store'
-import { useExecutionStore } from '@/store/execution-store'
-import { useEditorStore } from '@/store/editor-store'
+import {
+    useWorkbenchDebugStore,
+    useWorkbenchEditorStore,
+    useWorkbenchExecutionStore,
+} from '@/web-ide/react/workbench-instance-context'
 import { monacoLanguageLabelForPath } from '@/web-ide/core/monaco-language'
 
 export function StatusBar() {
-    const { debugMode, currentLine, currentFile } = useDebugStore()
-    const isRunning = useExecutionStore((s) => s.isRunning)
-    const isCompiling = useExecutionStore((s) => s.isCompiling)
-    const { activeFile, cursorLine, cursorColumn } = useEditorStore()
+    const { debugMode, currentLine, currentFile } = useWorkbenchDebugStore()
+    const isRunning = useWorkbenchExecutionStore((s) => s.isRunning)
+    const isCompiling = useWorkbenchExecutionStore((s) => s.isCompiling)
+    const { activeFile, cursorLine, cursorColumn } = useWorkbenchEditorStore()
     const languageLabel = activeFile
         ? monacoLanguageLabelForPath(activeFile)
         : undefined

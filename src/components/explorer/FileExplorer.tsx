@@ -2,11 +2,12 @@ import {
     useRef, useEffect, useLayoutEffect, useState, useMemo, useCallback,
     type KeyboardEvent, type ReactNode,
 } from 'react'
-import { useFilesStore, type VFSNode } from '@/store/files-store'
-import { useEditorStore } from '@/store/editor-store'
+import type { VFSNode } from '@/store/files-store'
 import {
-    readFile, createFile, createFolder, deleteItem, renameItem, fileExists,
-} from '@/vfs/volume'
+    useWorkbenchEditorStore,
+    useWorkbenchFilesStore,
+    useWorkbenchInstance,
+} from '@/web-ide/react/workbench-instance-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { getFileIconUrl, getFolderIconUrl } from '@/lib/vscode-icons'
 import './explorer.css'
@@ -242,11 +243,12 @@ function InlineCreateRow({
 // ── Explorer ──────────────────────────────────────────────────────
 
 export function FileExplorer() {
-    const files = useFilesStore((s) => s.files)
-    const expandedDirs = useFilesStore((s) => s.expandedDirs)
-    const toggleDir = useFilesStore((s) => s.toggleDir)
-    const expandDir = useFilesStore((s) => s.expandDir)
-    const { activeFile, setActiveFile } = useEditorStore()
+    const files = useWorkbenchFilesStore((s) => s.files)
+    const expandedDirs = useWorkbenchFilesStore((s) => s.expandedDirs)
+    const toggleDir = useWorkbenchFilesStore((s) => s.toggleDir)
+    const expandDir = useWorkbenchFilesStore((s) => s.expandDir)
+    const { activeFile, setActiveFile } = useWorkbenchEditorStore()
+    const instance = useWorkbenchInstance()
     const host = useIDEHost()
     const readOnly = host?.workspace?.readOnly === true
 
@@ -277,45 +279,53 @@ export function FileExplorer() {
         if (node.isDirectory) {
             toggleDir(node.path)
         } else {
-            setActiveFile(node.path, readFile(node.path))
+            setActiveFile(node.path, instance.workspace.readFile(node.path))
         }
         setFocusedPath(node.path)
-    }, [toggleDir, setActiveFile])
+    }, [instance, toggleDir, setActiveFile])
 
     const handleRename = useCallback((node: VFSNode, name: string) => {
         if (readOnly) return
         const parent = node.path.substring(0, node.path.lastIndexOf('/'))
         const newPath = `${parent}/${name}`
-        if (newPath !== node.path && !fileExists(newPath)) {
-            renameItem(node.path, newPath)
-            host?.events?.emit('file_rename', { from: node.path, to: newPath })
-            useEditorStore.getState().renameOpenFile(node.path, newPath)
-            if (activeFile === node.path) setActiveFile(newPath, readFile(newPath))
+        if (newPath !== node.path && !instance.workspace.fileExists(newPath)) {
+            try {
+                instance.workspace.renameLocal(node.path, newPath)
+                host?.events?.emit('file_rename', { from: node.path, to: newPath })
+            } catch (error) {
+                console.warn('[web-ide] local workspace rename rejected', error)
+            }
         }
         setRenamingPath(null)
-    }, [host, activeFile, readOnly, setActiveFile])
+    }, [host, instance, readOnly])
 
     const handleDelete = useCallback((node: VFSNode) => {
         if (readOnly) return
-        host?.events?.emit('file_delete', { path: node.path })
-        // deleteItem closes the file's tab (volume.ts owns that hand-off);
-        // tabs under a deleted folder are pruned by the editor's sweep.
-        deleteItem(node.path)
-    }, [host, readOnly])
+        try {
+            instance.workspace.deleteLocal(node.path)
+            host?.events?.emit('file_delete', { path: node.path })
+        } catch (error) {
+            console.warn('[web-ide] local workspace delete rejected', error)
+        }
+    }, [host, instance, readOnly])
 
     const handleCreate = useCallback((parent: string, kind: 'file' | 'folder', name: string) => {
         if (readOnly) return
         const base = parent || ROOT
         const newPath = `${base}/${name}`
-        if (!fileExists(newPath)) {
-            if (kind === 'folder') createFolder(newPath)
-            else createFile(newPath, '')
-            host?.events?.emit('file_create', { path: newPath, kind })
-            if (kind === 'file') setActiveFile(newPath, '')
+        if (!instance.workspace.fileExists(newPath)) {
+            try {
+                if (kind === 'folder') instance.workspace.createFolderLocal(newPath)
+                else instance.workspace.createFileLocal(newPath, '')
+                host?.events?.emit('file_create', { path: newPath, kind })
+                if (kind === 'file') setActiveFile(newPath, '')
+            } catch (error) {
+                console.warn('[web-ide] local workspace create rejected', error)
+            }
         }
         if (parent) expandDir(parent)
         setCreating(null)
-    }, [host, expandDir, readOnly, setActiveFile])
+    }, [host, expandDir, instance, readOnly, setActiveFile])
 
     const startCreate = useCallback((parent: string, kind: 'file' | 'folder') => {
         if (readOnly) return

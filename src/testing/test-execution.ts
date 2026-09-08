@@ -8,15 +8,22 @@ import type {
 import type {
   TestEvent,
   TestOutputParser,
-  TestProvider,
+  TestProviderContribution,
+  TestProviderV2,
 } from '@/web-ide/contracts/testing'
 
+export function isTestProviderV2(
+  provider: TestProviderContribution,
+): provider is TestProviderV2 {
+  return 'apiVersion' in provider && provider.apiVersion === 2
+}
+
 export function resolveTestProvider(
-  providers: readonly TestProvider[],
+  providers: readonly TestProviderContribution[],
   runtime: Pick<RuntimeSession, 'languageIds'>,
   requestedId?: string,
-): TestProvider | undefined {
-  const supportsRuntime = (provider: TestProvider) =>
+): TestProviderContribution | undefined {
+  const supportsRuntime = (provider: TestProviderContribution) =>
     provider.languageIds.some((languageId) => runtime.languageIds.includes(languageId))
 
   if (requestedId) {
@@ -62,7 +69,7 @@ export interface PrepareWorkbenchExecutionRequest {
   files: WorkspaceFiles
   mode: RuntimeExecutionMode
   executeTests: boolean
-  testProvider?: TestProvider
+  testProvider?: TestProviderContribution
   onTestEvent(event: TestEvent): void
 }
 
@@ -76,6 +83,13 @@ export async function prepareWorkbenchExecution({
   if (!testProvider) {
     if (executeTests) {
       throw new Error('No unambiguous test provider is available for this runtime')
+    }
+    return { files, mode }
+  }
+
+  if (isTestProviderV2(testProvider)) {
+    if (executeTests) {
+      throw new Error(`Test provider "${testProvider.id}" requires the Testing V2 controller`)
     }
     return { files, mode }
   }

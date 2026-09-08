@@ -1,10 +1,39 @@
 // ── OPFS Sync ─────────────────────────────────────────────────────
-import { writeFile, vol } from './volume'
+import type { Volume } from 'memfs'
 
 async function getProjectDir(projectId: string): Promise<FileSystemDirectoryHandle> {
     const root = await navigator.storage.getDirectory()
     const projects = await root.getDirectoryHandle('projects', { create: true })
     return projects.getDirectoryHandle(projectId, { create: true })
+}
+
+/** Reads one project's text snapshot without mutating the legacy global VFS. */
+export async function readWorkspaceFromOPFS(projectId: string): Promise<Record<string, string>> {
+    if (!projectId) return {}
+    const result: Record<string, string> = {}
+    try {
+        const projectDir = await getProjectDir(projectId)
+        await readTree(projectDir, '/workspace', result)
+    } catch {
+        // Missing/unavailable OPFS is an empty optional browser-local cache.
+    }
+    return result
+}
+
+async function readTree(
+    dir: FileSystemDirectoryHandle,
+    base: string,
+    result: Record<string, string>,
+) {
+    for await (const [name, handle] of (dir as any).entries()) { // eslint-disable-line @typescript-eslint/no-explicit-any
+        const path = `${base}/${name}`
+        if (handle.kind === 'directory') {
+            await readTree(handle as FileSystemDirectoryHandle, path, result)
+        } else {
+            const file = await (handle as FileSystemFileHandle).getFile()
+            result[path] = await file.text()
+        }
+    }
 }
 
 export async function syncToOPFS(projectId: string, path: string, content: string) {
@@ -90,7 +119,10 @@ export async function hydrateFromOPFS(
     try {
         const projectDir = await getProjectDir(projectId)
         if (!isCurrent()) return
-        await walk(projectDir, '/workspace', isCurrent)
+        // Only the legacy hydration facade loads the legacy singleton VFS.
+        // Instance-owned readers/writers above remain free of that module.
+        const { writeFile, vol } = await import('./volume')
+        await walk(projectDir, '/workspace', isCurrent, vol, writeFile)
     } catch (err) {
         console.warn('[OPFS] hydration failed:', err)
     }
@@ -100,6 +132,8 @@ async function walk(
     dir: FileSystemDirectoryHandle,
     base: string,
     isCurrent: () => boolean,
+    volume: Volume,
+    writeWorkspaceFile: (path: string, content: string) => void,
 ) {
     for await (const [name, handle] of (dir as any).entries()) { // eslint-disable-line @typescript-eslint/no-explicit-any
         if (!isCurrent()) return
@@ -107,13 +141,13 @@ async function walk(
         if (handle.kind === 'directory') {
             // Materialize the directory eagerly so empty folders survive reload;
             // writeFile below auto-creates non-empty ones.
-            if (!vol.existsSync(path)) vol.mkdirSync(path, { recursive: true })
-            await walk(handle as FileSystemDirectoryHandle, path, isCurrent)
+            if (!volume.existsSync(path)) volume.mkdirSync(path, { recursive: true })
+            await walk(handle as FileSystemDirectoryHandle, path, isCurrent, volume, writeWorkspaceFile)
         } else {
             const file = await (handle as FileSystemFileHandle).getFile()
             const content = await file.text()
             if (!isCurrent()) return
-            writeFile(path, content)
+            writeWorkspaceFile(path, content)
         }
     }
 }

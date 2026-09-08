@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { createStore, type StoreApi } from 'zustand/vanilla'
 import type {
   TestAssertion,
   TestCaseStatus,
@@ -17,7 +18,7 @@ export interface TestCase {
   durationMs?: number
 }
 
-interface TestState {
+export interface TestState {
   isTesting: boolean
   tests: TestCase[]
   completedCount: number
@@ -40,7 +41,7 @@ function updateTest(
   return next
 }
 
-export const useTestStore = create<TestState>((set) => ({
+const createTestState = (set: StoreApi<TestState>['setState']): TestState => ({
   isTesting: false,
   tests: [],
   completedCount: 0,
@@ -122,4 +123,12 @@ export const useTestStore = create<TestState>((set) => ({
     )
     return { tests, isTesting: false }
   }),
-}))
+})
+
+/** Creates test presentation state owned by one Web IDE mount. */
+export function createTestStore(): StoreApi<TestState> {
+  return createStore<TestState>(createTestState)
+}
+
+/** Legacy singleton retained for source compatibility outside mounted WebIDE components. */
+export const useTestStore = create<TestState>((set) => createTestState(set))

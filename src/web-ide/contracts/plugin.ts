@@ -5,7 +5,7 @@ import type {
   IDEWorkspaceResourceContribution,
 } from './contributions'
 import type { RuntimeProvider, RuntimeSession } from './runtime'
-import type { TestProvider } from './testing'
+import type { TestProviderContribution } from './testing'
 import type { LanguageToolingProvider } from './language-tooling'
 import type { Disposable, DisposableLike } from '../core/disposable'
 
@@ -19,7 +19,7 @@ export interface IDEPluginContributions {
   panels?: readonly IDEPanelContribution[]
   resources?: readonly IDEWorkspaceResourceContribution[]
   runtimeProviders?: readonly RuntimeProvider[]
-  testProviders?: readonly TestProvider[]
+  testProviders?: readonly TestProviderContribution[]
   languageToolingProviders?: readonly LanguageToolingProvider[]
 }
 
@@ -34,7 +34,7 @@ export interface IDEPluginContext {
   readonly panels: IDEContributionRegistrar<IDEPanelContribution>
   readonly resources: IDEContributionRegistrar<IDEWorkspaceResourceContribution>
   readonly runtimeProviders: IDEContributionRegistrar<RuntimeProvider>
-  readonly testProviders: IDEContributionRegistrar<TestProvider>
+  readonly testProviders: IDEContributionRegistrar<TestProviderContribution>
   readonly languageToolingProviders: IDEContributionRegistrar<LanguageToolingProvider>
   /** Available when activated by <WebIDE>; optional for headless tooling. */
   readonly runtime?: RuntimeSession

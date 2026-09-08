@@ -39,6 +39,11 @@ import { createPanelLayoutController } from './core/panel-layout'
 import { PanelLayoutContext } from './react/panel-layout-context'
 import { createSidebarLayoutController } from './core/sidebar-layout'
 import { SidebarLayoutContext } from './react/sidebar-layout-context'
+import {
+  createWorkbenchInstance,
+  useWorkbenchInstance,
+  WorkbenchInstanceContext,
+} from './react/workbench-instance-context'
 
 const runtimeMountKeys = new WeakMap<RuntimeProvider, number>()
 let nextRuntimeMountKey = 1
@@ -95,9 +100,14 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
     () => ({ controller: panelLayoutController, initialLayout }),
     [initialLayout, panelLayoutController],
   )
+  const workbenchInstance = useMemo(() => createWorkbenchInstance(), [])
+  workbenchInstance.workspace.setLocalMutationPolicy(
+    host?.workspace?.readOnly === true,
+    host?.workspace?.mutationPolicy,
+  )
   const instanceController = useMemo(
-    () => createWebIDEInstanceController(panelLayoutController),
-    [panelLayoutController],
+    () => createWebIDEInstanceController(workbenchInstance, panelLayoutController),
+    [panelLayoutController, workbenchInstance],
   )
   const runtimeProvider = plugins.runtimeProviders.get(configuration.runtimeProvider)
   const createRuntimeSession = useMemo(
@@ -141,10 +151,11 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
   const runtimeMountKey = getRuntimeMountKey(runtimeProvider)
 
   return (
-    <WebIDEConfigurationContext.Provider value={configuration}>
-      <IDEContributionContext.Provider value={plugins}>
-        <PanelLayoutContext.Provider value={panelLayoutContext}>
-          <SidebarLayoutContext.Provider value={sidebarLayoutController}>
+    <WorkbenchInstanceContext.Provider value={workbenchInstance}>
+      <WebIDEConfigurationContext.Provider value={configuration}>
+        <IDEContributionContext.Provider value={plugins}>
+          <PanelLayoutContext.Provider value={panelLayoutContext}>
+            <SidebarLayoutContext.Provider value={sidebarLayoutController}>
             <PluginManagerLifetime plugins={plugins} />
             <WorkspaceHostBridge instanceController={instanceController} />
             <InstanceHandleBridge
@@ -167,10 +178,11 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
                 </SourcePresentationProvider>
               </RunPipelineCoordinatorProvider>
             </EngineProvider>
-          </SidebarLayoutContext.Provider>
-        </PanelLayoutContext.Provider>
-      </IDEContributionContext.Provider>
-    </WebIDEConfigurationContext.Provider>
+            </SidebarLayoutContext.Provider>
+          </PanelLayoutContext.Provider>
+        </IDEContributionContext.Provider>
+      </WebIDEConfigurationContext.Provider>
+    </WorkbenchInstanceContext.Provider>
   )
 })
 
@@ -183,14 +195,13 @@ function LanguageToolingMount({
   supplementalFiles: WorkspaceFiles | undefined
   children: ReactNode
 }) {
-  const host = useWebIDEHost()
   if (!provider) return children
 
   return (
     <ActiveLanguageToolingMount
       key={getLanguageToolingMountKey(provider)}
       provider={provider}
-      disabled={host?.workspace?.readOnly === true}
+      disabled={false}
       supplementalFiles={supplementalFiles}
     >
       {children}
@@ -209,8 +220,20 @@ function ActiveLanguageToolingMount({
   supplementalFiles: WorkspaceFiles | undefined
   children: ReactNode
 }) {
+  const instance = useWorkbenchInstance()
+  const instanceWorkspace = instance.workspace
   const [service, setService] = useState(NO_LANGUAGE_TOOLING)
   const active = useRef(true)
+  const workspace = useMemo(() => ({
+    snapshot: () => instanceWorkspace.snapshot(),
+    revision: () => instanceWorkspace.revision,
+    subscribe: (listener: Parameters<typeof instanceWorkspace.subscribe>[0]) =>
+      instanceWorkspace.subscribe(listener),
+  }), [instanceWorkspace])
+  const modelNamespace = useMemo(() => ({
+    toUri: (path: string) => instanceWorkspace.toMonacoUri(path),
+    owns: (uri: { authority: string; path: string }) => instanceWorkspace.ownsMonacoUri(uri),
+  }), [instanceWorkspace])
   const publishService = useCallback(
     (next: LanguageToolingService | null) => {
       if (active.current) setService(next ?? NO_LANGUAGE_TOOLING)
@@ -231,6 +254,8 @@ function ActiveLanguageToolingMount({
       <ProviderComponent
         disabled={disabled}
         supplementalFiles={supplementalFiles}
+        workspace={workspace}
+        modelNamespace={modelNamespace}
         publishService={publishService}
       />
       {children}

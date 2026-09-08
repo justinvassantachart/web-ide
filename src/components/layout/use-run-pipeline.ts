@@ -1,12 +1,9 @@
 import { useCallback, useMemo } from 'react'
-import { useExecutionStore } from '@/store/execution-store'
-import { useDebugStore } from '@/store/debug-store'
-import { useTestStore } from '@/testing/test-store'
-import { getAllFiles } from '@/vfs/volume'
 import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import type {
     RuntimeExecutionMode,
+    RuntimeExecutionPlan,
     RuntimePreparationResult,
 } from '@/web-ide/contracts/runtime'
 import { prepareWorkbenchExecution } from '@/testing/test-execution'
@@ -16,6 +13,7 @@ import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
 import type { IDEExecutionController } from '@/web-ide/contracts/contributions'
 import { useRunPipelineCoordinator } from './run-pipeline-context'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
+import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
 
 // One coordinated compile-and-run path lets toolbar buttons, panels, and
 // hotkeys share cancellation and ordered transition state for this mount.
@@ -26,14 +24,19 @@ export function useRunPipeline() {
     const resources = useIDEWorkspaceResources()
     const coordinator = useRunPipelineCoordinator()
     const { controller: panelLayout } = usePanelLayout()
+    const instance = useWorkbenchInstance()
 
     const settleStop = useCallback(async () => {
         if (engine.stopAndWait) await engine.stopAndWait()
         else engine.stop()
     }, [engine])
 
-    const run = useCallback(async (debug: boolean, isTest = false) => {
-        const exec = useExecutionStore.getState()
+    const run = useCallback(async (
+        debug: boolean,
+        isTest = false,
+        preparedPlan?: RuntimeExecutionPlan,
+    ) => {
+        const exec = instance.executionStore.getState()
         if (exec.isCompiling || exec.isRunning || coordinator.getPendingRun()) return
         const generation = coordinator.beginTransition()
         let releaseTask!: () => void
@@ -46,7 +49,7 @@ export function useRunPipeline() {
             await startGate
             if (!coordinator.isCurrent(generation)) return
             if (isTest) {
-                useTestStore.getState().reset()
+                instance.testStore.getState().reset()
                 panelLayout.selectPanel('tests')
             }
             const mode: RuntimeExecutionMode = debug ? 'debug' : 'run'
@@ -54,12 +57,12 @@ export function useRunPipeline() {
             let executionMode = mode
             try {
                 if (!coordinator.isCurrent(generation)) {
-                    useTestStore.getState().finalize()
+                    instance.testStore.getState().finalize()
                     return
                 }
                 exec.setIsCompiling(true)
                 if (!coordinator.isCurrent(generation)) {
-                    useTestStore.getState().finalize()
+                    instance.testStore.getState().finalize()
                     return
                 }
                 host?.events?.emit(
@@ -67,18 +70,18 @@ export function useRunPipeline() {
                     {},
                 )
                 if (!coordinator.isCurrent(generation)) {
-                    useTestStore.getState().finalize()
+                    instance.testStore.getState().finalize()
                     return
                 }
-                let plan = await prepareWorkbenchExecution({
-                    files: getAllFiles(),
-                    mode,
-                    executeTests: isTest,
-                    testProvider,
-                    onTestEvent: (event) => useTestStore.getState().processEvent(event),
-                })
+                let plan = preparedPlan ?? await prepareWorkbenchExecution({
+                        files: instance.workspace.snapshot(),
+                        mode,
+                        executeTests: isTest,
+                        testProvider,
+                        onTestEvent: (event) => instance.testStore.getState().processEvent(event),
+                    })
                 if (!coordinator.isCurrent(generation)) {
-                    useTestStore.getState().finalize()
+                    instance.testStore.getState().finalize()
                     return
                 }
                 const files = mergeExecutionResourceFiles(resources, plan.files)
@@ -93,38 +96,38 @@ export function useRunPipeline() {
                     } catch (error) {
                         console.error('[web-ide] cancelled runtime cleanup failed', error)
                     }
-                    useTestStore.getState().finalize()
+                    instance.testStore.getState().finalize()
                     return
                 }
             } catch (error) {
                 if (!coordinator.isCurrent(generation)) {
-                    useTestStore.getState().finalize()
+                    instance.testStore.getState().finalize()
                     return
                 }
                 console.error('[web-ide] runtime preparation failed', error)
                 host?.events?.emit('compile_error', { debug })
-                useTestStore.getState().finalize()
+                instance.testStore.getState().finalize()
                 return
             } finally {
-                useExecutionStore.getState().setIsCompiling(false)
+                instance.executionStore.getState().setIsCompiling(false)
             }
             if (!coordinator.isCurrent(generation)) {
-                useTestStore.getState().finalize()
+                instance.testStore.getState().finalize()
                 return
             }
             if (!prepared.success) {
                 host?.events?.emit('compile_error', { debug })
-                useTestStore.getState().finalize()
+                instance.testStore.getState().finalize()
                 return
             }
 
-            useExecutionStore.getState().setIsRunning(true)
-            useDebugStore.getState().setDebugMode(debug ? 'running' : 'idle')
+            instance.executionStore.getState().setIsRunning(true)
+            instance.debugStore.getState().setDebugMode(debug ? 'running' : 'idle')
             host?.events?.emit(isTest ? 'run_tests' : 'run', { debug })
             if (!coordinator.isCurrent(generation)) {
-                useExecutionStore.getState().setIsRunning(false)
-                useDebugStore.getState().setDebugMode('idle')
-                useTestStore.getState().finalize()
+                instance.executionStore.getState().setIsRunning(false)
+                instance.debugStore.getState().setDebugMode('idle')
+                instance.testStore.getState().finalize()
                 return
             }
             coordinator.markRuntimeStart(generation)
@@ -135,9 +138,9 @@ export function useRunPipeline() {
                 // through typed events, but a rejected start must never leave the
                 // host workbench stuck in a running state.
                 console.error('[web-ide] runtime start failed', error)
-                useExecutionStore.getState().setIsRunning(false)
-                useDebugStore.getState().setDebugMode('idle')
-                useTestStore.getState().finalize()
+                instance.executionStore.getState().setIsRunning(false)
+                instance.debugStore.getState().setDebugMode('idle')
+                instance.testStore.getState().finalize()
             }
         })()
         coordinator.setPendingRun(task)
@@ -147,7 +150,7 @@ export function useRunPipeline() {
         } finally {
             coordinator.clearPendingRun(task)
         }
-    }, [coordinator, engine, host, panelLayout, resources, settleStop, testProvider])
+    }, [coordinator, engine, host, instance, panelLayout, resources, settleStop, testProvider])
 
     const stop = useCallback(async () => {
         const generation = coordinator.beginTransition()
@@ -168,10 +171,10 @@ export function useRunPipeline() {
             console.error('[web-ide] pending runtime cancellation failed', error)
         } finally {
             if (coordinator.isCurrent(generation)) {
-                useDebugStore.getState().reset()
+                instance.debugStore.getState().reset()
             }
         }
-    }, [coordinator, settleStop])
+    }, [coordinator, instance, settleStop])
 
     const restart = useCallback(async (debug: boolean) => {
         const generation = coordinator.beginTransition()
@@ -195,17 +198,22 @@ export function useRunPipeline() {
             stopFailed = true
         } finally {
             if (coordinator.isCurrent(generation)) {
-                useDebugStore.getState().reset()
+                instance.debugStore.getState().reset()
             }
         }
         if (stopFailed || !coordinator.isCurrent(generation)) return
         await run(debug)
-    }, [coordinator, host, run, settleStop])
+    }, [coordinator, host, instance, run, settleStop])
 
     const execution = useMemo<IDEExecutionController>(() => ({
         start: async (mode) => run(mode === 'debug', mode === 'test'),
         stop,
         restart: async (mode) => restart(mode === 'debug'),
+        executePrepared: async ({ plan, workflow }) => run(
+            plan.mode === 'debug',
+            workflow === 'test',
+            plan,
+        ),
     }), [restart, run, stop])
 
     return { run, stop, restart, execution }

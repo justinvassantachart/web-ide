@@ -4,12 +4,30 @@ export { WebIDEHostProvider } from './react/WebIDEHostProvider'
 export { useWebIDEHost } from './react/host-context'
 export { useLanguageTooling } from './react/language-tooling-context'
 export { initWebIDETheme } from './public/theme'
+export {
+  canonicalStringifyV1,
+  isWellFormedUnicode,
+  normalizeVfsPathV1,
+  normalizeWorkspacePathV1,
+  normalizeWorkspaceTextV1,
+  sha256Hex,
+  workspaceDigestV1,
+} from './public/canonical-contract'
+export {
+  CONTRACT_SCHEMA_DIGESTS,
+  CONTRACT_SCHEMA_SOURCE_REVISION,
+} from './contracts/schema-digests'
 
+export type {
+  CppBuildPlanV1,
+  CppCompileProfileV1,
+} from './contracts/cpp'
 export type {
   WebIDEConfiguration,
   WebIDEInitialLayout,
 } from './contracts/configuration'
 export type {
+  IDEEditorModelNamespace,
   LanguageToolingProvider,
   LanguageToolingProviderComponentProps,
   LanguageToolingService,
@@ -25,6 +43,7 @@ export type {
   IDEExecutionMode,
   IDEPanelContribution,
   IDEPanelServices,
+  IDEPreparedExecutionRequest,
   IDEWorkbenchRunState,
   IDEWorkbenchSnapshot,
   IDEWorkspaceResourceContribution,
@@ -55,6 +74,19 @@ export type {
   WorkspaceSaveContext,
 } from './contracts/host'
 export type {
+  IDEWorkspaceExternalApplication,
+  IDEWorkspaceFeed,
+  IDEWorkspacePersistenceStatusFeed,
+  WorkspaceApplyTransactionV1,
+  WorkspaceChangeV1,
+  WorkspaceMutationKind,
+  WorkspaceMutationPolicy,
+  WorkspaceMutationRequest,
+  WorkspaceOperationV1,
+  WorkspaceOriginV1,
+  WorkspacePersistenceStatus,
+} from './contracts/workspace'
+export type {
   IDEContributionRegistrar,
   IDEPlugin,
   IDEPluginActivationServices,
@@ -72,6 +104,10 @@ export type {
   RuntimeExecutionMode,
   RuntimeExecutionPlan,
   RuntimeEventChannels,
+  RuntimeHostChannelLimitsV1,
+  RuntimeHostChannelV1,
+  RuntimeHostRequestV1,
+  RuntimeHostServiceV1,
   RuntimeOutcome,
   RuntimeProvider,
   RuntimePreparationResult,
@@ -90,7 +126,11 @@ export type {
 export type {
   PreparedTestExecution,
   TestAssertion,
+  TestCatalogDecoderV2,
+  TestCatalogV2,
   TestCaseStatus,
+  TestDecoderFrameV2,
+  TestDescriptorV2,
   TestDiagnostic,
   TestEvent,
   TestLocation,
@@ -98,9 +138,16 @@ export type {
   TestOutputParser,
   TestOutputStream,
   TestProvider,
+  TestProviderContribution,
+  TestProviderV2,
   TestProviderHelp,
   TestProviderHelpExample,
   TestProviderPrepareRequest,
   TestValue,
+  TestReportDecoderV2,
+  TestReportEventPayloadV2,
+  TestReportEventV2,
+  TestRunRequestV2,
+  TestSelectionV2,
 } from './contracts/testing'
 export type { Disposable, DisposableLike } from './core/disposable'

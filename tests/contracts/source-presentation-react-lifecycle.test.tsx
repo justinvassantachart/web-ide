@@ -12,10 +12,15 @@ import {
   useSourcePresentationOwner,
 } from '../../src/web-ide/react/source-presentation-state'
 import { SourcePresentationProvider } from '../../src/web-ide/react/source-presentation-context'
-import { initVFS } from '../../src/vfs/volume'
+import {
+  createWorkbenchInstance,
+  type WorkbenchInstance,
+  WorkbenchInstanceContext,
+} from '../../src/web-ide/react/workbench-instance-context'
 
 const MAIN = '/workspace/main.py'
 let root: Root | undefined
+let workbench: WorkbenchInstance | undefined
 
 function OwnerProbe() {
   const source = useSourcePresentationOwner()
@@ -46,6 +51,8 @@ afterEach(async () => {
     root = undefined
   }
   capturedOwner = undefined
+  workbench?.workspace.dispose()
+  workbench = undefined
 })
 
 describe('source presentation React ownership', () => {
@@ -103,7 +110,8 @@ describe('source presentation React ownership', () => {
   it('rejects directories and current-file positions past EOF or EOL', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true
-    await initVFS({
+    workbench = createWorkbenchInstance()
+    await workbench.workspace.initialize({
       projectId: 'source-position-validation',
       ephemeral: true,
       initialFiles: {
@@ -117,12 +125,14 @@ describe('source presentation React ownership', () => {
     await act(async () => {
       root?.render(
         <StrictMode>
-          <SourcePresentationProvider
-            key="source-position-validation"
-            workspaceKey="source-position-validation"
-          >
-            <CaptureOwner />
-          </SourcePresentationProvider>
+          <WorkbenchInstanceContext.Provider value={workbench!}>
+            <SourcePresentationProvider
+              key="source-position-validation"
+              workspaceKey="source-position-validation"
+            >
+              <CaptureOwner />
+            </SourcePresentationProvider>
+          </WorkbenchInstanceContext.Provider>
         </StrictMode>,
       )
       await Promise.resolve()
@@ -143,12 +153,14 @@ describe('source presentation React ownership', () => {
     await act(async () => {
       root?.render(
         <StrictMode>
-          <SourcePresentationProvider
-            key="replacement-workspace"
-            workspaceKey="replacement-workspace"
-          >
-            <CaptureOwner />
-          </SourcePresentationProvider>
+          <WorkbenchInstanceContext.Provider value={workbench!}>
+            <SourcePresentationProvider
+              key="replacement-workspace"
+              workspaceKey="replacement-workspace"
+            >
+              <CaptureOwner />
+            </SourcePresentationProvider>
+          </WorkbenchInstanceContext.Provider>
         </StrictMode>,
       )
       await Promise.resolve()

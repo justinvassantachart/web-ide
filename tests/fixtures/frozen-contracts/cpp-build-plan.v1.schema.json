@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cs106b.local/schemas/cpp-build-plan.v1.schema.json",
+  "title": "CppBuildPlanV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "profile", "sources", "archives", "linkLibraries", "outputPath"],
+  "properties": {
+    "version": { "const": 1 },
+    "profile": { "$ref": "cpp-compile-profile.v1.schema.json" },
+    "sources": { "type": "array", "minItems": 1, "maxItems": 500, "uniqueItems": true, "items": { "$ref": "#/$defs/path" } },
+    "archives": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "$ref": "#/$defs/path" },
+          "wholeArchive": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "linkLibraries": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z0-9_+.-]{1,128}$" } },
+    "outputPath": { "$ref": "#/$defs/path" }
+  },
+  "$defs": {
+    "path": { "type": "string", "minLength": 2, "maxLength": 1024, "pattern": "^/(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)[^\\u0000\\uD800-\\uDFFF\\\\]+$" }
+  }
+}

@@ -2,56 +2,12 @@ import { Volume } from 'memfs'
 import { useFilesStore, type VFSNode } from '@/store/files-store'
 import { useEditorStore } from '@/store/editor-store'
 import { normalizeWorkspaceFiles } from '@/web-ide/core/workspace-path'
+import { DEFAULT_MAIN } from './default-main'
+
+export { DEFAULT_MAIN } from './default-main'
 
 // ── Global Volume ──────────────────────────────────────────────
 export const vol = new Volume()
-
-// ── Templates ──────────────────────────────────────────────────
-const DEFAULT_MAIN = `#include <iostream>
-
-struct Node {
-    int data;
-    Node* next;
-};
-
-// Double every value in the list
-void doubleValues(Node* head) {
-    Node* current = head;
-    while (current != nullptr) {
-        current->data *= 2;
-        current = current->next;
-    }
-}
-
-int main() {
-    // Build a linked list: 10 -> 20 -> 30
-    Node* head = new Node{10, nullptr};
-    head->next = new Node{20, nullptr};
-    head->next->next = new Node{30, nullptr};
-
-    // Print original values
-    Node* current = head;
-    while (current != nullptr) {
-        std::cout << current->data << std::endl;
-        current = current->next;
-    }
-
-    // Modify the list in a separate function (use "Step Into")
-    doubleValues(head);
-
-    // Print doubled values
-    current = head;
-    while (current != nullptr) {
-        std::cout << current->data << std::endl;
-        current = current->next;
-    }
-
-    // BUG: only free the head -- leak the rest!
-    delete head;
-
-    return 0;
-}
-`
 
 // ── Current project ID ─────────────────────────────────────────
 let activeProjectId = 'default-project'

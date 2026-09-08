@@ -4,7 +4,7 @@ import type {
   IDEPanelServices,
 } from '../contracts/contributions'
 import type { RuntimeSession } from '../contracts/runtime'
-import type { WorkspaceFiles } from '../contracts/host'
+import type { IDEWorkspaceFeed } from '../contracts/workspace'
 import { useSourcePresentationOwner } from './source-presentation-state'
 
 /** Binds one rendered contribution to one automatically cleaned source owner. */
@@ -12,13 +12,13 @@ export function ContributionSurface({
   component: Component,
   runtime,
   execution,
-  snapshot,
+  workspace,
   revealPanel,
 }: {
   component: ComponentType<IDEPanelServices>
   runtime: RuntimeSession
   execution: IDEExecutionController
-  snapshot(): WorkspaceFiles
+  workspace: IDEWorkspaceFeed
   revealPanel(id: string): void
 }) {
   const source = useSourcePresentationOwner()
@@ -28,7 +28,7 @@ export function ContributionSurface({
       runtime={runtime}
       execution={execution}
       source={source}
-      workspace={{ snapshot }}
+      workspace={workspace}
       panels={{ reveal: revealPanel }}
     />
   )

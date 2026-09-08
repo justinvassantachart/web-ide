@@ -13,6 +13,11 @@ export interface WorkspacePersistenceCoordinatorOptions {
   debounceMs?: number
   /** Called only when the aggregate pending state changes. */
   onPendingChange?: (pending: boolean) => void
+  /** Additive detail for hosts that distinguish active saves from retries. */
+  onStatusChange?: (
+    status: 'saved' | 'saving' | 'retrying',
+    error?: unknown,
+  ) => void
 }
 
 type PersistenceAction = () => void | Promise<void>
@@ -41,6 +46,7 @@ export class WorkspacePersistenceCoordinator {
   private readonly persistence: IDEWorkspacePersistence
   private readonly debounceMs: number
   private readonly onPendingChange?: (pending: boolean) => void
+  private readonly onStatusChange?: WorkspacePersistenceCoordinatorOptions['onStatusChange']
 
   private pendingSnapshot: PendingWorkspaceSnapshot | undefined
   private retrySnapshot: PendingWorkspaceSnapshot | undefined
@@ -51,6 +57,9 @@ export class WorkspacePersistenceCoordinator {
   private persistedSourceRevision = 0
   private currentRevision = 0
   private pending = false
+  private retryError: unknown
+  private retryErrorSourceRevision = 0
+  private status: 'saved' | 'saving' | 'retrying' = 'saved'
   private forcedDisposalStarted = false
   private adapterDisposalStarted = false
   private closed = false
@@ -68,6 +77,7 @@ export class WorkspacePersistenceCoordinator {
     this.persistence = options.persistence
     this.debounceMs = debounceMs
     this.onPendingChange = options.onPendingChange
+    this.onStatusChange = options.onStatusChange
   }
 
   /** True while a snapshot is debouncing or persistence work is queued. */
@@ -235,6 +245,8 @@ export class WorkspacePersistenceCoordinator {
     this.clearDebounceTimer()
     this.pendingSnapshot = undefined
     this.retrySnapshot = undefined
+    this.retryError = undefined
+    this.retryErrorSourceRevision = 0
     this.refreshPendingState()
   }
 
@@ -285,6 +297,10 @@ export class WorkspacePersistenceCoordinator {
       ) {
         this.retrySnapshot = undefined
       }
+      if (this.persistedSourceRevision >= this.retryErrorSourceRevision) {
+        this.retryError = undefined
+        this.retryErrorSourceRevision = 0
+      }
     } catch (error) {
       const newerSnapshot = this.pendingSnapshot
       if (
@@ -294,6 +310,10 @@ export class WorkspacePersistenceCoordinator {
           || this.retrySnapshot.sourceRevision <= snapshot.sourceRevision)
       ) {
         this.retrySnapshot = snapshot
+      }
+      if (snapshot.sourceRevision >= this.retryErrorSourceRevision) {
+        this.retryError = error
+        this.retryErrorSourceRevision = snapshot.sourceRevision
       }
       throw error
     } finally {
@@ -414,13 +434,25 @@ export class WorkspacePersistenceCoordinator {
       this.retrySnapshot !== undefined ||
       this.debounceTimer !== undefined ||
       this.queuedOperationCount > 0
-    if (nextPending === this.pending) return
+    if (nextPending !== this.pending) {
+      this.pending = nextPending
+      try {
+        this.onPendingChange?.(nextPending)
+      } catch {
+        // An observer must not be able to interrupt persistence or queue cleanup.
+      }
+    }
 
-    this.pending = nextPending
-    try {
-      this.onPendingChange?.(nextPending)
-    } catch {
-      // An observer must not be able to interrupt persistence or queue cleanup.
+    const nextStatus = this.retryError === undefined
+      ? nextPending ? 'saving' : 'saved'
+      : 'retrying'
+    if (nextStatus !== this.status) {
+      this.status = nextStatus
+      try {
+        this.onStatusChange?.(nextStatus, this.retryError)
+      } catch {
+        // Status observers cannot interrupt persistence or queue cleanup.
+      }
     }
   }
 }

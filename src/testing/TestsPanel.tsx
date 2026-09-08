@@ -1,5 +1,8 @@
 import { Codicon } from '@/components/ui/codicon'
-import { useExecutionStore } from '@/store/execution-store'
+import {
+    useWorkbenchExecutionStore,
+    useWorkbenchTestStore,
+} from '@/web-ide/react/workbench-instance-context'
 import type {
     TestAssertion,
     TestDiagnostic,
@@ -7,16 +10,17 @@ import type {
 } from '@/web-ide/contracts/testing'
 import type { IDEPanelServices } from '@/web-ide/contracts/contributions'
 import type { TestCase } from './test-store'
-import { useTestStore } from './test-store'
 import { useSelectedTestProvider } from './use-test-provider'
+import { isTestProviderV2 } from './test-execution'
 
 export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
-    const tests = useTestStore((s) => s.tests)
-    const isTesting = useTestStore((s) => s.isTesting)
-    const totalCount = useTestStore((s) => s.totalCount)
-    const completedCount = useTestStore((s) => s.completedCount)
-    const isCompiling = useExecutionStore((s) => s.isCompiling)
+    const tests = useWorkbenchTestStore((s) => s.tests)
+    const isTesting = useWorkbenchTestStore((s) => s.isTesting)
+    const totalCount = useWorkbenchTestStore((s) => s.totalCount)
+    const completedCount = useWorkbenchTestStore((s) => s.completedCount)
+    const isCompiling = useWorkbenchExecutionStore((s) => s.isCompiling)
     const provider = useSelectedTestProvider()
+    const help = provider && !isTestProviderV2(provider) ? provider.help : undefined
 
     if (tests.length === 0 && !isTesting && !isCompiling) {
         return (
@@ -26,10 +30,10 @@ export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
                     Click <span className="text-primary">Tests</span> in the toolbar to run your tests
                 </div>
                 <div className="opacity-80 leading-relaxed">
-                    {provider?.help ? (
+                    {help ? (
                         <>
-                            {provider.help.message}{' '}
-                            {provider.help.examples?.map((example, index) => (
+                            {help.message}{' '}
+                            {help.examples?.map((example, index) => (
                                 <span key={`${example.code}:${index}`}>
                                     {example.prefix && <>{example.prefix}{' '}</>}
                                     <code className="text-foreground/80">{example.code}</code>{' '}

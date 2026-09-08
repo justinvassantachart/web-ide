@@ -13,28 +13,27 @@
 // own keydown handling when the editor has focus.
 
 import { useEffect } from 'react'
-import { useDebugStore } from '@/store/debug-store'
-import { useExecutionStore } from '@/store/execution-store'
-import { useCompilerStore } from '@/store/compiler-store'
 import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { useRunPipeline } from './use-run-pipeline'
+import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
 
 export function GlobalHotkeys() {
     const engine = useEngine()
     const host = useIDEHost()
     const { run, stop, restart } = useRunPipeline()
+    const instance = useWorkbenchInstance()
 
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key !== 'F5' && e.key !== 'F10' && e.key !== 'F11') return
             if (!engine.capabilities.debug) return
 
-            const mode = useDebugStore.getState().debugMode
-            const atLiveEdge = useDebugStore.getState().stepIndex < 0
+            const mode = instance.debugStore.getState().debugMode
+            const atLiveEdge = instance.debugStore.getState().stepIndex < 0
             const paused = mode === 'paused'
             const canStep = paused && atLiveEdge
-            const { isRunning, isCompiling } = useExecutionStore.getState()
+            const { isRunning, isCompiling } = instance.executionStore.getState()
             const sessionLive = mode !== 'idle' || isRunning
 
             if (e.key === 'F5') {
@@ -51,7 +50,7 @@ export function GlobalHotkeys() {
                     host?.events?.emit('debug_continue', {})
                     void engine.continueExecution()
                 } else if (!sessionLive && !isCompiling) {
-                    if (useCompilerStore.getState().cacheState !== 'ready') return
+                    if (instance.compilerStore.getState().cacheState !== 'ready') return
                     e.preventDefault()
                     void run(true)
                 }
@@ -76,7 +75,7 @@ export function GlobalHotkeys() {
         }
         window.addEventListener('keydown', onKeyDown, true)
         return () => window.removeEventListener('keydown', onKeyDown, true)
-    }, [engine, host, run, stop, restart])
+    }, [engine, host, instance, run, stop, restart])
 
     return null
 }

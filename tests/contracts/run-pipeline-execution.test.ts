@@ -69,6 +69,17 @@ vi.mock('react', () => ({
   useMemo: <T>(factory: () => T) => factory(),
 }))
 
+vi.mock('@/web-ide/react/workbench-instance-context', () => ({
+  useWorkbenchInstance: () => ({
+    executionStore: { getState: () => harness.executionState },
+    debugStore: { getState: () => harness.debugState },
+    testStore: { getState: () => harness.testState },
+    workspace: {
+      snapshot: () => ({ '/workspace/main.py': 'print("instance")' }),
+    },
+  }),
+}))
+
 vi.mock('@/components/layout/run-pipeline-context', () => ({
   useRunPipelineCoordinator: () =>
     harness.coordinators[harness.coordinatorIndex++],
@@ -241,6 +252,51 @@ describe('instance-scoped panel execution controller', () => {
     expect(harness.testState.finalize).toHaveBeenCalledTimes(1)
     expect(selectedHost.events.emit).toHaveBeenCalledWith('compile_error', { debug: false })
     expect(error).toHaveBeenCalledWith('[web-ide] runtime preparation failed', failure)
+  })
+
+  it('passes optional structured build plans and binary inputs through prepared execution', async () => {
+    const selectedRuntime = runtime('runtime.prepared-plan')
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(host())
+    harness.coordinators.push(harness.createCoordinator())
+    const binaryFiles = { '/support/libsynthetic.a': new Uint8Array([1, 2, 3]) }
+    const cppBuildPlan = {
+      version: 1 as const,
+      profile: {
+        version: 1 as const,
+        target: 'wasm32-wasip1' as const,
+        languageStandard: 'c++20' as const,
+        includeDirectories: ['/support/include'],
+        defines: [{ name: 'SYNTHETIC_FEATURE', value: '1' }],
+        warningPreset: 'strict' as const,
+        toolchain: {
+          compilerDigest: 'a'.repeat(64),
+          sysrootDigest: 'b'.repeat(64),
+          cxxAbiId: 'synthetic-libcxx-v1',
+        },
+      },
+      sources: ['/workspace/main.cpp'],
+      archives: [{ path: '/support/libsynthetic.a', wholeArchive: true }],
+      linkLibraries: [],
+      outputPath: '/output/program.wasm',
+    }
+    const plan = {
+      files: { '/workspace/main.cpp': 'int main() {}\n' },
+      mode: 'debug' as const,
+      cppBuildPlan,
+      binaryFiles,
+    }
+
+    const controller = useRunPipeline().execution
+    await controller.executePrepared?.({ plan, workflow: 'test' })
+
+    expect(harness.prepareWorkbenchExecution).not.toHaveBeenCalled()
+    expect(selectedRuntime.prepare).toHaveBeenCalledWith({
+      ...plan,
+      files: { '/workspace/main.cpp': 'int main() {}\n' },
+    })
+    expect(selectedRuntime.start).toHaveBeenCalledExactlyOnceWith({ mode: 'debug' })
+    expect(harness.selectPanel).toHaveBeenCalledWith('tests')
   })
 
   it('contains start failures and restores an idle workbench', async () => {

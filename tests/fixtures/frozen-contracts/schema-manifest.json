@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "canonicalization": "cs106b-canonical-json-v1",
+  "digest": "sha256-lowercase-hex",
+  "schemas": {
+    "assignment-revision.v1.schema.json": "1b00a862fb50116cc39ad892ac1653674465d6a05435c13db001c48ac8f2f973",
+    "audio.v1.schema.json": "25857e8a2386cf93f690aef96b7cc02c410d212e97729680e84bbaae3ac76807",
+    "cpp-build-plan.v1.schema.json": "480b23748ee30addce78cdd44f8849826e225cff2a6a337a6e91e5c53593078f",
+    "cpp-compile-profile.v1.schema.json": "f27775e5cf37551687e4f77bb280eee1917150a1f8da539f7672c46a6bc062d8",
+    "events.v1.schema.json": "4d82e66e70db0751d5756a49a57cef00f08dca96986080e3200070fdde493dc6",
+    "graphics.v1.schema.json": "6211843858957bceddf95f240f8cc5cc858541d66d047f1dcfd450c4c706629e",
+    "host-channel-envelope.v1.schema.json": "a1d80c64068e1237bd79fe3c8f6e4d3a484a878ebda0db06f78f3a3cb3cde843",
+    "problem-details.v1.schema.json": "63b833528d7e28974906cb328e4f831c7b122b9c276ace42f3cc1a87e36f13e7",
+    "submission-dispatch.v1.schema.json": "ca8fdc74a79efe196d540583b995ab4335448e4d708d330635d072f04c8e92a3",
+    "testing-v2.schema.json": "54bc786c01285012d1fc9b21d6a6868860d447a13d939dc68d83a4cc805c3127",
+    "workspace-transaction.v1.schema.json": "46508472f0172e2364ca525be30da3859887b362605c6bc38404c58f9c6f8654"
+  }
+}

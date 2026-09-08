@@ -1,28 +1,21 @@
-import { useDebugStore } from '@/store/debug-store'
-import { useEditorStore } from '@/store/editor-store'
-import { useExecutionStore } from '@/store/execution-store'
-import { useTestStore } from '@/testing/test-store'
-import {
-  fileExists,
-  getAllFiles,
-  readFile,
-  subscribeWorkspaceChange,
-} from '@/vfs/volume'
 import type { WorkspaceFiles } from '../contracts/host'
 import type {
   IDEInstanceSnapshot,
   WebIDEInstanceHandle,
 } from '../contracts/instance'
-import { projectPersistedWorkspaceFiles } from './workspace-resources'
 import {
   createPanelLayoutController,
   type PanelLayoutController,
 } from './panel-layout'
+import type { WorkbenchInstance } from '../react/workbench-instance-context'
 
-function snapshot(panelLayout: PanelLayoutController): IDEInstanceSnapshot {
-  const editor = useEditorStore.getState()
-  const debug = useDebugStore.getState()
-  const tests = useTestStore.getState()
+function snapshot(
+  panelLayout: PanelLayoutController,
+  instance: WorkbenchInstance,
+): IDEInstanceSnapshot {
+  const editor = instance.editorStore.getState()
+  const debug = instance.debugStore.getState()
+  const tests = instance.testStore.getState()
   const breakpoints = Object.fromEntries(
     Object.entries(debug.breakpoints).map(([path, lines]) => [
       path,
@@ -31,7 +24,7 @@ function snapshot(panelLayout: PanelLayoutController): IDEInstanceSnapshot {
   )
 
   return {
-    workspace: Object.freeze({ ...getAllFiles() }),
+    workspace: Object.freeze({ ...instance.workspace.snapshot() }),
     editor: {
       activeFile: editor.activeFile,
       openFiles: Object.freeze([...editor.openFiles]),
@@ -68,26 +61,41 @@ export interface WebIDEInstanceController {
 
 /** Creates the stable public ref object for one Web IDE mount. */
 export function createWebIDEInstanceController(
+  instance: WorkbenchInstance,
   panelLayout: PanelLayoutController = createPanelLayoutController(),
 ): WebIDEInstanceController {
   let workspaceLifecycle: WorkspaceInstanceLifecycle | undefined
   let lifecycleToken: object | undefined
 
   const persistedFiles = (): WorkspaceFiles => {
-    const projected = projectPersistedWorkspaceFiles(getAllFiles())
-    return Object.freeze({ ...projected })
+    return Object.freeze({ ...instance.workspace.persistedFiles() })
   }
 
+  const editorStore = instance.editorStore
+  const debugStore = instance.debugStore
+  const executionStore = instance.executionStore
+  const testStore = instance.testStore
+
   const handle: WebIDEInstanceHandle = {
-    snapshot: () => snapshot(panelLayout),
+    workspace: {
+      snapshot: () => Object.freeze({ ...instance.workspace.snapshot() }),
+      revision: () => instance.workspace.revision,
+      subscribe: (listener) => instance.workspace.subscribe(listener),
+      apply: (transaction) => instance.workspace.applyExternal(transaction),
+    },
+    persistence: {
+      snapshot: () => instance.workspace.getPersistenceStatus(),
+      subscribe: (listener) => instance.workspace.subscribePersistenceStatus(listener),
+    },
+    snapshot: () => snapshot(panelLayout, instance),
     subscribe(listener) {
       const unsubscribers = [
-        useEditorStore.subscribe(listener),
-        useDebugStore.subscribe(listener),
-        useExecutionStore.subscribe(listener),
-        useTestStore.subscribe(listener),
+        editorStore.subscribe(listener),
+        debugStore.subscribe(listener),
+        executionStore.subscribe(listener),
+        testStore.subscribe(listener),
         panelLayout.subscribe(listener),
-        subscribeWorkspaceChange(listener),
+        instance.workspace.subscribe(listener),
       ]
       return () => {
         for (const unsubscribe of unsubscribers) unsubscribe()
@@ -101,33 +109,35 @@ export function createWebIDEInstanceController(
       return workspaceLifecycle?.close(persistedFiles()) ?? Promise.resolve()
     },
     ensureFilesOpen(paths, primaryPath) {
-      if (!paths.every(fileExists)) return false
+      const exists = (path: string) => instance.workspace.fileExists(path)
+      const read = (path: string) => instance.workspace.readFile(path)
+      if (!paths.every(exists)) return false
       const primary = primaryPath && paths.includes(primaryPath) ? primaryPath : undefined
       const ordered = [
         ...paths.filter((path) => path !== primary).sort(),
         ...(primary ? [primary] : []),
       ]
       for (const path of ordered) {
-        const editor = useEditorStore.getState()
+        const editor = editorStore.getState()
         if (
           path === primary &&
           (!editor.openFiles.includes(path) || editor.activeFile === null)
         ) {
-          editor.setActiveFile(path, readFile(path))
+          editor.setActiveFile(path, read(path))
         }
         else editor.openFile(path)
       }
-      const editor = useEditorStore.getState()
+      const editor = editorStore.getState()
       const first = ordered[0]
-      if (!editor.activeFile && first) editor.setActiveFile(first, readFile(first))
+      if (!editor.activeFile && first) editor.setActiveFile(first, read(first))
       return true
     },
     reset(options) {
       for (const path of options?.breakpointFiles ?? []) {
-        useDebugStore.getState().setFileBreakpoints(path, [])
+        debugStore.getState().setFileBreakpoints(path, [])
       }
-      useDebugStore.getState().reset()
-      useTestStore.getState().reset()
+      debugStore.getState().reset()
+      testStore.getState().reset()
     },
   }
 

@@ -1,4 +1,5 @@
 import type { IDEEventSink } from './events'
+import type { WorkspaceMutationPolicy } from './workspace'
 
 export type WorkspaceFiles = Record<string, string>
 
@@ -27,6 +28,8 @@ export interface IDEWorkspace {
   /** `memory` skips OPFS and always re-seeds from initialFiles. */
   localCache?: 'opfs' | 'memory'
   readOnly?: boolean
+  /** Fine-grained policy for local edits. Authoritative external application bypasses it. */
+  mutationPolicy?: WorkspaceMutationPolicy
   persistence?: IDEWorkspacePersistence
 }
 

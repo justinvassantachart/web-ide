@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useDebugStore } from '../../src/store/debug-store'
-import { useEditorStore } from '../../src/store/editor-store'
-import { useTestStore } from '../../src/testing/test-store'
-import { initVFS, readFile } from '../../src/vfs/volume'
 import type { WebIDEInstanceHandle } from '../../src/web-ide/contracts/instance'
 import { createWebIDEInstanceController } from '../../src/web-ide/core/instance-handle'
 import {
   createPanelLayoutController,
   type PanelLayoutController,
 } from '../../src/web-ide/core/panel-layout'
+import {
+  createWorkbenchInstance,
+  type WorkbenchInstance,
+} from '../../src/web-ide/react/workbench-instance-context'
 
 const files = {
   '/workspace/main.cpp': 'int main() {}',
@@ -17,21 +17,23 @@ const files = {
 
 let webIDEInstanceHandle: WebIDEInstanceHandle
 let panelLayout: PanelLayoutController
+let workbench: WorkbenchInstance
 
 beforeEach(async () => {
   panelLayout = createPanelLayoutController('variables')
-  webIDEInstanceHandle = createWebIDEInstanceController(panelLayout).handle
-  await initVFS({ projectId: 'instance-handle-test', initialFiles: files, ephemeral: true })
-  useEditorStore.setState({
+  workbench = createWorkbenchInstance()
+  webIDEInstanceHandle = createWebIDEInstanceController(workbench, panelLayout).handle
+  await workbench.workspace.initialize({ projectId: 'instance-handle-test', initialFiles: files, ephemeral: true })
+  workbench.editorStore.setState({
     activeFile: null,
     activeFileContent: '',
     openFiles: [],
     cursorLine: 1,
     cursorColumn: 1,
   })
-  useDebugStore.getState().reset()
-  useDebugStore.setState({ breakpoints: {} })
-  useTestStore.getState().reset()
+  workbench.debugStore.getState().reset()
+  workbench.debugStore.setState({ breakpoints: {} })
+  workbench.testStore.getState().reset()
 })
 
 describe('public Web IDE instance facade', () => {
@@ -44,9 +46,9 @@ describe('public Web IDE instance facade', () => {
       openFiles: ['/workspace/helper.cpp', '/workspace/main.cpp'],
     })
 
-    useEditorStore.getState().setActiveFile(
+    workbench.editorStore.getState().setActiveFile(
       '/workspace/helper.cpp',
-      readFile('/workspace/helper.cpp'),
+      workbench.workspace.readFile('/workspace/helper.cpp'),
     )
     webIDEInstanceHandle.ensureFilesOpen(Object.keys(files), '/workspace/main.cpp')
     expect(webIDEInstanceHandle.snapshot().editor.activeFile).toBe(
@@ -61,7 +63,7 @@ describe('public Web IDE instance facade', () => {
   it('combines observable changes and provides intent-level reset actions', () => {
     const listener = vi.fn()
     const unsubscribe = webIDEInstanceHandle.subscribe(listener)
-    useEditorStore.setState({ cursorLine: 8 })
+    workbench.editorStore.setState({ cursorLine: 8 })
     expect(listener).toHaveBeenCalledTimes(1)
 
     panelLayout.selectPanel('tests')
@@ -69,13 +71,13 @@ describe('public Web IDE instance facade', () => {
     expect(webIDEInstanceHandle.snapshot().rightPanel).toBe('tests')
 
     unsubscribe()
-    useEditorStore.setState({ cursorLine: 9 })
+    workbench.editorStore.setState({ cursorLine: 9 })
     panelLayout.selectPanel('variables')
     expect(listener).toHaveBeenCalledTimes(2)
 
-    useDebugStore.getState().setFileBreakpoints('/workspace/main.cpp', [2, 4])
-    useDebugStore.setState({ debugMode: 'paused', currentLine: 4 })
-    useTestStore.setState({
+    workbench.debugStore.getState().setFileBreakpoints('/workspace/main.cpp', [2, 4])
+    workbench.debugStore.setState({ debugMode: 'paused', currentLine: 4 })
+    workbench.testStore.setState({
       isTesting: true,
       tests: [{
         id: 'sample',
@@ -96,8 +98,12 @@ describe('public Web IDE instance facade', () => {
   })
 
   it('provides isolated per-mount persistence lifecycles and immutable projections', async () => {
-    const first = createWebIDEInstanceController()
-    const second = createWebIDEInstanceController()
+    const firstInstance = createWorkbenchInstance()
+    const secondInstance = createWorkbenchInstance()
+    await firstInstance.workspace.initialize({ projectId: 'first-handle', initialFiles: files, ephemeral: true })
+    await secondInstance.workspace.initialize({ projectId: 'second-handle', initialFiles: files, ephemeral: true })
+    const first = createWebIDEInstanceController(firstInstance)
+    const second = createWebIDEInstanceController(secondInstance)
     const firstFlush = vi.fn().mockResolvedValue(undefined)
     const firstClose = vi.fn().mockResolvedValue(undefined)
     const secondFlush = vi.fn().mockResolvedValue(undefined)
@@ -121,7 +127,7 @@ describe('public Web IDE instance facade', () => {
   })
 
   it('does not let a stale mount detach its replacement lifecycle', async () => {
-    const controller = createWebIDEInstanceController()
+    const controller = createWebIDEInstanceController(workbench)
     const staleFlush = vi.fn().mockResolvedValue(undefined)
     const activeFlush = vi.fn().mockResolvedValue(undefined)
     const detachStale = controller.attachWorkspaceLifecycle({

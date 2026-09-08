@@ -1,6 +1,7 @@
 import { create } from 'zustand'
+import { createStore, type StoreApi } from 'zustand/vanilla'
 
-interface EditorState {
+export interface EditorState {
     activeFile: string | null
     activeFileContent: string
     // Open editor tabs, in visual order. Every activeFile is also in here.
@@ -24,7 +25,10 @@ interface EditorState {
     setCursor: (line: number, column: number) => void
 }
 
-export const useEditorStore = create<EditorState>((set, get) => ({
+const createEditorState = (
+    set: StoreApi<EditorState>['setState'],
+    get: StoreApi<EditorState>['getState'],
+): EditorState => ({
     activeFile: null,
     activeFileContent: '',
     openFiles: [],
@@ -82,4 +86,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })),
 
     setCursor: (line, column) => set({ cursorLine: line, cursorColumn: column }),
-}))
+})
+
+/** Creates editor state owned by one Web IDE mount. */
+export function createEditorStore(): StoreApi<EditorState> {
+    return createStore<EditorState>(createEditorState)
+}
+
+/** Legacy singleton retained for source compatibility outside mounted WebIDE components. */
+export const useEditorStore = create<EditorState>(createEditorState)

@@ -6,7 +6,7 @@ import type {
   IDEWorkspaceResourceContribution,
 } from '../contracts/contributions'
 import type { RuntimeProvider } from '../contracts/runtime'
-import type { TestProvider } from '../contracts/testing'
+import type { TestProviderContribution } from '../contracts/testing'
 import type { LanguageToolingProvider } from '../contracts/language-tooling'
 import type { ContributionRegistry } from '../core/contribution-registry'
 
@@ -16,7 +16,7 @@ export interface IDEContributionServices {
   panels: ContributionRegistry<IDEPanelContribution>
   resources: ContributionRegistry<IDEWorkspaceResourceContribution>
   runtimeProviders: ContributionRegistry<RuntimeProvider>
-  testProviders: ContributionRegistry<TestProvider>
+  testProviders: ContributionRegistry<TestProviderContribution>
   languageToolingProviders: ContributionRegistry<LanguageToolingProvider>
 }
 
@@ -57,7 +57,7 @@ export function useIDEWorkspaceResources(): readonly IDEWorkspaceResourceContrib
   return useRegistry(useIDEContributions().resources)
 }
 
-export function useIDETestProviders(): readonly TestProvider[] {
+export function useIDETestProviders(): readonly TestProviderContribution[] {
   return useRegistry(useIDEContributions().testProviders)
 }
 

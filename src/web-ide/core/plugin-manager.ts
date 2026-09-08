@@ -11,7 +11,7 @@ import type {
   IDEPluginContext,
 } from '../contracts/plugin'
 import type { RuntimeProvider } from '../contracts/runtime'
-import type { TestProvider } from '../contracts/testing'
+import type { TestProviderContribution } from '../contracts/testing'
 import type { LanguageToolingProvider } from '../contracts/language-tooling'
 import { ContributionRegistry } from './contribution-registry'
 import {
@@ -36,7 +36,7 @@ export class IDEPluginManager implements Disposable {
   readonly panels = new ContributionRegistry<IDEPanelContribution>()
   readonly resources = new ContributionRegistry<IDEWorkspaceResourceContribution>()
   readonly runtimeProviders = new ContributionRegistry<RuntimeProvider>()
-  readonly testProviders = new ContributionRegistry<TestProvider>()
+  readonly testProviders = new ContributionRegistry<TestProviderContribution>()
   readonly languageToolingProviders = new ContributionRegistry<LanguageToolingProvider>()
 
   private readonly plugins: readonly IDEPlugin[]

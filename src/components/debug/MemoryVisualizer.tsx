@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { ReactFlow, Background, type Node, type Edge, type NodeChange, type EdgeChange, type ReactFlowInstance, Position, Handle, Panel, useViewport, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useDebugStore } from '@/store/debug-store'
+import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
 import type {
     MemorySnapshot,
     VariableNode as MemoryValue,
@@ -170,7 +170,7 @@ function SeparatorOverlay({ separatorX }: { separatorX: number }) {
 }
 
 export function MemoryVisualizer() {
-    const { debugMode, memorySnapshot } = useDebugStore()
+    const { debugMode, memorySnapshot } = useWorkbenchDebugStore()
     const [nodes, setNodes] = useState<Node[]>([])
     const [edges, setEdges] = useState<Edge[]>([])
     const [separatorX, setSeparatorX] = useState<number | null>(null)

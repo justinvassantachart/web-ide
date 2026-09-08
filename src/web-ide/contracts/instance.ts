@@ -1,5 +1,10 @@
 import type { MemorySnapshot, StackFrame } from './runtime'
 import type { WorkspaceFiles } from './host'
+import type {
+  IDEWorkspaceExternalApplication,
+  IDEWorkspaceFeed,
+  IDEWorkspacePersistenceStatusFeed,
+} from './workspace'
 
 export type IDEInstanceDebugMode = 'idle' | 'compiling' | 'running' | 'paused'
 
@@ -38,6 +43,10 @@ export interface IDEInstanceResetOptions {
  * intent-level actions, never Zustand stores or mutable implementation state.
  */
 export interface WebIDEInstanceHandle {
+  /** Instance-scoped canonical workspace feed and narrow external apply facade. */
+  readonly workspace: IDEWorkspaceFeed & IDEWorkspaceExternalApplication
+  /** Host persistence state; collaboration connection/presence is intentionally separate. */
+  readonly persistence: IDEWorkspacePersistenceStatusFeed
   snapshot(): IDEInstanceSnapshot
   subscribe(listener: () => void): () => void
   /**

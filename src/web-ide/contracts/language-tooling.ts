@@ -1,5 +1,12 @@
 import type { ComponentType } from 'react'
 import type { WorkspaceFiles } from './host'
+import type { IDEWorkspaceFeed } from './workspace'
+
+/** Namespace translator for provider-owned Monaco registrations. */
+export interface IDEEditorModelNamespace {
+  toUri(path: string): string
+  owns(uri: { readonly authority: string; readonly path: string }): boolean
+}
 
 export type LanguageToolingStatus =
   | { state: 'disabled' }
@@ -34,10 +41,14 @@ export interface LanguageToolingService {
 }
 
 export interface LanguageToolingProviderComponentProps {
-  /** Host policy such as a read-only workspace can disable backend startup. */
+  /** Explicit provider policy can disable backend startup without removing the surface. */
   disabled?: boolean
   /** Ephemeral declarations supplied by another selected provider. */
   supplementalFiles?: WorkspaceFiles
+  /** Instance-scoped canonical files and structured mutation feed. */
+  workspace?: IDEWorkspaceFeed
+  /** Instance-owned model filter/translator; no Monaco object crosses this seam. */
+  modelNamespace?: IDEEditorModelNamespace
   /**
    * Publishes the current service to the workbench. Call from an effect and
    * publish `null` during cleanup; no internal React context is required.

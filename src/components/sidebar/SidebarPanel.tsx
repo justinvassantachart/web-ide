@@ -5,12 +5,12 @@
 
 import { useIDEActivities } from '@/web-ide/react/contribution-context'
 import { useEngine } from '@/engine/engine-context'
-import { getAllFiles } from '@/vfs/volume'
 import { useEffect } from 'react'
 import { useRunPipeline } from '@/components/layout/use-run-pipeline'
 import { ContributionSurface } from '@/web-ide/react/ContributionSurface'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
 import { useSidebarLayout } from '@/web-ide/react/sidebar-layout-context'
+import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
 
 export function SidebarPanel() {
     const { controller: sidebarLayout, snapshot: sidebarSnapshot } = useSidebarLayout()
@@ -18,6 +18,7 @@ export function SidebarPanel() {
     const runtime = useEngine()
     const { execution } = useRunPipeline()
     const { controller: panelLayout } = usePanelLayout()
+    const { workspace } = useWorkbenchInstance()
     const selected = activities.find(
         (activity) => activity.id === sidebarSnapshot.selectedActivityId,
     ) ?? activities[0]
@@ -37,7 +38,11 @@ export function SidebarPanel() {
                     component={SelectedActivity}
                     runtime={runtime}
                     execution={execution}
-                    snapshot={getAllFiles}
+                    workspace={{
+                        snapshot: () => workspace.snapshot(),
+                        revision: () => workspace.revision,
+                        subscribe: (listener) => workspace.subscribe(listener),
+                    }}
                     revealPanel={panelLayout.selectPanel}
                 />
             )}

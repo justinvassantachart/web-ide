@@ -192,6 +192,40 @@ describe('WorkspacePersistenceCoordinator', () => {
     expect(flush).toHaveBeenCalledTimes(2)
   })
 
+  it('reports retrying until a newer full snapshot is safely persisted', async () => {
+    vi.useFakeTimers()
+    const saveError = new Error('temporary save failure')
+    const save = vi.fn()
+      .mockRejectedValueOnce(saveError)
+      .mockResolvedValueOnce(undefined)
+    const onStatusChange = vi.fn()
+    const coordinator = new WorkspacePersistenceCoordinator({
+      workspaceId: 'workspace',
+      persistence: { save },
+      debounceMs: 1,
+      onStatusChange,
+    })
+
+    coordinator.scheduleSave({ '/workspace/main.cpp': 'first' })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(onStatusChange.mock.calls).toEqual([
+      ['saving', undefined],
+      ['retrying', saveError],
+    ])
+
+    coordinator.scheduleSave({ '/workspace/main.cpp': 'newer' })
+    await expect(coordinator.flush()).rejects.toBe(saveError)
+    await expect(coordinator.flush()).resolves.toBeUndefined()
+    expect(onStatusChange.mock.calls).toEqual([
+      ['saving', undefined],
+      ['retrying', saveError],
+      ['saving', undefined],
+      ['saved', undefined],
+      ['saving', undefined],
+      ['saved', undefined],
+    ])
+  })
+
   it('disposes once after saving and flushing, even when called repeatedly', async () => {
     vi.useFakeTimers()
     const calls: string[] = []

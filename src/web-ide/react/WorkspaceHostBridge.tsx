@@ -1,11 +1,4 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import {
-  getAllFiles,
-  hasPendingWrites,
-  initVFS,
-  markExternalSaving,
-  subscribeWorkspaceChange,
-} from '@/vfs/volume'
 import type { IDEWorkspacePersistence } from '../contracts/host'
 import type { WebIDEInstanceController } from '../core/instance-handle'
 import { WorkspacePersistenceCoordinator } from '../core/workspace-persistence'
@@ -16,6 +9,7 @@ import {
 } from '../core/workspace-resources'
 import { useIDEWorkspaceResources } from './contribution-context'
 import { useWebIDEHost } from './host-context'
+import { useWorkbenchInstance } from './workbench-instance-context'
 
 interface PersistenceBinding {
   workspaceId: string
@@ -31,6 +25,7 @@ export function WorkspaceHostBridge({
   instanceController: WebIDEInstanceController
 }) {
   const host = useWebIDEHost()
+  const instance = useWorkbenchInstance()
   const resources = useIDEWorkspaceResources()
   const workspace = host?.workspace
   const workspaceId = workspace?.id
@@ -41,7 +36,7 @@ export function WorkspaceHostBridge({
   const persistenceBinding = useRef<PersistenceBinding | undefined>(undefined)
 
   useEffect(() => {
-    void initVFS({
+    void instance.workspace.initialize({
       projectId: workspaceId ?? 'default-project',
       initialFiles,
       ephemeral: localCache === 'memory',
@@ -49,7 +44,7 @@ export function WorkspaceHostBridge({
     // The fingerprint makes semantically identical inline file objects stable;
     // initVFS itself guards overlapping async hydrations by generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localCache, seedFingerprint, workspaceId])
+  }, [instance, localCache, seedFingerprint, workspaceId])
 
   useLayoutEffect(() => {
     if (!workspaceId || !persistence) return
@@ -73,7 +68,15 @@ export function WorkspaceHostBridge({
           // Preserve Nova's existing host-save cadence while making the policy
           // explicit and independently testable.
           debounceMs: 2000,
-          onPendingChange: markExternalSaving,
+          onPendingChange: (pending) => instance.workspace.markExternalSaving(pending),
+          onStatusChange: (status, error) => {
+            if (status === 'retrying') {
+              const message = error instanceof Error ? error.message : undefined
+              instance.workspace.setPersistenceRetry(message)
+            } else {
+              instance.workspace.clearPersistenceIssue()
+            }
+          },
         }),
       }
       persistenceBinding.current = binding
@@ -84,9 +87,9 @@ export function WorkspaceHostBridge({
       flush: (files) => currentBinding.coordinator.flush(files),
       close: (files) => currentBinding.coordinator.close(files),
     })
-    const unsubscribe = subscribeWorkspaceChange(() =>
+    const unsubscribe = instance.workspace.subscribe(() =>
       currentBinding.coordinator.scheduleSave(
-        projectPersistedWorkspaceFiles(getAllFiles()),
+        projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
       ),
     )
 
@@ -105,17 +108,33 @@ export function WorkspaceHostBridge({
         }
       })
     }
-  }, [instanceController, persistence, workspaceId])
+  }, [instance, instanceController, persistence, workspaceId])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasPendingWrites()) return
+      if (instance.workspace.getPersistenceStatus().state === 'saved') return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [])
+  }, [instance])
+
+  const pendingInstanceDisposal = useRef<{ cancelled: boolean } | undefined>(undefined)
+  useEffect(() => {
+    if (pendingInstanceDisposal.current) {
+      pendingInstanceDisposal.current.cancelled = true
+      pendingInstanceDisposal.current = undefined
+    }
+    return () => {
+      const ticket = { cancelled: false }
+      pendingInstanceDisposal.current = ticket
+      queueMicrotask(() => {
+        if (ticket.cancelled) return
+        void instance.workspace.flushLocalPersistence().finally(() => instance.workspace.dispose())
+      })
+    }
+  }, [instance])
 
   return null
 }
