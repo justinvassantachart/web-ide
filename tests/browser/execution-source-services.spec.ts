@@ -6,6 +6,28 @@ import {
   observeBrowserDiagnostics,
 } from './browser-test-helpers'
 
+interface PublicPathProbeWindow extends Window {
+  __webIDEWorkspaceProbe?: {
+    handle(): {
+      reset(options?: { breakpointFiles?: readonly string[] }): void
+      snapshot(): {
+        editor: { activeFile: string | null; openFiles: readonly string[] }
+        debug: { breakpoints: Readonly<Record<string, readonly number[]>> }
+      }
+    } | null
+  }
+  __webIDESourcePresentationProbe?: {
+    source: {
+      reveal(location: { path: string; line: number }): void
+      replaceDecorations(decorations: readonly {
+        path: string
+        line: number
+        kind: 'error'
+      }[]): void
+    }
+  }
+}
+
 test('gives contributed activities isolated execution and source services', async ({ page, context }) => {
   const diagnostics = observeBrowserDiagnostics(page)
   const navigation = await page.goto('/?source=probe')
@@ -39,6 +61,56 @@ test('gives contributed activities isolated execution and source services', asyn
   await probe.getByRole('button', { name: 'Stop from activity' }).click()
   await expect(statusBar).toContainText('Ready')
   await expect(probe.locator('output')).toContainText('stop request settled')
+
+  // Exercise both public path seams through the production bundle. The
+  // workspace read facade accepts canonical aliases, but source presentation
+  // must reject them and reset must never create an alias breakpoint key.
+  await page.getByRole('button', { name: 'Explorer', exact: true }).click()
+  await page.getByRole('treeitem', { name: 'caf\u00e9.py', exact: true }).click()
+  await editorLine(page, 'print("canonical path")').click()
+  await page.keyboard.press('F9')
+  await expect.poll(() => page.evaluate(() => {
+    const handle = (window as PublicPathProbeWindow).__webIDEWorkspaceProbe?.handle()
+    return handle?.snapshot().debug.breakpoints['/workspace/caf\u00e9.py'] ?? null
+  })).toEqual([1])
+  await page.getByRole('button', { name: 'Execution and source', exact: true }).click()
+
+  const publicPathResult = await page.evaluate(() => {
+    const scope = window as PublicPathProbeWindow
+    const handle = scope.__webIDEWorkspaceProbe?.handle()
+    const source = scope.__webIDESourcePresentationProbe?.source
+    if (!handle || !source) throw new Error('Public path probes are unavailable')
+    const decomposed = '/workspace/cafe\u0301.py'
+    const editorBefore = handle.snapshot().editor
+    let revealError = ''
+    let decorationsError = ''
+    try {
+      source.reveal({ path: decomposed, line: 1 })
+    } catch (error) {
+      revealError = String(error)
+    }
+    try {
+      source.replaceDecorations([{ path: decomposed, line: 1, kind: 'error' }])
+    } catch (error) {
+      decorationsError = String(error)
+    }
+    handle.reset({ breakpointFiles: [decomposed] })
+    const after = handle.snapshot()
+    return {
+      revealError,
+      decorationsError,
+      editorBefore,
+      editorAfter: after.editor,
+      breakpoints: after.debug.breakpoints,
+    }
+  })
+
+  expect(publicPathResult.revealError).toContain('not canonical')
+  expect(publicPathResult.decorationsError).toContain('not canonical')
+  expect(publicPathResult.editorAfter).toEqual(publicPathResult.editorBefore)
+  expect(publicPathResult.breakpoints['/workspace/caf\u00e9.py']).toEqual([])
+  expect(publicPathResult.breakpoints).not.toHaveProperty('/workspace/cafe\u0301.py')
+  await expect(page.locator('.monaco-editor [class*="source-presentation-"]')).toHaveCount(0)
 
   await probe.getByRole('button', { name: 'Present current helper line' }).click()
   await expect(page.getByRole('tab', { name: 'helpers.py' })).toHaveAttribute('aria-selected', 'true')

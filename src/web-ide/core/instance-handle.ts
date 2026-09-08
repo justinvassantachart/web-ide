@@ -152,8 +152,28 @@ export function createWebIDEInstanceController(
       return true
     },
     reset(options) {
-      for (const path of options?.breakpointFiles ?? []) {
-        debugStore.getState().setFileBreakpoints(path, [])
+      const breakpointFiles = new Set(Array.from(
+        options?.breakpointFiles ?? [],
+        normalizePublicWorkspacePath,
+      ))
+      if (breakpointFiles.size > 0) {
+        debugStore.setState((state) => {
+          const breakpoints: Record<string, number[]> = {}
+          const cleared = new Set<string>()
+          for (const [path, lines] of Object.entries(state.breakpoints)) {
+            let canonical: string
+            try {
+              canonical = normalizePublicWorkspacePath(path)
+            } catch {
+              breakpoints[path] = lines
+              continue
+            }
+            if (breakpointFiles.has(canonical)) cleared.add(canonical)
+            else breakpoints[path] = lines
+          }
+          for (const canonical of cleared) breakpoints[canonical] = []
+          return { breakpoints }
+        })
       }
       debugStore.getState().reset()
       testStore.getState().reset()

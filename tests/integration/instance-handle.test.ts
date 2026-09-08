@@ -116,6 +116,47 @@ describe('public Web IDE instance facade', () => {
     expect(snapshot.tests).toEqual([])
   })
 
+  it('canonicalizes and deduplicates public reset breakpoint paths', () => {
+    const decomposed = '/workspace/cafe\u0301.cpp'
+    const canonical = '/workspace/caf\u00e9.cpp'
+    workbench.workspace.createFileLocal(decomposed, 'int accented;\n')
+    workbench.debugStore.getState().setFileBreakpoints(canonical, [3])
+    workbench.debugStore.getState().setFileBreakpoints(decomposed, [5])
+
+    webIDEInstanceHandle.reset({ breakpointFiles: [decomposed] })
+
+    expect(webIDEInstanceHandle.snapshot().debug.breakpoints).toEqual({
+      [canonical]: [],
+    })
+  })
+
+  it('rejects malformed public reset paths before changing instance state', () => {
+    workbench.debugStore.getState().setFileBreakpoints('/workspace/main.cpp', [2])
+    workbench.debugStore.setState({ debugMode: 'paused', currentLine: 2 })
+    workbench.testStore.setState({
+      isTesting: true,
+      tests: [{
+        id: 'sample',
+        name: 'sample',
+        status: 'running',
+        assertions: [],
+        diagnostics: [],
+      }],
+      completedCount: 0,
+      totalCount: 1,
+    })
+
+    expect(() => webIDEInstanceHandle.reset({
+      breakpointFiles: ['/workspace/main.cpp', '/workspace/bad\ud800.cpp'],
+    })).toThrow()
+
+    const snapshot = webIDEInstanceHandle.snapshot()
+    expect(snapshot.debug.debugMode).toBe('paused')
+    expect(snapshot.debug.currentLine).toBe(2)
+    expect(snapshot.debug.breakpoints['/workspace/main.cpp']).toEqual([2])
+    expect(snapshot.tests).toEqual([{ name: 'sample', status: 'running' }])
+  })
+
   it('provides isolated per-mount persistence lifecycles and immutable projections', async () => {
     const firstInstance = createWorkbenchInstance()
     const secondInstance = createWorkbenchInstance()

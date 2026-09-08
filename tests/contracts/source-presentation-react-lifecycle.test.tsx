@@ -19,6 +19,8 @@ import {
 } from '../../src/web-ide/react/workbench-instance-context'
 
 const MAIN = '/workspace/main.py'
+const ACCENTED = '/workspace/caf\u00e9.py'
+const DECOMPOSED_ACCENTED = '/workspace/cafe\u0301.py'
 let root: Root | undefined
 let workbench: WorkbenchInstance | undefined
 
@@ -107,7 +109,7 @@ describe('source presentation React ownership', () => {
     controller.dispose()
   })
 
-  it('rejects directories and current-file positions past EOF or EOL', async () => {
+  it('rejects non-canonical paths, directories, and positions past EOF or EOL', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true
     workbench = createWorkbenchInstance()
@@ -116,6 +118,7 @@ describe('source presentation React ownership', () => {
       ephemeral: true,
       initialFiles: {
         [MAIN]: 'print("safe")',
+        [ACCENTED]: 'print("canonical")',
         '/workspace/folder/child.py': 'pass',
       },
     })
@@ -139,6 +142,14 @@ describe('source presentation React ownership', () => {
     })
 
     expect(capturedOwner).toBeDefined()
+    const editorBeforeAlias = workbench.editorStore.getState()
+    expect(() => capturedOwner?.reveal({ path: DECOMPOSED_ACCENTED, line: 1 }))
+      .toThrow(/not canonical/)
+    expect(workbench.editorStore.getState().activeFile).toBe(editorBeforeAlias.activeFile)
+    expect(workbench.editorStore.getState().openFiles).toEqual(editorBeforeAlias.openFiles)
+    expect(() => capturedOwner?.replaceDecorations([
+      { path: DECOMPOSED_ACCENTED, line: 1, kind: 'error' },
+    ])).toThrow(/not canonical/)
     expect(() => capturedOwner?.reveal({ path: '/workspace/folder', line: 1 }))
       .toThrow(/not a visible workspace resource/)
     expect(() => capturedOwner?.reveal({ path: MAIN, line: 2 }))

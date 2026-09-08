@@ -127,6 +127,9 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
           '    result = value * 2',
           '    return result',
         ].join('\n'),
+        ...(showExecutionSourceProbe
+          ? { '/workspace/caf\u00e9.py': 'print("canonical path")' }
+          : {}),
         '/workspace/test_helpers.py': useFailingPythonTest
           ? [
               'import unittest',
@@ -208,7 +211,7 @@ createRoot(document.getElementById('root')!).render(
             host={host}
             lifecycleEvents={lifecycleEvents}
             showLifecycleProbe={showLifecycleProbe}
-            exposeWorkspaceProbe={showOPFSHierarchyProbe}
+            exposeWorkspaceProbe={showOPFSHierarchyProbe || showExecutionSourceProbe}
           />
         )}
   </StrictMode>,

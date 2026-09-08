@@ -8,6 +8,8 @@ import { SourcePresentationController } from '../../src/web-ide/core/source-pres
 
 const MAIN = '/workspace/main.py'
 const HELPER = '/workspace/lib/helper.py'
+const ACCENTED = '/workspace/caf\u00e9.py'
+const DECOMPOSED_ACCENTED = '/workspace/cafe\u0301.py'
 
 function createController(onReveal = vi.fn()) {
   const visible = new Map([
@@ -95,6 +97,35 @@ describe('SourcePresentationController', () => {
     expect(onReveal).toHaveBeenCalledWith({ path: MAIN, line: 7, column: 3 })
     expect(Object.isFrozen(onReveal.mock.calls[0]![0])).toBe(true)
     expect(controller.getSnapshot()).toBe(before)
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('rejects Unicode aliases before reveal or decoration state can escape', () => {
+    const visible = new Map([[ACCENTED, 'print("canonical")']])
+    const onReveal = vi.fn()
+    const controller = new SourcePresentationController({
+      // The mounted workspace accepts aliases on its read facade, so the
+      // source boundary itself must reject non-canonical public spellings.
+      readVisibleSource: (path) => visible.get(path.normalize('NFC')),
+      onReveal,
+    })
+    const owner = controller.createOwner()
+    owner.replaceDecorations([{ path: ACCENTED, line: 1, kind: 'current' }])
+    const before = controller.getSnapshot()
+    const listener = vi.fn()
+    controller.subscribe(listener)
+
+    expect(() => owner.reveal({ path: DECOMPOSED_ACCENTED, line: 1 }))
+      .toThrow(/not canonical/)
+    expect(onReveal).not.toHaveBeenCalled()
+
+    expect(() => owner.replaceDecorations([
+      { path: DECOMPOSED_ACCENTED, line: 1, kind: 'error' },
+    ])).toThrow(/not canonical/)
+    expect(controller.getSnapshot()).toBe(before)
+    expect(controller.getSnapshot().decorations).toEqual([
+      { path: ACCENTED, line: 1, kind: 'current' },
+    ])
     expect(listener).not.toHaveBeenCalled()
   })
 

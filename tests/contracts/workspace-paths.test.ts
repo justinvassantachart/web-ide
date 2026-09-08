@@ -15,6 +15,25 @@ describe('workspace path boundary', () => {
     expect(canonicalWorkspaceFilePath('/workspace/src/main.py')).toBe('/workspace/src/main.py')
   })
 
+  it('uses the public NFC and well-formed-Unicode path contract', () => {
+    expect(canonicalWorkspaceFilePath('/workspace/cafe\u0301.py'))
+      .toBe('/workspace/caf\u00e9.py')
+    expect(canonicalExecutionFilePath('/sysroot/cafe\u0301.py'))
+      .toBe('/sysroot/caf\u00e9.py')
+    expect(runtimeRelativeFilePath('/workspace/cafe\u0301.py'))
+      .toBe('caf\u00e9.py')
+
+    for (const invalid of [
+      '/workspace/bad\ud800.py',
+      '/workspace/lib\\support.py',
+    ]) {
+      expect(() => canonicalWorkspaceFilePath(invalid)).toThrow()
+      expect(() => runtimeRelativeFilePath(invalid)).toThrow()
+    }
+    expect(() => canonicalExecutionFilePath('/sysroot/bad\ud800.py')).toThrow()
+    expect(() => canonicalExecutionFilePath('/sysroot/lib\\support.py')).toThrow()
+  })
+
   it.each([
     '',
     '/',

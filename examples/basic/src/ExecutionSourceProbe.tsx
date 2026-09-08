@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type {
   IDEPanelServices,
   IDESourceDecorationKind,
@@ -29,6 +29,20 @@ export function ExecutionSourceProbe({
   source,
 }: IDEPanelServices) {
   const [status, setStatus] = useState('Ready for contributed controls')
+
+  useEffect(() => {
+    const scope = window as typeof window & {
+      __webIDESourcePresentationProbe?: { source: typeof source }
+    }
+    const probe = { source }
+    scope.__webIDESourcePresentationProbe = probe
+    return () => {
+      if (scope.__webIDESourcePresentationProbe === probe) {
+        delete scope.__webIDESourcePresentationProbe
+      }
+    }
+  }, [source])
+
   const report = (message: string) => {
     setStatus((current) => `${current} → ${message}`)
   }
