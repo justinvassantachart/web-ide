@@ -390,7 +390,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
             }
         };
         if (deferDuringRun && engine === this.engine && this.currentRun) {
-            void this.currentRun.finally(release);
+            // Use both settlement branches directly. `finally(release)` would
+            // create a second rejected promise when engine.run() rejects,
+            // surfacing an unhandled rejection even though start() owns and
+            // translates the original failure.
+            void this.currentRun.then(release, release);
         } else {
             release();
         }

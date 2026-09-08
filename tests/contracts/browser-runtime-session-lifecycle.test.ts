@@ -21,6 +21,7 @@ interface Deferred<T> {
   readonly promise: Promise<T>
   readonly settled: boolean
   resolve(value: T): void
+  reject(error: unknown): void
 }
 
 interface FakeRunError {
@@ -46,8 +47,10 @@ interface DapResponse {
 function deferred<T>(): Deferred<T> {
   let settled = false
   let settle!: (value: T) => void
-  const promise = new Promise<T>((resolve) => {
+  let rejectPromise!: (error: unknown) => void
+  const promise = new Promise<T>((resolve, reject) => {
     settle = resolve
+    rejectPromise = reject
   })
   return {
     promise,
@@ -58,6 +61,11 @@ function deferred<T>(): Deferred<T> {
       if (settled) return
       settled = true
       settle(value)
+    },
+    reject(error) {
+      if (settled) return
+      settled = true
+      rejectPromise(error)
     },
   }
 }
@@ -147,6 +155,12 @@ class FakeEngine {
     const active = this.activeRun()
     if (!active) throw new Error('No active fake run')
     active.resolve(result)
+  }
+
+  fail(error: unknown): void {
+    const active = this.activeRun()
+    if (!active) throw new Error('No active fake run')
+    active.reject(error)
   }
 
   private activeRun(): Deferred<FakeRunResult> | undefined {
@@ -240,6 +254,21 @@ describe('BrowserRuntimeSession run lifecycle', () => {
 
     engine.complete({ type: 'completed', exitCode: 0 })
     await running
+    await vi.waitFor(() => expect(engine.hostServices.size).toBe(0))
+    expect(engine.hostServiceDisposals).toHaveBeenCalledExactlyOnceWith(hostService.capability)
+  })
+
+  it('unregisters after a rejected run without leaking a derived rejection', async () => {
+    const engine = new FakeEngine()
+    const adapter = createHostSession()
+    engineCreate.mockResolvedValueOnce(engine)
+    const registration = registerRuntimeHostService(adapter, hostService)
+
+    const { running } = await beginRun(adapter, engine, 'run')
+    registration.dispose()
+    engine.fail(new Error('synthetic runtime rejection'))
+
+    await expect(running).resolves.toBeUndefined()
     await vi.waitFor(() => expect(engine.hostServices.size).toBe(0))
     expect(engine.hostServiceDisposals).toHaveBeenCalledExactlyOnceWith(hostService.capability)
   })
