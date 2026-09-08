@@ -470,22 +470,22 @@ describe('same-realm WebIDE instance isolation', () => {
       await Promise.resolve()
     })
 
-    await vi.waitFor(() => {
-      expect(harness.instances.size).toBe(2)
-      expect(firstRef.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('first\n')
-      expect(secondRef.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('second\n')
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(harness.instances.size).toBe(2)
+        expect(firstRef.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('first\n')
+        expect(secondRef.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('second\n')
+      })
+      await vi.waitFor(() => expect(harness.models.size).toBe(2))
+      for (const editor of mountedContainer!.querySelectorAll<HTMLElement>('[data-monaco-path]')) {
+        editor.focus()
+      }
+      await vi.waitFor(() => expect(harness.clangdBoots).toHaveLength(2))
+      await Promise.all([
+        firstRef.current!.flushWorkspace(),
+        secondRef.current!.flushWorkspace(),
+      ])
     })
-    await vi.waitFor(() => {
-      expect(harness.models.size).toBe(2)
-    })
-    for (const editor of mountedContainer.querySelectorAll<HTMLElement>('[data-monaco-path]')) {
-      editor.focus()
-    }
-    await vi.waitFor(() => expect(harness.clangdBoots).toHaveLength(2))
-    await Promise.all([
-      firstRef.current!.flushWorkspace(),
-      secondRef.current!.flushWorkspace(),
-    ])
     firstPersistence.save.mockClear()
     firstPersistence.flush.mockClear()
     secondPersistence.save.mockClear()
@@ -511,28 +511,30 @@ describe('same-realm WebIDE instance isolation', () => {
       firstMainModel?.setValue('local burst two\n')
     })
     expect(vi.mocked(firstHost.events!.emit).mock.calls.filter(([name]) => name === 'edit')).toHaveLength(1)
-    expect(firstRef.current!.ensureFilesOpen(
-      ['/workspace/main.cpp', '/workspace/z-inactive.h'],
-      '/workspace/z-inactive.h',
-    )).toBe(true)
-    await vi.waitFor(() => expect(harness.models.size).toBe(3))
-    await firstRef.current!.workspace.apply({
-      version: 1,
-      kind: 'apply',
-      transactionId: 'remote-inactive-model',
-      expectedRevision: firstRef.current!.workspace.revision(),
-      origin: { kind: 'external-authority', source: 'remote-provider' },
-      operations: [
-        { op: 'write', path: '/workspace/main.cpp', text: 'remote inactive\n' },
-        { op: 'write', path: '/workspace/z-inactive.h', text: 'remote header\n' },
-      ],
+    await act(async () => {
+      expect(firstRef.current!.ensureFilesOpen(
+        ['/workspace/main.cpp', '/workspace/z-inactive.h'],
+        '/workspace/z-inactive.h',
+      )).toBe(true)
+      await vi.waitFor(() => expect(harness.models.size).toBe(3))
+      await firstRef.current!.workspace.apply({
+        version: 1,
+        kind: 'apply',
+        transactionId: 'remote-inactive-model',
+        expectedRevision: firstRef.current!.workspace.revision(),
+        origin: { kind: 'external-authority', source: 'remote-provider' },
+        operations: [
+          { op: 'write', path: '/workspace/main.cpp', text: 'remote inactive\n' },
+          { op: 'write', path: '/workspace/z-inactive.h', text: 'remote header\n' },
+        ],
+      })
+      await vi.advanceTimersByTimeAsync(1_100)
     })
     expect(harness.models.get(firstMainUri)?.getValue()).toBe('remote inactive\n')
     expect(harness.models.get(firstHeaderUri)?.getValue()).toBe('remote header\n')
     expect(harness.models.get(secondMainUri)?.getValue()).toBe('second\n')
     expect(harness.models.get(secondHeaderUri)).toBeUndefined()
     expect(second.workspace.readFile('/workspace/z-inactive.h')).toBe('second-workspace inactive\n')
-    await vi.advanceTimersByTimeAsync(1_100)
     expect(vi.mocked(firstHost.events!.emit).mock.calls.filter(([name]) => name === 'edit')).toHaveLength(1)
     expect(vi.mocked(secondHost.events!.emit).mock.calls.filter(([name]) => name === 'edit')).toHaveLength(0)
     expect(harness.clangdBoots[0]?.client.writeFiles).toHaveBeenLastCalledWith(
@@ -541,24 +543,28 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(harness.clangdBoots[1]?.client.writeFiles).not.toHaveBeenCalledWith(
       expect.objectContaining({ '/workspace/main.cpp': 'remote inactive\n' }),
     )
-    await firstRef.current!.flushWorkspace()
+    await act(async () => firstRef.current!.flushWorkspace())
     firstPersistence.save.mockClear()
     firstPersistence.flush.mockClear()
     vi.useRealTimers()
 
     const roots = mountedContainer.querySelectorAll<HTMLElement>('.web-ide-root')
-    roots[0]?.focus()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5' }))
-    await vi.waitFor(() => expect(harness.runtimeSessions[0]?.start).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      roots[0]?.focus()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5' }))
+      await vi.waitFor(() => expect(harness.runtimeSessions[0]?.start).toHaveBeenCalledTimes(1))
+    })
     expect(harness.runtimeSessions[1]?.start).not.toHaveBeenCalled()
 
-    first.debugStore.getState().toggleBreakpoint('/workspace/main.cpp', 7)
-    first.editorStore.getState().setCursor(9, 4)
-    first.filesStore.getState().toggleDir('/workspace')
-    first.executionStore.getState().setIsRunning(true)
-    first.compilerStore.getState().setCacheState('error')
-    first.testStore.getState().processEvent({ type: 'run-start', total: 1 })
-    first.workspace.writeLocal('/workspace/main.cpp', 'first changed\n')
+    await act(async () => {
+      first.debugStore.getState().toggleBreakpoint('/workspace/main.cpp', 7)
+      first.editorStore.getState().setCursor(9, 4)
+      first.filesStore.getState().toggleDir('/workspace')
+      first.executionStore.getState().setIsRunning(true)
+      first.compilerStore.getState().setCacheState('error')
+      first.testStore.getState().processEvent({ type: 'run-start', total: 1 })
+      first.workspace.writeLocal('/workspace/main.cpp', 'first changed\n')
+    })
 
     expect(firstRef.current!.snapshot().debug.breakpoints['/workspace/main.cpp']).toEqual([7])
     expect(secondRef.current!.snapshot().debug.breakpoints).toEqual({})
@@ -586,7 +592,7 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(firstRef.current!.workspace.snapshot()['/workspace/main.cpp']).toBe('first changed\n')
     expect(secondRef.current!.workspace.snapshot()['/workspace/main.cpp']).toBe('second\n')
 
-    await firstRef.current!.flushWorkspace()
+    await act(async () => firstRef.current!.flushWorkspace())
     expect(firstRef.current!.persistence.snapshot().state).toBe('saved')
     expect(firstPersistence.save).toHaveBeenCalledWith(
       {
@@ -611,16 +617,20 @@ describe('same-realm WebIDE instance isolation', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    await vi.waitFor(() => expect(harness.instances.has('first-workspace')).toBe(false))
+    await act(async () => {
+      await vi.waitFor(() => expect(harness.instances.has('first-workspace')).toBe(false))
+    })
     expect(harness.instances.has('second-workspace')).toBe(true)
     expect(harness.models.get(firstMainUri)?.isDisposed()).toBe(true)
     expect(harness.models.get(secondMainUri)?.isDisposed()).toBe(false)
     expect(harness.clangdBoots[0]?.client.dispose).toHaveBeenCalledTimes(1)
     expect(harness.clangdBoots[1]?.client.dispose).not.toHaveBeenCalled()
     const retainedRoot = mountedContainer.querySelector<HTMLElement>('.web-ide-root')
-    retainedRoot?.focus()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5' }))
-    await vi.waitFor(() => expect(harness.runtimeSessions[1]?.start).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      retainedRoot?.focus()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F5' }))
+      await vi.waitFor(() => expect(harness.runtimeSessions[1]?.start).toHaveBeenCalledTimes(1))
+    })
   })
 
   it('mounts the Testing V2 controller and wires discovery, run-all, selected run, and selected debug', async () => {
@@ -645,10 +655,12 @@ describe('same-realm WebIDE instance isolation', () => {
       )
       await Promise.resolve()
     })
-    await vi.waitFor(() => {
-      expect(testing.prepareDiscovery).toHaveBeenCalledTimes(1)
-      expect(mountedContainer?.textContent).toContain('mounted alpha')
-      expect(mountedContainer?.textContent).toContain('mounted beta')
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(testing.prepareDiscovery).toHaveBeenCalledTimes(1)
+        expect(mountedContainer?.textContent).toContain('mounted alpha')
+        expect(mountedContainer?.textContent).toContain('mounted beta')
+      })
     })
 
     const toolbarRunAll = mountedContainer.querySelector<HTMLButtonElement>(
@@ -657,9 +669,8 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(toolbarRunAll).not.toBeNull()
     await act(async () => {
       toolbarRunAll?.click()
-      await Promise.resolve()
+      await vi.waitFor(() => expect(testing.prepareRun).toHaveBeenCalledTimes(1))
     })
-    await vi.waitFor(() => expect(testing.prepareRun).toHaveBeenCalledTimes(1))
 
     const beta = mountedContainer.querySelector<HTMLInputElement>(
       '[aria-label="Select mounted beta"]',
@@ -672,14 +683,12 @@ describe('same-realm WebIDE instance isolation', () => {
     const debugSelected = buttons.find((button) => button.textContent?.trim() === 'Debug Selected')
     await act(async () => {
       runSelected?.click()
-      await Promise.resolve()
+      await vi.waitFor(() => expect(testing.prepareRun).toHaveBeenCalledTimes(2))
     })
-    await vi.waitFor(() => expect(testing.prepareRun).toHaveBeenCalledTimes(2))
     await act(async () => {
       debugSelected?.click()
-      await Promise.resolve()
+      await vi.waitFor(() => expect(testing.prepareRun).toHaveBeenCalledTimes(3))
     })
-    await vi.waitFor(() => expect(testing.prepareRun).toHaveBeenCalledTimes(3))
 
     expect(testing.prepareRun.mock.calls.map(([request]) => ({
       mode: request.mode,
@@ -712,8 +721,8 @@ describe('same-realm WebIDE instance isolation', () => {
         origin: { kind: 'external-authority', source: 'remote-provider' },
         operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'int main() { return 1; }\n' }],
       })
+      await vi.waitFor(() => expect(testing.prepareDiscovery).toHaveBeenCalledTimes(2))
     })
-    await vi.waitFor(() => expect(testing.prepareDiscovery).toHaveBeenCalledTimes(2))
   })
 
   it('seeds a replacement persistence adapter and isolates a pending old-adapter failure', async () => {
@@ -748,10 +757,12 @@ describe('same-realm WebIDE instance isolation', () => {
       )
       await Promise.resolve()
     })
-    await vi.waitFor(() => {
-      expect(instanceRef.current?.workspace.snapshot()['/workspace/main.cpp'])
-        .toBe('current snapshot\n')
-      expect(instanceRef.current?.persistence.snapshot().state).toBe('saving')
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(instanceRef.current?.workspace.snapshot()['/workspace/main.cpp'])
+          .toBe('current snapshot\n')
+        expect(instanceRef.current?.persistence.snapshot().state).toBe('saving')
+      })
     })
     const unsubscribe = instanceRef.current!.persistence.subscribe((status) => statuses.push(status.state))
 
@@ -766,7 +777,9 @@ describe('same-realm WebIDE instance isolation', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    await vi.waitFor(() => expect(oldPersistence.dispose).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      await vi.waitFor(() => expect(oldPersistence.dispose).toHaveBeenCalledTimes(1))
+    })
     expect(oldPersistence.save).toHaveBeenCalledWith(
       {
         '/workspace/main.cpp': 'current snapshot\n',
@@ -776,7 +789,7 @@ describe('same-realm WebIDE instance isolation', () => {
     )
     expect(oldPersistence.flush).toHaveBeenCalledTimes(1)
 
-    await instanceRef.current!.flushWorkspace()
+    await act(async () => instanceRef.current!.flushWorkspace())
     expect(replacementPersistence.save).toHaveBeenCalledWith(
       {
         '/workspace/main.cpp': 'current snapshot\n',
@@ -795,7 +808,9 @@ describe('same-realm WebIDE instance isolation', () => {
       await Promise.resolve()
     })
     root = undefined
-    await vi.waitFor(() => expect(replacementPersistence.dispose).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      await vi.waitFor(() => expect(replacementPersistence.dispose).toHaveBeenCalledTimes(1))
+    })
     expect(oldPersistence.dispose).toHaveBeenCalledTimes(1)
     expect(warnings).toHaveBeenCalledWith(
       '[web-ide] workspace persistence cleanup failed',
@@ -828,7 +843,9 @@ describe('same-realm WebIDE instance isolation', () => {
       )
       await Promise.resolve()
     })
-    await vi.waitFor(() => expect(harness.instances.has('strict-workspace')).toBe(true))
+    await act(async () => {
+      await vi.waitFor(() => expect(harness.instances.has('strict-workspace')).toBe(true))
+    })
     const captured = harness.instances.get('strict-workspace') as WorkbenchInstance
     const strictModelUri = captured.workspace.toMonacoUri('/workspace/main.cpp')
     expect(harness.models.get(strictModelUri)?.isDisposed()).toBe(false)
@@ -840,9 +857,11 @@ describe('same-realm WebIDE instance isolation', () => {
     })
     root = undefined
 
-    await vi.waitFor(() => {
-      expect(harness.instances.has('strict-workspace')).toBe(false)
-      expect(persistence.dispose).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(harness.instances.has('strict-workspace')).toBe(false)
+        expect(persistence.dispose).toHaveBeenCalledTimes(1)
+      })
     })
     expect(() => captured.workspace.writeLocal('/workspace/main.cpp', 'late\n'))
       .toThrow(/disposed/)
