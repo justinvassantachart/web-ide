@@ -11,6 +11,16 @@ import { createTestingControllerV2 } from '../../src/testing/testing-controller-
 
 const DIGEST = 'a'.repeat(64)
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
+}
+
 function oneMessageDecoder<T>(message: () => T) {
   let sent = false
   const frame = (): TestDecoderFrameV2<T> => {
@@ -62,7 +72,7 @@ async function fixture() {
       decoder: oneMessageDecoder(() => catalog),
     }
   })
-  const prepareRun = vi.fn<TestProviderV2['prepareRun']>(async (request) => {
+  const prepareRun = vi.fn<TestProviderV2['prepareRun']>(async (request, context) => {
     const runId = `run-${++reportRun}`
     const events: TestReportEventV2[] = [
       { apiVersion: 2, kind: 'report_event', runId, sequence: 0, event: { type: 'run_started' } },
@@ -70,7 +80,7 @@ async function fixture() {
     ]
     let index = 0
     return {
-      execution: { files: request.files, mode: request.mode },
+      execution: { files: context.files, mode: request.mode },
       decoder: {
         push: () => ({ output: '', messages: events.slice(index, index = events.length) }),
         finish: () => ({ output: '', messages: [] }),
@@ -86,7 +96,7 @@ async function fixture() {
     prepareRun,
   }
   const controller = createTestingControllerV2({ provider, workspace, execution })
-  return { controller, executed, instance, prepareDiscovery, prepareRun }
+  return { controller, executed, execution, instance, prepareDiscovery, prepareRun }
 }
 
 describe('Testing V2 controller', () => {
@@ -104,11 +114,24 @@ describe('Testing V2 controller', () => {
     await controller.run({ mode: 'run', selection: { kind: 'tests', testIds: ['test:v1:alpha'] } })
     await controller.run({ mode: 'debug', selection: { kind: 'tests', testIds: ['test:v1:beta'] } })
 
-    expect(prepareRun.mock.calls.map(([request]) => [request.mode, request.selection])).toEqual([
-      ['run', { kind: 'all' }],
-      ['run', { kind: 'tests', testIds: ['test:v1:alpha'] }],
-      ['debug', { kind: 'tests', testIds: ['test:v1:beta'] }],
+    expect(prepareRun.mock.calls.map(([request]) => request)).toEqual([
+      { apiVersion: 2, kind: 'run_request', mode: 'run', workspaceDigest: expect.any(String), catalogDigest: DIGEST, selection: { kind: 'all' } },
+      { apiVersion: 2, kind: 'run_request', mode: 'run', workspaceDigest: expect.any(String), catalogDigest: DIGEST, selection: { kind: 'tests', testIds: ['test:v1:alpha'] } },
+      { apiVersion: 2, kind: 'run_request', mode: 'debug', workspaceDigest: expect.any(String), catalogDigest: DIGEST, selection: { kind: 'tests', testIds: ['test:v1:beta'] } },
     ])
+    for (const [request, context] of prepareRun.mock.calls) {
+      expect(Object.keys(request)).toEqual([
+        'apiVersion',
+        'kind',
+        'mode',
+        'workspaceDigest',
+        'catalogDigest',
+        'selection',
+      ])
+      expect(Object.isFrozen(request)).toBe(true)
+      expect(Object.isFrozen(request.selection)).toBe(true)
+      expect(context).toEqual({ files: { '/workspace/main.cpp': 'int main() {}\n' } })
+    }
     expect(executed).toEqual([
       { mode: 'run', workflow: 'test' },
       { mode: 'run', workflow: 'test' },
@@ -162,5 +185,115 @@ describe('Testing V2 controller', () => {
     await expect(controller.run({ mode: 'run', selection: { kind: 'all' } }))
       .rejects.toThrow(/requires a valid test id/)
     expect(controller.snapshot().state).toBe('error')
+  })
+
+  it('cancels obsolete discovery after a deferred provider await without executing it', async () => {
+    const { controller, execution, instance, prepareDiscovery } = await fixture()
+    type PreparedDiscovery = Awaited<ReturnType<TestProviderV2['prepareDiscovery']>>
+    const gate = deferred<PreparedDiscovery>()
+    let requestedDigest = ''
+    prepareDiscovery.mockImplementationOnce(async (request) => {
+      requestedDigest = request.workspaceDigest
+      return gate.promise
+    })
+
+    const discovering = controller.discover()
+    await vi.waitFor(() => expect(prepareDiscovery).toHaveBeenCalledTimes(1))
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'invalidate-deferred-discovery',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-test' },
+      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'changed\n' }],
+    })
+    gate.resolve({
+      execution: { files: { '/workspace/main.cpp': 'stale\n' }, mode: 'run' },
+      decoder: oneMessageDecoder(() => ({
+        apiVersion: 2,
+        kind: 'catalog',
+        workspaceDigest: requestedDigest,
+        catalogDigest: DIGEST,
+        tests: [],
+      })),
+    })
+    await discovering
+
+    expect(execution.executePrepared).not.toHaveBeenCalled()
+    expect(controller.snapshot()).toMatchObject({ state: 'idle', tests: [] })
+  })
+
+  it('cancels deferred run preparation on a newer feed revision', async () => {
+    const { controller, executed, instance, prepareRun } = await fixture()
+    await controller.discover()
+    type PreparedRun = Awaited<ReturnType<TestProviderV2['prepareRun']>>
+    const gate = deferred<PreparedRun>()
+    prepareRun.mockImplementationOnce(async () => gate.promise)
+
+    const running = controller.run({ mode: 'run', selection: { kind: 'all' } })
+    await vi.waitFor(() => expect(prepareRun).toHaveBeenCalledTimes(1))
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'invalidate-deferred-run',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-test' },
+      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'changed\n' }],
+    })
+    gate.resolve({
+      execution: { files: { '/workspace/main.cpp': 'stale\n' }, mode: 'run' },
+      decoder: oneMessageDecoder<TestReportEventV2>(() => ({
+        apiVersion: 2,
+        kind: 'report_event',
+        runId: 'stale-run',
+        sequence: 0,
+        event: { type: 'run_started' },
+      })),
+    })
+    await running
+
+    expect(executed).toHaveLength(1)
+    expect(controller.snapshot().state).toBe('idle')
+  })
+
+  it('stops an executing obsolete run once and never publishes its late result', async () => {
+    const { controller, execution, instance } = await fixture()
+    await controller.discover()
+    const gate = deferred<void>()
+    vi.mocked(execution.executePrepared!).mockImplementationOnce(async () => gate.promise)
+
+    const running = controller.run({ mode: 'run', selection: { kind: 'all' } })
+    await vi.waitFor(() => expect(controller.snapshot().state).toBe('running'))
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'invalidate-active-run',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-test' },
+      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'changed\n' }],
+    })
+    expect(execution.stop).toHaveBeenCalledTimes(1)
+    gate.resolve()
+    await running
+
+    expect(controller.snapshot()).toMatchObject({ state: 'idle', events: [] })
+  })
+
+  it('stops and disposes once while execution is deferred', async () => {
+    const { controller, execution } = await fixture()
+    const gate = deferred<void>()
+    vi.mocked(execution.executePrepared!).mockImplementationOnce(async () => gate.promise)
+    const discovering = controller.discover()
+    await vi.waitFor(() => expect(execution.executePrepared).toHaveBeenCalledTimes(1))
+
+    const disposed = controller.dispose()
+    await disposed
+    expect(execution.stop).toHaveBeenCalledTimes(1)
+    expect(controller.snapshot().state).toBe('disposed')
+    gate.resolve()
+    await discovering
+    await controller.dispose()
+    expect(execution.stop).toHaveBeenCalledTimes(1)
+    expect(controller.snapshot().state).toBe('disposed')
   })
 })

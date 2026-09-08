@@ -124,8 +124,19 @@ export type TestSelectionV2 =
   | { readonly kind: 'all' }
   | { readonly kind: 'tests'; readonly testIds: readonly string[] }
 
-export interface TestRunRequestV2 {
+/** Mount-local UI intent. The controller binds it to one discovered catalog. */
+export interface TestRunIntentV2 {
   readonly mode: 'run' | 'debug'
+  readonly selection: TestSelectionV2
+}
+
+/** Exact frozen Testing V2 run-request envelope passed to providers. */
+export interface TestRunRequestV2 {
+  readonly apiVersion: 2
+  readonly kind: 'run_request'
+  readonly mode: 'run' | 'debug'
+  readonly workspaceDigest: string
+  readonly catalogDigest: string
   readonly selection: TestSelectionV2
 }
 
@@ -172,12 +183,8 @@ export interface TestProviderV2 {
     readonly workspaceDigest: string
     readonly profile?: CppCompileProfileV1
   }): Promise<{ readonly execution: RuntimeExecutionPlan; readonly decoder: TestCatalogDecoderV2 }>
-  prepareRun(request: {
+  prepareRun(request: TestRunRequestV2, context: {
     readonly files: WorkspaceFiles
-    readonly workspaceDigest: string
-    readonly catalogDigest: string
-    readonly mode: 'run' | 'debug'
-    readonly selection: TestSelectionV2
   }): Promise<{ readonly execution: RuntimeExecutionPlan; readonly decoder: TestReportDecoderV2 }>
 }
 

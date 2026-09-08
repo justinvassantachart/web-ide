@@ -1,4 +1,6 @@
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Codicon } from '@/components/ui/codicon'
+import { Button } from '@/components/ui/button'
 import {
     useWorkbenchExecutionStore,
     useWorkbenchTestStore,
@@ -7,11 +9,13 @@ import type {
     TestAssertion,
     TestDiagnostic,
     TestLocation,
+    TestReportEventV2,
 } from '@/web-ide/contracts/testing'
 import type { IDEPanelServices } from '@/web-ide/contracts/contributions'
 import type { TestCase } from './test-store'
 import { useSelectedTestProvider } from './use-test-provider'
 import { isTestProviderV2 } from './test-execution'
+import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
 
 export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
     const tests = useWorkbenchTestStore((s) => s.tests)
@@ -20,6 +24,10 @@ export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
     const completedCount = useWorkbenchTestStore((s) => s.completedCount)
     const isCompiling = useWorkbenchExecutionStore((s) => s.isCompiling)
     const provider = useSelectedTestProvider()
+
+    if (provider && isTestProviderV2(provider)) {
+        return <TestsPanelV2 source={source} />
+    }
     const help = provider && !isTestProviderV2(provider) ? provider.help : undefined
 
     if (tests.length === 0 && !isTesting && !isCompiling) {
@@ -89,6 +97,145 @@ export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
             </div>
         </aside>
     )
+}
+
+function TestsPanelV2({ source }: Pick<IDEPanelServices, 'source'>) {
+    const instance = useWorkbenchInstance()
+    const controller = useSyncExternalStore(
+        instance.testingV2.subscribe,
+        instance.testingV2.snapshot,
+        instance.testingV2.snapshot,
+    )
+    const snapshot = useSyncExternalStore(
+        controller?.subscribe ?? noSubscribe,
+        controller?.snapshot ?? emptyTestingV2Snapshot,
+        controller?.snapshot ?? emptyTestingV2Snapshot,
+    )
+    const [selectionState, setSelectionState] = useState<{
+        catalogDigest: string | undefined
+        testIds: readonly string[]
+    }>({ catalogDigest: undefined, testIds: [] })
+
+    useEffect(() => {
+        if (controller?.snapshot().state === 'idle') {
+            void controller.discover().catch(() => undefined)
+        }
+    }, [controller, snapshot.state])
+
+    const available = new Set(snapshot.tests.map(({ id }) => id))
+    const selected = selectionState.catalogDigest === snapshot.catalogDigest
+        ? selectionState.testIds.filter((id) => available.has(id))
+        : snapshot.tests.map(({ id }) => id)
+
+    const run = (mode: 'run' | 'debug', all = false) => {
+        if (!controller) return
+        const selection = all
+            ? { kind: 'all' as const }
+            : { kind: 'tests' as const, testIds: selected }
+        void controller.run({ mode, selection }).catch(() => undefined)
+    }
+    const terminalByTest = testingV2TerminalStates(snapshot.events)
+    const busy = snapshot.state === 'discovering' || snapshot.state === 'running'
+
+    return (
+        <aside className="flex flex-col h-full min-h-0 bg-background text-foreground">
+            <div className="nova-panel-header gap-2">
+                <span className="nova-panel-label mr-auto">Tests</span>
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!controller || busy}
+                    onClick={() => void controller?.discover().catch(() => undefined)}
+                >
+                    Refresh
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!controller || busy} onClick={() => run('run', true)}>
+                    Run All
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!controller || busy || selected.length === 0} onClick={() => run('run')}>
+                    Run Selected
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!controller || busy || selected.length === 0} onClick={() => run('debug')}>
+                    Debug Selected
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!controller || snapshot.state !== 'running'} onClick={() => void controller?.stop()}>
+                    Stop
+                </Button>
+            </div>
+            {busy && (
+                <div className="px-3 py-2 text-[11px] font-mono text-primary flex items-center gap-1">
+                    <Codicon name="loading" size={10} spin /> {snapshot.state}
+                </div>
+            )}
+            {snapshot.error && (
+                <div role="alert" className="px-3 py-2 text-[11px] font-mono text-red-400">
+                    {snapshot.error}
+                </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto py-1">
+                {snapshot.tests.length === 0 && !busy ? (
+                    <div className="px-3 py-3 text-[11px] font-mono text-muted-foreground italic">
+                        {controller ? 'No tests discovered.' : 'Loading test support…'}
+                    </div>
+                ) : snapshot.tests.map((test) => {
+                    const checked = selected.includes(test.id)
+                    const state = terminalByTest.get(test.id)
+                    return (
+                        <div key={test.id} className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono">
+                            <input
+                                aria-label={`Select ${test.name}`}
+                                type="checkbox"
+                                checked={checked}
+                                disabled={busy}
+                                onChange={() => setSelectionState({
+                                    catalogDigest: snapshot.catalogDigest,
+                                    testIds: checked
+                                        ? selected.filter((id) => id !== test.id)
+                                        : [...selected, test.id],
+                                })}
+                            />
+                            <TestingV2StatusIcon state={state} />
+                            <button
+                                type="button"
+                                className="truncate text-left hover:underline"
+                                onClick={() => test.location && openLocation({
+                                    file: test.location.path,
+                                    line: test.location.line,
+                                    column: test.location.column,
+                                }, source)}
+                            >
+                                {test.name}
+                            </button>
+                        </div>
+                    )
+                })}
+            </div>
+        </aside>
+    )
+}
+
+const EMPTY_TESTING_V2_SNAPSHOT = Object.freeze({
+    state: 'idle' as const,
+    tests: Object.freeze([]),
+    events: Object.freeze([]),
+})
+const noSubscribe = () => () => undefined
+const emptyTestingV2Snapshot = () => EMPTY_TESTING_V2_SNAPSHOT
+
+function testingV2TerminalStates(events: readonly TestReportEventV2[]) {
+    const states = new Map<string, TestReportEventV2['event']['type']>()
+    for (const { event } of events) {
+        if ('testId' in event && event.testId) states.set(event.testId, event.type)
+    }
+    return states
+}
+
+function TestingV2StatusIcon({ state }: { state: TestReportEventV2['event']['type'] | undefined }) {
+    if (state === 'test_passed') return <Codicon name="check" size={12} className="text-emerald-500" />
+    if (state === 'test_failed' || state === 'test_errored') return <Codicon name="error" size={12} className="text-red-500" />
+    if (state === 'test_skipped') return <Codicon name="circle-slash" size={12} className="text-amber-500" />
+    if (state === 'test_started') return <Codicon name="loading" size={12} spin className="text-primary" />
+    return <Codicon name="circle-large-outline" size={12} className="text-muted-foreground" />
 }
 
 function TestRow({

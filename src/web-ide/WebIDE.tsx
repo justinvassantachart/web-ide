@@ -23,7 +23,8 @@ import type { WebIDEInstanceHandle } from './contracts/instance'
 import { WebIDEConfigurationContext } from './react/configuration-context'
 import { InstanceHandleBridge } from './react/InstanceHandleBridge'
 import { useWebIDEHost } from './react/host-context'
-import { resolveTestProvider } from '@/testing/test-execution'
+import { isTestProviderV2, resolveTestProvider } from '@/testing/test-execution'
+import { TestingV2Mount } from '@/testing/TestingV2Mount'
 import type { WorkspaceFiles } from './contracts/host'
 import {
   LanguageToolingContext,
@@ -167,6 +168,9 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
               createSession={createRuntimeSession!}
             >
               <RunPipelineCoordinatorProvider>
+                {testProvider && isTestProviderV2(testProvider) && (
+                  <TestingV2Mount provider={testProvider} />
+                )}
                 <PluginActivation plugins={plugins} />
                 <SourcePresentationProvider key={workspaceKey} workspaceKey={workspaceKey}>
                   <LanguageToolingMount

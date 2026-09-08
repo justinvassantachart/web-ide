@@ -6,7 +6,7 @@ import type {
     RuntimeExecutionPlan,
     RuntimePreparationResult,
 } from '@/web-ide/contracts/runtime'
-import { prepareWorkbenchExecution } from '@/testing/test-execution'
+import { isTestProviderV2, prepareWorkbenchExecution } from '@/testing/test-execution'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { useIDEWorkspaceResources } from '@/web-ide/react/contribution-context'
 import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
@@ -206,7 +206,20 @@ export function useRunPipeline() {
     }, [coordinator, host, instance, run, settleStop])
 
     const execution = useMemo<IDEExecutionController>(() => ({
-        start: async (mode) => run(mode === 'debug', mode === 'test'),
+        start: async (mode) => {
+            if (mode === 'test' && testProvider && isTestProviderV2(testProvider)) {
+                panelLayout.selectPanel('tests')
+                let controller
+                try {
+                    controller = await instance.testingV2.whenAvailable()
+                } catch {
+                    return
+                }
+                await controller.run({ mode: 'run', selection: { kind: 'all' } })
+                return
+            }
+            await run(mode === 'debug', mode === 'test')
+        },
         stop,
         restart: async (mode) => restart(mode === 'debug'),
         executePrepared: async ({ plan, workflow }) => run(
@@ -214,7 +227,7 @@ export function useRunPipeline() {
             workflow === 'test',
             plan,
         ),
-    }), [restart, run, stop])
+    }), [instance, panelLayout, restart, run, stop, testProvider])
 
     return { run, stop, restart, execution }
 }

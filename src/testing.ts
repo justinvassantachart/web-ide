@@ -24,6 +24,7 @@ export type {
   TestReportDecoderV2,
   TestReportEventPayloadV2,
   TestReportEventV2,
+  TestRunIntentV2,
   TestRunRequestV2,
   TestSelectionV2,
 } from './web-ide/contracts/testing'

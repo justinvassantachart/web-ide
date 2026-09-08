@@ -8,6 +8,7 @@ import type {
   TestProviderV2,
   TestReportDecoderV2,
   TestReportEventV2,
+  TestRunIntentV2,
   TestRunRequestV2,
   TestSelectionV2,
 } from '@/web-ide/contracts/testing'
@@ -86,9 +87,9 @@ export interface IDETestingControllerV2 {
   snapshot(): IDETestingSnapshotV2
   subscribe(listener: () => void): () => void
   discover(): Promise<void>
-  run(request: TestRunRequestV2): Promise<void>
+  run(intent: TestRunIntentV2): Promise<void>
   stop(): void | Promise<void>
-  dispose(): void
+  dispose(): void | Promise<void>
 }
 
 export interface CreateTestingControllerV2Options {
@@ -274,11 +275,19 @@ export function createTestingControllerV2(
   let catalog: TestCatalogV2 | undefined
   let disposed = false
   let operationGeneration = 0
+  let activeExecutionGeneration: number | undefined
+  let cancellation = Promise.resolve()
   const listeners = new Set<() => void>()
 
   const publish = (next: IDETestingSnapshotV2) => {
     current = freezeSnapshot(next)
-    for (const listener of [...listeners]) listener()
+    for (const listener of [...listeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[web-ide] Testing V2 observer failed', error)
+      }
+    }
   }
   const assertLive = () => {
     if (disposed) throw new Error('Testing V2 controller is disposed')
@@ -287,12 +296,65 @@ export function createTestingControllerV2(
     if (!options.execution.executePrepared) throw new Error('The selected workbench does not provide prepared execution')
     await options.execution.executePrepared({ plan, workflow: 'test' })
   }
+  const isCurrent = (generation: number, revision: number) =>
+    !disposed
+    && generation === operationGeneration
+    && revision === options.workspace.revision()
+  const cancelActiveExecution = (): Promise<void> => {
+    if (activeExecutionGeneration === undefined) return cancellation
+    activeExecutionGeneration = undefined
+    cancellation = cancellation
+      .then(() => options.execution.stop())
+      .then(() => undefined)
+      .catch((error) => {
+        console.error('[web-ide] Testing V2 cancellation failed', error)
+      })
+    return cancellation
+  }
   const invalidate = () => {
     operationGeneration += 1
     catalog = undefined
+    void cancelActiveExecution()
     if (!disposed) publish({ state: 'idle', tests: [], events: [] })
   }
   const unsubscribeWorkspace = options.workspace.subscribe(invalidate)
+
+  const discoverFor = async (generation: number, revision: number): Promise<boolean> => {
+    publish({ state: 'discovering', tests: [], events: [] })
+    const files = Object.freeze(options.workspace.snapshot())
+    const workspaceDigest = await workspaceDigestV1(files)
+    if (!isCurrent(generation, revision)) return false
+    const prepared = await options.provider.prepareDiscovery({ files, workspaceDigest, profile: options.profile })
+    if (!isCurrent(generation, revision)) return false
+    let received: TestCatalogV2 | undefined
+    const interceptor = createDecoderInterceptor<TestCatalogV2>(prepared.decoder, (message) => {
+      if (!isCurrent(generation, revision)) return
+      if (received) throw new TypeError('Testing V2 discovery emitted more than one catalog')
+      received = validateCatalog(message, workspaceDigest)
+    })
+    await cancellation
+    if (!isCurrent(generation, revision)) return false
+    // This guard intentionally sits immediately beside execution. A provider
+    // continuation cannot race a newer workspace revision into the runtime.
+    if (!isCurrent(generation, revision)) return false
+    activeExecutionGeneration = generation
+    try {
+      await execute({ ...prepared.execution, streamInterceptor: interceptor })
+    } finally {
+      if (activeExecutionGeneration === generation) activeExecutionGeneration = undefined
+    }
+    if (!isCurrent(generation, revision)) return false
+    if (!received) throw new TypeError('Testing V2 discovery did not emit a catalog')
+    catalog = received
+    publish({
+      state: 'ready',
+      workspaceDigest: received.workspaceDigest,
+      catalogDigest: received.catalogDigest,
+      tests: received.tests,
+      events: [],
+    })
+    return true
+  }
 
   const controller: IDETestingControllerV2 = {
     snapshot: () => current,
@@ -303,64 +365,70 @@ export function createTestingControllerV2(
     },
     async discover() {
       assertLive()
+      void cancelActiveExecution()
       const generation = ++operationGeneration
-      publish({ state: 'discovering', tests: [], events: [] })
+      const revision = options.workspace.revision()
       try {
-        const files = options.workspace.snapshot()
-        const workspaceDigest = await workspaceDigestV1(files)
-        const prepared = await options.provider.prepareDiscovery({ files, workspaceDigest, profile: options.profile })
-        let received: TestCatalogV2 | undefined
-        const interceptor = createDecoderInterceptor<TestCatalogV2>(prepared.decoder, (message) => {
-          if (received) throw new TypeError('Testing V2 discovery emitted more than one catalog')
-          received = validateCatalog(message, workspaceDigest)
-        })
-        await execute({ ...prepared.execution, streamInterceptor: interceptor })
-        if (disposed || generation !== operationGeneration) return
-        if (!received) throw new TypeError('Testing V2 discovery did not emit a catalog')
-        catalog = received
-        publish({
-          state: 'ready',
-          workspaceDigest: received.workspaceDigest,
-          catalogDigest: received.catalogDigest,
-          tests: received.tests,
-          events: [],
-        })
+        await discoverFor(generation, revision)
+        if (!isCurrent(generation, revision)) return
       } catch (error) {
-        if (!disposed && generation === operationGeneration) {
+        if (isCurrent(generation, revision)) {
           publish({ state: 'error', tests: [], events: [], error: error instanceof Error ? error.message : String(error) })
+          throw error
         }
-        throw error
       }
     },
-    async run(request) {
+    async run(intent) {
       assertLive()
-      validateRunRequest(request)
-      if (!catalog) await controller.discover()
-      assertLive()
+      validateRunIntent(intent)
+      void cancelActiveExecution()
+      const generation = ++operationGeneration
+      const revision = options.workspace.revision()
+      try {
+        await cancellation
+        if (!isCurrent(generation, revision)) return
+        if (!catalog) {
+          const discovered = await discoverFor(generation, revision)
+          if (!isCurrent(generation, revision)) return
+          if (!discovered) return
+        }
+      } catch (error) {
+        if (isCurrent(generation, revision)) {
+          publish({ state: 'error', tests: [], events: [], error: error instanceof Error ? error.message : String(error) })
+          throw error
+        }
+        return
+      }
+      if (!isCurrent(generation, revision)) return
       const selectedCatalog = catalog
       if (!selectedCatalog) throw new TestingSelectionStaleError()
-      const currentDigest = await workspaceDigestV1(options.workspace.snapshot())
+      const files = Object.freeze(options.workspace.snapshot())
+      const currentDigest = await workspaceDigestV1(files)
+      if (!isCurrent(generation, revision)) return
       if (currentDigest !== selectedCatalog.workspaceDigest) {
         invalidate()
-        await controller.discover()
         throw new TestingSelectionStaleError()
       }
-      validateSelection(request.selection, selectedCatalog.tests)
-      const generation = ++operationGeneration
+      validateSelection(intent.selection, selectedCatalog.tests)
+      const selection: TestSelectionV2 = intent.selection.kind === 'all'
+        ? Object.freeze({ kind: 'all' })
+        : Object.freeze({ kind: 'tests', testIds: Object.freeze([...intent.selection.testIds]) })
+      const request: TestRunRequestV2 = Object.freeze({
+        apiVersion: 2,
+        kind: 'run_request',
+        mode: intent.mode,
+        workspaceDigest: selectedCatalog.workspaceDigest,
+        catalogDigest: selectedCatalog.catalogDigest,
+        selection,
+      })
       const events: TestReportEventV2[] = []
-      publish({ ...current, state: 'running', events })
       try {
-        const files = options.workspace.snapshot()
-        const prepared = await options.provider.prepareRun({
-          files,
-          workspaceDigest: selectedCatalog.workspaceDigest,
-          catalogDigest: selectedCatalog.catalogDigest,
-          mode: request.mode,
-          selection: request.selection,
-        })
+        const prepared = await options.provider.prepareRun(request, { files })
+        if (!isCurrent(generation, revision)) return
         let runId: string | undefined
         let nextSequence = 0
         const interceptor = createDecoderInterceptor<TestReportEventV2>(prepared.decoder, (message) => {
+          if (!isCurrent(generation, revision)) return
           const validated = validateReportEvent(message)
           runId ??= validated.runId
           if (validated.runId !== runId || validated.sequence !== nextSequence) {
@@ -371,24 +439,58 @@ export function createTestingControllerV2(
           if (!disposed && generation === operationGeneration) publish({ ...current, state: 'running', events })
           if (validated.event.type === 'run_terminated' && validated.event.reason === 'selection_stale') catalog = undefined
         })
-        await execute({ ...prepared.execution, mode: request.mode, streamInterceptor: interceptor })
-        if (disposed || generation !== operationGeneration) return
+        await cancellation
+        if (!isCurrent(generation, revision)) return
+        publish({ ...current, state: 'running', events })
+        // Keep the final generation/revision guard adjacent to runtime entry.
+        if (!isCurrent(generation, revision)) return
+        activeExecutionGeneration = generation
+        try {
+          await execute({ ...prepared.execution, mode: request.mode, streamInterceptor: interceptor })
+        } finally {
+          if (activeExecutionGeneration === generation) activeExecutionGeneration = undefined
+        }
+        if (!isCurrent(generation, revision)) return
         publish({ ...current, state: catalog ? 'ready' : 'idle', events })
       } catch (error) {
-        if (!disposed && generation === operationGeneration) {
+        if (isCurrent(generation, revision)) {
           publish({ ...current, state: 'error', events, error: error instanceof Error ? error.message : String(error) })
+          throw error
         }
-        throw error
       }
     },
-    stop: () => options.execution.stop(),
-    dispose() {
+    async stop() {
+      assertLive()
+      const generation = ++operationGeneration
+      const revision = options.workspace.revision()
+      await cancelActiveExecution()
+      if (isCurrent(generation, revision)) {
+        publish(catalog
+          ? {
+              state: 'ready',
+              workspaceDigest: catalog.workspaceDigest,
+              catalogDigest: catalog.catalogDigest,
+              tests: catalog.tests,
+              events: current.events,
+            }
+          : { state: 'idle', tests: [], events: [] })
+      }
+    },
+    async dispose() {
       if (disposed) return
       disposed = true
       operationGeneration += 1
       unsubscribeWorkspace()
-      listeners.clear()
+      await cancelActiveExecution()
       current = freezeSnapshot({ state: 'disposed', tests: [], events: [] })
+      for (const listener of [...listeners]) {
+        try {
+          listener()
+        } catch (error) {
+          console.error('[web-ide] Testing V2 observer failed', error)
+        }
+      }
+      listeners.clear()
     },
   }
   return controller
@@ -412,11 +514,11 @@ function validateSelection(selection: TestSelectionV2, tests: readonly TestDescr
   }
 }
 
-function validateRunRequest(request: TestRunRequestV2): void {
-  canonicalStringifyV1(request)
-  assertObject(request, 'Testing V2 run request')
-  assertKeys(request, ['mode', 'selection'], [], 'Testing V2 run request')
-  if (request.mode !== 'run' && request.mode !== 'debug') {
+function validateRunIntent(intent: TestRunIntentV2): void {
+  canonicalStringifyV1(intent)
+  assertObject(intent, 'Testing V2 run intent')
+  assertKeys(intent, ['mode', 'selection'], [], 'Testing V2 run intent')
+  if (intent.mode !== 'run' && intent.mode !== 'debug') {
     throw new TypeError('Testing V2 run mode is invalid')
   }
 }
