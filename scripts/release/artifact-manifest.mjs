@@ -334,7 +334,7 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
     'candidate-state': 'candidate-state.json',
-    'cyclonedx-sbom': 'web-ide-0.3.1.cdx.json',
+    'cyclonedx-sbom': 'web-ide-0.4.0.cdx.json',
     'deterministic-builds': 'deterministic-builds.json',
     'license-inventory': 'third-party-licenses.json',
     'package-inspection': 'package-inspection.json',

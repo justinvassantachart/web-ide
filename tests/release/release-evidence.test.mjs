@@ -565,7 +565,7 @@ describe('bounded subprocess evidence', () => {
     const raw = Buffer.concat([
       splitRepositoryPath,
       Buffer.from([
-        `candidate: ${candidate}/web-ide-0.3.1.tgz`,
+        `candidate: ${candidate}/web-ide-0.4.0.tgz`,
         `home: ${home}/Library/Caches/ms-playwright`,
         `isolated home: ${isolatedHome}/.npmrc`,
         `temporary: ${temporary}/consumer/package.json`,
@@ -586,7 +586,7 @@ describe('bounded subprocess evidence', () => {
     const normalizedBytes = normalizeValidationGateLog(raw, { roots, receiptFooter })
     const normalized = normalizedBytes.toString('utf8')
     expect(normalized).toContain('stack: <repository-root>/src/index.ts:1')
-    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.3.1.tgz')
+    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.4.0.tgz')
     expect(normalized).toContain('home: <home>/Library/Caches/ms-playwright')
     expect(normalized).toContain('isolated home: <home>/.npmrc')
     expect(normalized).toContain('temporary: <execution-root>/consumer/package.json')
@@ -1325,7 +1325,7 @@ describe('SBOM and license gates', () => {
     ]) }
     const packageManifest = {
       name: 'web-ide',
-      version: '0.3.1',
+      version: '0.4.0',
       license: 'MIT',
       dependencies: { 'debugger-sh': '0.3.15' },
       peerDependencies: { react: '^1', 'react-dom': '^1' },
@@ -1336,7 +1336,7 @@ describe('SBOM and license gates', () => {
       packageManifest,
       packageLock,
       candidate: {
-        filename: 'web-ide-0.3.1.tgz',
+        filename: 'web-ide-0.4.0.tgz',
         size: 123,
         sha256: 'a'.repeat(64),
         sha512Integrity: integrity,
@@ -1421,7 +1421,7 @@ describe('validation summary', () => {
     const commit = 'a'.repeat(40)
     const summary = {
       schemaVersion: 1,
-      package: 'web-ide@0.3.1',
+      package: 'web-ide@0.4.0',
       sourceCommit: commit,
       candidateSha256: 'b'.repeat(64),
       gates: [
@@ -1481,7 +1481,7 @@ describe('validation summary', () => {
 
   it('does not allow a nonrelease preflight state into finalization', () => {
     const configuration = {
-      package: 'web-ide@0.3.1',
+      package: 'web-ide@0.4.0',
       capabilityReleaseId: 'hamilton.python/2',
       packageRole: 'web-ide',
     }
@@ -1577,19 +1577,19 @@ describe('artifact manifest', () => {
     const jsonEvidence = [
       'bundle-provenance.json',
       'candidate-state.json',
-      'web-ide-0.3.1.cdx.json',
+      'web-ide-0.4.0.cdx.json',
       'runtime-assets-verification.json',
       'runtime-source-provenance.json',
       'third-party-licenses.json',
     ]
     await Promise.all(jsonEvidence.map((name) => writeFile(path.join(directory, name), '{}\n')))
     await Promise.all([
-      writeFile(path.join(directory, 'web-ide-0.3.1.tgz'), candidateBytes),
-      writeFile(path.join(directory, 'web-ide-0.3.1-source.tar.gz'), sourceBytes),
+      writeFile(path.join(directory, 'web-ide-0.4.0.tgz'), candidateBytes),
+      writeFile(path.join(directory, 'web-ide-0.4.0-source.tar.gz'), sourceBytes),
       writeFile(path.join(directory, 'THIRD_PARTY_LICENSES.txt'), 'license evidence\n'),
       writeFile(path.join(directory, 'package-inspection.json'), JSON.stringify({
         tarball: {
-          filename: 'web-ide-0.3.1.tgz',
+          filename: 'web-ide-0.4.0.tgz',
           size: candidateBytes.length,
           sha256: candidateSha256,
           sha512Integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
@@ -1599,7 +1599,7 @@ describe('artifact manifest', () => {
       writeFile(path.join(directory, 'deterministic-builds.json'), JSON.stringify({ buildInputs })),
       writeFile(path.join(directory, 'validation-summary.json'), JSON.stringify({
         schemaVersion: 1,
-        package: 'web-ide@0.3.1',
+        package: 'web-ide@0.4.0',
         sourceCommit,
         candidateSha256,
         gateCount: 5,
@@ -1608,15 +1608,15 @@ describe('artifact manifest', () => {
       })),
     ])
     const configuration = {
-      package: 'web-ide@0.3.1',
+      package: 'web-ide@0.4.0',
       sourceRepository: 'https://github.com/justinvassantachart/web-ide.git',
-      sourceTag: 'web-ide-v0.3.1-source',
-      sourceAssetFilename: 'web-ide-0.3.1-source.tar.gz',
+      sourceTag: 'web-ide-v0.4.0-source',
+      sourceAssetFilename: 'web-ide-0.4.0-source.tar.gz',
       capabilityReleaseId: 'hamilton.python/2',
       packageRole: 'web-ide',
       releaseRepository: 'justinvassantachart/ths-ide',
-      releaseTag: 'web-ide-v0.3.1',
-      releaseAssetFilename: 'web-ide-0.3.1.tgz',
+      releaseTag: 'web-ide-v0.4.0',
+      releaseAssetFilename: 'web-ide-0.4.0.tgz',
       nodeVersion: '24.11.1',
       npmVersion: '11.6.2',
     }
@@ -1631,7 +1631,7 @@ describe('artifact manifest', () => {
         tree: sourceTree,
         commitTimestamp: 1,
         sourceDateEpoch: '1',
-        tag: { name: 'web-ide-v0.3.1-source', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
+        tag: { name: 'web-ide-v0.4.0-source', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
         remote: configuration.sourceRepository,
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
@@ -1704,8 +1704,8 @@ describe('release source state', () => {
         ref: 'refs/heads/main',
         object: { type: 'commit', sha: commit },
       }],
-      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.3.1-source', {
-        ref: 'refs/tags/web-ide-v0.3.1-source',
+      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.4.0-source', {
+        ref: 'refs/tags/web-ide-v0.4.0-source',
         object: { type: 'tag', sha: tagObjectId },
       }],
       [`https://api.github.com/repos/justinvassantachart/web-ide/git/tags/${tagObjectId}`, {
@@ -1730,16 +1730,16 @@ describe('release source state', () => {
       }
     }
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.3.1-source' },
+      { sourceRepository, sourceTag: 'web-ide-v0.4.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).resolves.toEqual({ branchCommit: commit, tagObjectId, peeledCommit: commit })
     expect(fetched).toEqual([...responses.keys()])
 
-    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.3.1-source')
+    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.4.0-source')
       .object.type = 'commit'
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.3.1-source' },
+      { sourceRepository, sourceTag: 'web-ide-v0.4.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).rejects.toThrow(/expected tag ref/u)
@@ -1768,20 +1768,20 @@ describe('release source state', () => {
       '-c', 'user.email=release-fixture@example.invalid',
       'commit', '-m', 'fixture',
     ], { cwd: checkout, env: gitIdentityEnvironment })
-    await run('git', ['tag', '-a', 'web-ide-v0.3.1-source', '-m', 'Web IDE 0.3.1 fixture'], {
+    await run('git', ['tag', '-a', 'web-ide-v0.4.0-source', '-m', 'Web IDE 0.4.0 fixture'], {
       cwd: checkout,
       env: gitIdentityEnvironment,
     })
-    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.3.1-source'], { cwd: checkout })
+    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.4.0-source'], { cwd: checkout })
     const configuration = {
       sourceRepository: bare,
-      sourceTag: 'web-ide-v0.3.1-source',
+      sourceTag: 'web-ide-v0.4.0-source',
       nodeVersion: process.versions.node,
       npmVersion: process.env.npm_config_user_agent?.match(/^npm\/([^ ]+)/u)?.[1] ?? '11.6.2',
     }
     const fixtureOptions = { nonreleaseFixtureRemote: bare }
     const source = await verifyReleaseSourceState(configuration, checkout, fixtureOptions)
-    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.3.1-source', objectType: 'tag' } })
+    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.4.0-source', objectType: 'tag' } })
     const [first, second] = await Promise.all([
       sourceArchiveBytes(configuration, checkout, fixtureOptions),
       sourceArchiveBytes(configuration, checkout, fixtureOptions),

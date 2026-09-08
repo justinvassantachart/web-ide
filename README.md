@@ -4,7 +4,7 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This public source repository is preparing the MIT-licensed `0.3.1` source
+This public source repository is preparing the MIT-licensed `0.4.0` source
 candidate. The package remains `private: true` and is not published to npm.
 Hamilton distribution is limited to exact integrity-checked tarballs from
 immutable releases in Hamilton's private repository. Deterministic P2.5
@@ -497,10 +497,13 @@ best-effort default.
 
 ## Current limitations
 
-- One mounted `<WebIDE>` per JavaScript realm is supported. Runtime sessions and
-  plugin managers are mount-scoped; legacy workbench stores and VFS are not yet.
-- `workspace.readOnly` disables editing, explorer mutation, and selected
-  language-tooling startup, but it is a UI policy rather than a security boundary.
+- Multiple `<WebIDE>` mounts may run concurrently in one JavaScript realm,
+  including overlapping canonical paths. Workspaces, stores, subscriptions,
+  persistence, runtime/debug state, and internal Monaco model URIs are
+  instance-scoped.
+- `workspace.readOnly` disables local editor and Explorer mutation while the
+  instance-owned external-authority seam can still apply validated updates. It
+  remains an application policy rather than an authorization boundary.
 - Workspace-scoped resources seed a workspace. Version the workspace ID when a
   plugin resource upgrade must replace browser-local cached content.
 - Execution-only resources are non-editable and non-persisted, but they are not
