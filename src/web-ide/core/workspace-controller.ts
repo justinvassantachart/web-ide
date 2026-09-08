@@ -246,6 +246,7 @@ export class WorkspaceController {
   private readonly statusListeners = new Set<(status: WorkspacePersistenceStatus) => void>()
   private readonly pendingWrites = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly inFlightWrites = new Set<Promise<void>>()
+  private readonly persistencePathQueues = new Map<string, Promise<void>>()
   private externalSavingCount = 0
   private persistenceIssue: WorkspacePersistenceStatus | undefined
   private persistenceStatus: WorkspacePersistenceStatus = Object.freeze({ state: 'saved' })
@@ -465,7 +466,10 @@ export class WorkspaceController {
 
   async flushLocalPersistence(): Promise<void> {
     for (const path of [...this.pendingWrites.keys()]) this.flushScheduledPath(path)
-    await Promise.all([...this.inFlightWrites])
+    // OPFS is an optional best-effort cache whose adapter contains I/O errors.
+    // Drain every queued operation before lifecycle disposal even if loading
+    // that optional adapter itself failed.
+    await Promise.allSettled([...this.inFlightWrites])
   }
 
   dispose(): void {
@@ -708,12 +712,19 @@ export class WorkspaceController {
     if (!this.projectId || this.ephemeral) return
     const isSingleLocalWrite = operations.length === 1 && operations[0]?.op === 'write'
     for (const path of Object.keys(previous)) {
-      if (!Object.hasOwn(candidate, path)) void this.persistDelete(path)
+      if (!Object.hasOwn(candidate, path)) {
+        // A structural transaction supersedes any older editor debounce.
+        this.cancelScheduledWrite(path)
+        void this.persistDelete(path)
+      }
     }
     for (const [path, text] of Object.entries(candidate)) {
       if (previous[path] === text) continue
       if (isSingleLocalWrite) this.scheduleWrite(path, text)
-      else this.persistWrite(path, text)
+      else {
+        this.cancelScheduledWrite(path)
+        this.persistWrite(path, text)
+      }
     }
   }
 
@@ -729,36 +740,50 @@ export class WorkspaceController {
   }
 
   private flushScheduledPath(path: string): void {
-    const timer = this.pendingWrites.get(path)
-    if (!timer) return
-    clearTimeout(timer)
-    this.pendingWrites.delete(path)
+    if (!this.cancelScheduledWrite(path)) return
     if (this.fileExists(path)) this.persistWrite(path, this.readFile(path))
   }
 
   private persistWrite(path: string, text: string): void {
     const projectId = this.projectId
-    const task = import('@/vfs/opfs-sync')
-      .then(({ syncToOPFS }) => syncToOPFS(projectId, path, text))
-      .finally(() => {
-        this.inFlightWrites.delete(task)
-        this.refreshPersistenceStatus()
-      })
-    this.inFlightWrites.add(task)
-    this.refreshPersistenceStatus()
+    void this.enqueuePersistence(path, async () => {
+      const { syncToOPFS } = await import('@/vfs/opfs-sync')
+      await syncToOPFS(projectId, path, text)
+    })
   }
 
   private persistDelete(path: string): Promise<void> {
     const projectId = this.projectId
-    const task = import('@/vfs/opfs-sync')
-      .then(({ deleteFromOPFS }) => deleteFromOPFS(projectId, path))
-      .finally(() => {
-        this.inFlightWrites.delete(task)
-        this.refreshPersistenceStatus()
-      })
+    return this.enqueuePersistence(path, async () => {
+      const { deleteFromOPFS } = await import('@/vfs/opfs-sync')
+      await deleteFromOPFS(projectId, path)
+    })
+  }
+
+  private enqueuePersistence(path: string, operation: () => Promise<void>): Promise<void> {
+    // A timer may already have started when a newer transaction commits. Keep
+    // conflicting persistence ordered per path without blocking other files or
+    // another controller instance.
+    const task = (this.persistencePathQueues.get(path) ?? Promise.resolve()).then(operation)
+    const queue = task.catch(() => undefined)
+    this.persistencePathQueues.set(path, queue)
     this.inFlightWrites.add(task)
     this.refreshPersistenceStatus()
+    const settle = () => {
+      if (this.persistencePathQueues.get(path) === queue) this.persistencePathQueues.delete(path)
+      this.inFlightWrites.delete(task)
+      this.refreshPersistenceStatus()
+    }
+    void task.then(settle, settle)
     return task
+  }
+
+  private cancelScheduledWrite(path: string): boolean {
+    const timer = this.pendingWrites.get(path)
+    if (!timer) return false
+    clearTimeout(timer)
+    this.pendingWrites.delete(path)
+    return true
   }
 
   private cancelPendingWrites(): void {
