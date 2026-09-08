@@ -141,6 +141,35 @@ describe('configurable clangd provider', () => {
       { '/workspace/provider.h': 'x'.repeat(MAX_CLANGD_SUPPORT_FILE_BYTES + 1) },
       configuration,
     )).toThrow(/per-file byte limit/)
+
+    const maximumSupportFile = 'x'.repeat(MAX_CLANGD_SUPPORT_FILE_BYTES)
+    expect(() => collectClangdInitialFiles(
+      { '/workspace/main.cpp': 'int main() {}' },
+      Object.fromEntries(Array.from(
+        { length: 9 },
+        (_, index) => [`/workspace/provider-${index}.h`, maximumSupportFile],
+      )),
+      {
+        ...configuration,
+        supportFiles: Object.fromEntries(Array.from(
+          { length: 8 },
+          (_, index) => [`/support/include/configured-aggregate-${index}.h`, maximumSupportFile],
+        )),
+      },
+    )).toThrow(/aggregate byte limit/)
+
+    expect(() => collectClangdInitialFiles(
+      { '/workspace/main.cpp': 'int main() {}' },
+      { '/workspace/provider.h': '' },
+      {
+        ...configuration,
+        supportFiles: Object.fromEntries(Array.from(
+          { length: MAX_CLANGD_SUPPORT_FILES },
+          (_, index) => [`/support/include/configured-${index}.h`, ''],
+        )),
+      },
+    )).toThrow(/file limit/)
+
   })
 
   it('invalidates through the same feed for authoritative external changes', async () => {

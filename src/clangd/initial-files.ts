@@ -39,6 +39,9 @@ export function normalizeClangdSupportFiles(
     if (aggregateBytes > MAX_CLANGD_SUPPORT_TOTAL_BYTES) {
       throw new RangeError('clangd support files exceed the aggregate byte limit')
     }
+    if (Object.hasOwn(supportFiles, path)) {
+      throw new TypeError(`clangd support files contain a duplicate normalized path: ${path}`)
+    }
     supportFiles[path] = content
   }
   return supportFiles
@@ -62,16 +65,32 @@ export function collectClangdInitialFiles(
     }
     out[path] = content
   }
+  const providerSupportFiles = normalizeClangdSupportFiles(supplementalFiles, true)
+  const configuredSupportFiles = normalizeClangdSupportFiles(configuration.supportFiles, false)
+  const supportEntries = [
+    ...Object.entries(providerSupportFiles),
+    ...Object.entries(configuredSupportFiles),
+  ]
+  if (supportEntries.length > MAX_CLANGD_SUPPORT_FILES) {
+    throw new RangeError(`clangd support files exceed the ${MAX_CLANGD_SUPPORT_FILES}-file limit`)
+  }
+  let aggregateSupportBytes = 0
+  for (const [, content] of supportEntries) {
+    aggregateSupportBytes += new TextEncoder().encode(content).byteLength
+    if (aggregateSupportBytes > MAX_CLANGD_SUPPORT_TOTAL_BYTES) {
+      throw new RangeError('clangd support files exceed the aggregate byte limit')
+    }
+  }
+
   for (const [path, content] of Object.entries(workspaceFiles)) {
     if (isCppPath(path) || path === '/workspace/.clangd') {
       add(path, content, 'workspace file')
     }
   }
-  const providerSupportFiles = normalizeClangdSupportFiles(supplementalFiles, true)
   for (const [path, content] of Object.entries(providerSupportFiles)) {
     if (isCppPath(path)) add(path, content, 'supplemental file')
   }
-  for (const [path, content] of Object.entries(configuration.supportFiles ?? {})) {
+  for (const [path, content] of Object.entries(configuredSupportFiles)) {
     if (isCppPath(path)) add(path, content, 'support file')
   }
   add('/workspace/.clangd', JSON.stringify({
