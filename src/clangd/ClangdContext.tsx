@@ -1,8 +1,7 @@
 // React glue for clangd.
 //
 // - Lazy boot: clangd.wasm is ~120 MB. We only download it after `arm()`
-//   (called by Editor.tsx on first focus/keystroke). Hosts pass `disabled`
-//   for read-only flows so it never downloads.
+//   (called by Editor.tsx on first focus/keystroke).
 // - Sibling to EngineProvider: clangd lives for the whole session, the
 //   engine is per-Run. Keeping them independent makes that easy to read.
 
@@ -14,7 +13,6 @@ import {
     useState,
 } from 'react'
 
-import { getAllFiles, subscribeWorkspaceChange } from '@/vfs/volume'
 import { useSafeMonaco } from '@/lib/use-monaco'
 import type { IDisposable } from 'monaco-editor'
 import type {
@@ -25,19 +23,36 @@ import type {
 import { bootClangd } from './bootstrap'
 import { purgeOldClangdCaches, requestPersistentStorage } from './cache'
 import type { ClangdClient, ClangdStatus } from './ClangdClient'
-import { isCppPath } from './config'
+import { COMPILE_FLAGS, isCppPath } from './config'
 import { isClangdEnabled } from './preferences'
 import { clearClangdMarkers, registerClangdProviders } from './providers'
 import { CLANGD_SETTING, CPP_LANGUAGE_TOOLING_PROVIDER_ID } from './plugin-config'
+import { attachClangdWorkspaceSync } from './workspace-sync'
 
 const IDLE_STATUS: ClangdStatus = { state: 'idle' }
 const DISABLED_STATUS: ClangdStatus = { state: 'disabled' }
 
+export interface ClangdProviderConfiguration {
+    readonly providerId: string
+    readonly compileFlags: readonly string[]
+    readonly supportFiles?: Readonly<Record<string, string>>
+}
+
+const DEFAULT_CONFIGURATION: ClangdProviderConfiguration = Object.freeze({
+    providerId: CPP_LANGUAGE_TOOLING_PROVIDER_ID,
+    compileFlags: COMPILE_FLAGS,
+})
+
 export function ClangdProvider({
     disabled = false,
     supplementalFiles,
+    workspace,
+    modelNamespace,
     publishService,
-}: LanguageToolingProviderComponentProps) {
+    configuration = DEFAULT_CONFIGURATION,
+}: LanguageToolingProviderComponentProps & {
+    configuration?: ClangdProviderConfiguration
+}) {
     const effectivelyEnabled = !disabled && isClangdEnabled()
     const monaco = useSafeMonaco()
     const [client, setClient] = useState<ClangdClient | null>(null)
@@ -67,7 +82,11 @@ export function ClangdProvider({
 
         // Drop cache entries from prior versions in parallel with the boot.
         void purgeOldClangdCaches()
-        bootClangd(collectInitialFiles(supplementalFiles))
+        bootClangd(collectInitialFiles(
+            workspace?.snapshot() ?? {},
+            supplementalFiles,
+            configuration,
+        ))
             .then((c) => {
                 if (cancelled) {
                     c.dispose()
@@ -94,67 +113,47 @@ export function ClangdProvider({
             clientRef.current = null
             setClient(null)
         }
-    }, [armed, effectivelyEnabled, supplementalFiles])
+    }, [armed, configuration, effectivelyEnabled, supplementalFiles, workspace])
 
     useEffect(() => {
         if (!client || !monaco) return
-        const disposable: IDisposable = registerClangdProviders(monaco, client)
+        const disposable: IDisposable = registerClangdProviders(monaco, client, {
+            languages: ['cpp', 'c'],
+            modelNamespace,
+        })
         return () => {
             disposable.dispose()
-            clearClangdMarkers(monaco)
+            clearClangdMarkers(monaco, modelNamespace)
         }
-    }, [client, monaco])
+    }, [client, modelNamespace, monaco])
 
     // Workspace → clangd FS sweep for files Monaco doesn't have open
     // (headers, explorer creates/renames/deletes). Diff prev vs next so we
     // only write changed files and delete paths that disappeared — without
     // the delete, renames leave the old name shadowing include resolution.
     // 500 ms debounce collapses typing bursts.
-    const syncedRef = useRef<Map<string, string>>(new Map())
     useEffect(() => {
-        if (!client) return
-        let timer: ReturnType<typeof setTimeout> | undefined
-
-        const flush = () => {
-            const files = collectInitialFiles(supplementalFiles)
-            const prev = syncedRef.current
-            const next = new Map(Object.entries(files))
-            for (const stale of prev.keys()) {
-                if (!next.has(stale)) client.deleteFile(stale)
-            }
-            const changed: Record<string, string> = {}
-            for (const [path, content] of next) {
-                if (prev.get(path) !== content) changed[path] = content
-            }
-            if (Object.keys(changed).length > 0) client.writeFiles(changed)
-            syncedRef.current = next
-        }
-
-        const schedule = () => {
-            if (timer) clearTimeout(timer)
-            timer = setTimeout(flush, 500)
-        }
-        const unsub = subscribeWorkspaceChange(schedule)
-        schedule() // catch files that arrived between boot and now
-        return () => {
-            // Force a final flush so the last edit before unmount lands.
-            if (timer) {
-                clearTimeout(timer)
-                flush()
-            }
-            unsub()
-            syncedRef.current = new Map()
-        }
-    }, [client, supplementalFiles])
+        if (!client || !workspace) return
+        const synchronization = attachClangdWorkspaceSync({
+            workspace,
+            client,
+            readFiles: () => collectInitialFiles(
+                workspace?.snapshot() ?? {},
+                supplementalFiles,
+                configuration,
+            ),
+        })
+        return () => synchronization.dispose()
+    }, [client, configuration, supplementalFiles, workspace])
 
     const value = useMemo<LanguageToolingService>(
         () => ({
-            providerId: CPP_LANGUAGE_TOOLING_PROVIDER_ID,
+            providerId: configuration.providerId,
             status: effectivelyEnabled ? status : DISABLED_STATUS,
             arm,
             setting: CLANGD_SETTING,
         }),
-        [status, arm, effectivelyEnabled],
+        [status, arm, configuration.providerId, effectivelyEnabled],
     )
 
     useEffect(() => {
@@ -166,17 +165,12 @@ export function ClangdProvider({
 }
 
 function collectInitialFiles(
+    workspaceFiles: Readonly<Record<string, string>>,
     supplementalFiles?: Readonly<Record<string, string>>,
+    configuration: ClangdProviderConfiguration = DEFAULT_CONFIGURATION,
 ): Record<string, string> {
     const out: Record<string, string> = {}
-    let files: Record<string, string>
-    try {
-        files = getAllFiles()
-    } catch {
-        // VFS hasn't initialized yet — watchdog will catch up when it does.
-        files = {}
-    }
-    for (const [path, content] of Object.entries(files)) {
+    for (const [path, content] of Object.entries(workspaceFiles)) {
         if (isCppPath(path)) out[path] = content
     }
     // Provider-owned declarations live only in clangd's in-memory FS. They do
@@ -184,5 +178,11 @@ function collectInitialFiles(
     for (const [path, content] of Object.entries(supplementalFiles ?? {})) {
         if (isCppPath(path)) out[path] = content
     }
+    for (const [path, content] of Object.entries(configuration.supportFiles ?? {})) {
+        if (isCppPath(path)) out[path] = content
+    }
+    out['/workspace/.clangd'] = JSON.stringify({
+        CompileFlags: { Add: [...configuration.compileFlags] },
+    })
     return out
 }

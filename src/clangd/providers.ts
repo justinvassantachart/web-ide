@@ -22,6 +22,7 @@ import type {
     Range as LspRange,
     SignatureHelp,
 } from './lsp-types'
+import type { IDEEditorModelNamespace } from '@/web-ide/contracts/language-tooling'
 
 type MonacoNs = typeof monaco
 
@@ -174,9 +175,15 @@ class DocumentSync {
     private readonly opened = new Map<string, IDisposable>()
     private readonly disposables: IDisposable[] = []
     private readonly client: ClangdClient
+    private readonly modelNamespace?: IDEEditorModelNamespace
 
-    constructor(monacoNs: MonacoNs, client: ClangdClient) {
+    constructor(
+        monacoNs: MonacoNs,
+        client: ClangdClient,
+        modelNamespace?: IDEEditorModelNamespace,
+    ) {
         this.client = client
+        this.modelNamespace = modelNamespace
         monacoNs.editor.getModels().forEach((m) => this.openIfCpp(m))
         this.disposables.push(monacoNs.editor.onDidCreateModel((m) => this.openIfCpp(m)))
         this.disposables.push(monacoNs.editor.onWillDisposeModel((m) => this.close(m)))
@@ -191,7 +198,11 @@ class DocumentSync {
     private openIfCpp(model: editor.ITextModel) {
         // Key by full URI so two schemes can't collide on path alone.
         const key = model.uri.toString()
-        if (!isCppPath(model.uri.path) || this.opened.has(key)) return
+        if (
+            !isCppPath(model.uri.path)
+            || (this.modelNamespace && !this.modelNamespace.owns(model.uri))
+            || this.opened.has(key)
+        ) return
 
         const uri = toClangdUri(model.uri.path)
         this.client.notify('textDocument/didOpen', {
@@ -248,6 +259,7 @@ function isCancellation(err: unknown): boolean {
 interface RegisterOptions {
     /** Monaco language IDs clangd should answer for. */
     languages: string[]
+    modelNamespace?: IDEEditorModelNamespace
 }
 
 export function registerClangdProviders(
@@ -256,7 +268,11 @@ export function registerClangdProviders(
     opts: RegisterOptions = { languages: ['cpp', 'c'] },
 ): IDisposable {
     const disposables: IDisposable[] = []
-    const sync = new DocumentSync(monacoNs, client)
+    const sync = new DocumentSync(monacoNs, client, opts.modelNamespace)
+    const ownsModel = (model: editor.ITextModel) =>
+        opts.modelNamespace?.owns(model.uri) ?? true
+    const modelUriForPath = (path: string) =>
+        monacoNs.Uri.parse(opts.modelNamespace?.toUri(path) ?? path)
     disposables.push({ dispose: () => sync.dispose() })
 
     for (const lang of opts.languages) {
@@ -265,7 +281,7 @@ export function registerClangdProviders(
             // comments and strings.
             triggerCharacters: ['.', '>', ':'],
             provideCompletionItems: async (model, position, context, token) => {
-                if (!isCppPath(model.uri.path)) return { suggestions: [] }
+                if (!ownsModel(model) || !isCppPath(model.uri.path)) return { suggestions: [] }
                 const word = model.getWordUntilPosition(position)
                 const fallbackRange = new monacoNs.Range(
                     position.lineNumber,
@@ -331,7 +347,7 @@ export function registerClangdProviders(
 
         disposables.push(monacoNs.languages.registerHoverProvider(lang, {
             provideHover: async (model, position, token) => {
-                if (!isCppPath(model.uri.path)) return null
+                if (!ownsModel(model) || !isCppPath(model.uri.path)) return null
                 try {
                     const hover = await client.request<Hover | null>('textDocument/hover', {
                         textDocument: { uri: toClangdUri(model.uri.path) },
@@ -353,7 +369,7 @@ export function registerClangdProviders(
             signatureHelpTriggerCharacters: ['(', ','],
             signatureHelpRetriggerCharacters: [')'],
             provideSignatureHelp: async (model, position, token) => {
-                if (!isCppPath(model.uri.path)) return null
+                if (!ownsModel(model) || !isCppPath(model.uri.path)) return null
                 try {
                     const help = await client.request<SignatureHelp | null>(
                         'textDocument/signatureHelp',
@@ -389,7 +405,7 @@ export function registerClangdProviders(
 
         disposables.push(monacoNs.languages.registerDefinitionProvider(lang, {
             provideDefinition: async (model, position, token) => {
-                if (!isCppPath(model.uri.path)) return null
+                if (!ownsModel(model) || !isCppPath(model.uri.path)) return null
                 try {
                     const res = await client.request<Location | Location[] | null>(
                         'textDocument/definition',
@@ -402,7 +418,7 @@ export function registerClangdProviders(
                     if (!res) return null
                     const locs = Array.isArray(res) ? res : [res]
                     return locs.map((l) => ({
-                        uri: monacoNs.Uri.parse(l.uri),
+                        uri: modelUriForPath(monacoNs.Uri.parse(l.uri).path),
                         range: toMonacoRange(monacoNs, l.range),
                     }))
                 } catch (err) {
@@ -415,7 +431,7 @@ export function registerClangdProviders(
         disposables.push(monacoNs.languages.registerDocumentSymbolProvider(lang, {
             displayName: 'clangd',
             provideDocumentSymbols: async (model, token) => {
-                if (!isCppPath(model.uri.path)) return []
+                if (!ownsModel(model) || !isCppPath(model.uri.path)) return []
                 try {
                     const res = await client.request<DocumentSymbol[] | null>(
                         'textDocument/documentSymbol',
@@ -447,8 +463,8 @@ export function registerClangdProviders(
     const unsubscribe = client.on('textDocument/publishDiagnostics', (params) => {
         if (!params || typeof params !== 'object') return
         const p = params as unknown as PublishDiagnosticsParams
-        const uri = monacoNs.Uri.parse(p.uri)
-        const model = monacoNs.editor.getModel(uri)
+        const publicUri = monacoNs.Uri.parse(p.uri)
+        const model = monacoNs.editor.getModel(modelUriForPath(publicUri.path))
         if (!model) return
         monacoNs.editor.setModelMarkers(
             model,
@@ -482,8 +498,12 @@ export function registerClangdProviders(
 }
 
 /** Wipe clangd-owned markers from every model. Used when tearing down providers. */
-export function clearClangdMarkers(monacoNs: MonacoNs) {
+export function clearClangdMarkers(
+    monacoNs: MonacoNs,
+    modelNamespace?: IDEEditorModelNamespace,
+) {
     for (const model of monacoNs.editor.getModels()) {
+        if (modelNamespace && !modelNamespace.owns(model.uri)) continue
         monacoNs.editor.setModelMarkers(model, DIAG_OWNER, [])
     }
 }
