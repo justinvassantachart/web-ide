@@ -57,6 +57,14 @@ settlement methods let capable providers expose one awaited `completed`,
 `stopped`, or `error` outcome for each start while legacy void stop/dispose and
 numeric exit events remain compatible.
 
+Runtime host services are an optional, capability-gated extension. The public
+descriptor uses the R-P01 limit names `maxFrameBytes`, `maxPendingSends`, and
+`maxInFlightRequests` and is validated before registration. Browser runtime
+sessions bind configured services only to their adopted engine instance,
+defer unregister while that engine is running, and release registrations when
+the engine or owning session closes. Existing C++ and Python providers do not
+advertise the capability, so their behavior remains unchanged.
+
 Each mounted runtime owns one run-pipeline coordinator shared by the workbench's
 toolbar, panels, and hotkeys. Stop and restart invalidate pending test-provider
 or runtime preparation, await that pipeline's cancellation cleanup, and
@@ -93,6 +101,16 @@ workbench attaches a provider-neutral stream interceptor that filters framed
 control output and dispatches structured `TestEvent` values before the runtime
 publishes its exit event. Generated files never enter the workspace or its
 persistence layer.
+
+Testing V2 adds a mount-owned discovery/run controller without replacing that
+V1 path. UI actions are named as a two-field run intent; the controller binds
+the intent to the current workspace and catalog and passes providers the exact
+six-field frozen `run_request` envelope. Workspace revision and controller
+generation are checked after every asynchronous boundary and immediately
+before prepared execution. Feed invalidation or disposal stops an obsolete
+execution and prevents a late provider continuation from starting a run. The
+toolbar invokes run-all, while the Tests panel owns discovery, selection,
+selected run, and selected debug.
 
 `WebIDEHost` supplies workspace identity, seed files, local-cache policy,
 read-only policy, persistence callbacks, chrome choices, and typed event sinks.
@@ -145,9 +163,10 @@ instance snapshot, and accessible tabs use that controller instead of the
 execution store. The controller has no storage, synchronization, theme, or
 application-specific policy. Sidebar selection likewise uses one mount-owned
 controller: an explicit initial activity overrides the legacy persisted choice
-for that mount, while later user selection remains best-effort persisted. This
-isolation applies to layout state only and
-does not change the known single-workbench-per-realm VFS/store boundary.
+for that mount, while later user selection remains best-effort persisted. The
+same instance boundary owns layout, VFS, stores, persistence, Monaco URI
+authority, runtime, language tooling, and subscriptions. Multiple workbenches
+can therefore coexist in one realm while using identical canonical paths.
 
 Web IDE pins the loader runtime to Monaco `0.56.0`, matching its reviewed
 editor API/types dependency. The React wrapper's module-global, path-keyed

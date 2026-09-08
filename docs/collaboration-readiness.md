@@ -1,8 +1,8 @@
 # Collaboration-ready workspace boundary
 
-**Status:** Accepted foundation. This document defines the compatibility
-boundary implemented by the workbench; it does not add a collaboration
-transport or user interface.
+**Status:** Implemented foundation; integration and release approval remain
+separate. This document defines the compatibility boundary implemented by the
+workbench; it does not add a collaboration transport or user interface.
 
 ## Decision
 
@@ -41,10 +41,18 @@ dispose models owned by another mount.
 
 Full-snapshot host persistence remains the default compatible behavior. One
 coordinator attaches to one workspace feed and can be replaced with the host
-workspace configuration. Save failures retain the newest snapshot for a later
-retry; explicit flush and close remain retryable. Its status feed is additive
-and extensible. Connection and presence state belong to a future provider and
-must not be encoded as persistence status.
+workspace configuration. A replacement is immediately seeded from the current
+full snapshot; late status from the retired adapter cannot overwrite the new
+binding. Save failures retain the newest snapshot for a later retry; explicit
+flush and close remain retryable. Its status feed is additive and extensible.
+Connection and presence state belong to a future provider and must not be
+encoded as persistence status.
+
+Directories are projections of canonical text-file paths, not independently
+persisted entities. Empty-folder creation is unavailable; rename and delete of
+a nonempty projected directory lower to one atomic transaction containing its
+file operations. This avoids unversioned directory markers outside the public
+transaction vocabulary.
 
 ## Lifecycle and proof
 
@@ -57,17 +65,26 @@ closes the coordinator exactly once.
 The executable contract is covered by:
 
 - `tests/contracts/web-ide-instance-isolation.test.tsx` for two simultaneous
-  mounts in one realm, overlapping paths, independent stores/breakpoints,
-  Monaco authorities, feeds, persistence, and StrictMode cleanup;
+  real workbench mounts in one realm, overlapping paths, editor/Monaco,
+  panels, clangd, focus-scoped hotkeys, independent stores/breakpoints/feeds/
+  persistence, unmount-one/retain-one, mounted Testing V2, replacement-adapter
+  failure isolation, and StrictMode cleanup;
 - `tests/contracts/workspace-controller.test.ts` for atomicity, emit-once,
-  external origin/echo identity, read-only separation, and store reconciliation;
+  reentrant revision ordering, external origin/echo identity, complete
+  plain-data validation, read-only separation, directory lowering, and
+  throwing-observer isolation;
 - `tests/testing/testing-controller-v2.test.ts` and
   `tests/contracts/configurable-clangd.test.ts` for invalidation after a
   remote-like transaction through the shared feed;
 - `tests/contracts/workspace-persistence.test.ts` for coalescing, retryable
-  flush/close, latest-snapshot retention, status, and disposal behavior; and
+  flush/close, latest-snapshot retention, status, and disposal behavior;
 - `tests/contracts/frozen-schema-digests.test.ts` for exact-byte binding to the
-  frozen workspace, testing, compile-profile, build-plan, and manifest bytes.
+  frozen workspace, testing, compile-profile, build-plan, and manifest bytes;
+- `tests/contracts/cross-repo-extension-conformance.test.ts` for the exact
+  Testing V2 request and R-P01 host-limit shapes; and
+- `tests/contracts/browser-runtime-session-lifecycle.test.ts` for configured,
+  unsupported, concurrent-instance, deferred-unregister, and session-close
+  host-service lifecycles.
 
 ## Explicit exclusions
 
