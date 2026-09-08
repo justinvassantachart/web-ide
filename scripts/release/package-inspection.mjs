@@ -23,6 +23,8 @@ const PACKED_FORBIDDEN_TEXT = [
   [/<repository>\//u, 'release provenance placeholder'],
   [/(?:from\s*|import\s*\()\s*['"]@\//u, 'unresolved internal alias import'],
 ]
+const RELATIVE_DECLARATION_SPECIFIER = /(\b(?:from|import)\s*(?:\(\s*)?)(['"])(\.{1,2}\/[^'"]+)\2/gu
+const EXPLICIT_DECLARATION_RUNTIME_EXTENSION = /\.(?:[cm]?js|json)(?:[?#].*)?$/u
 
 function decodeTarText(bytes, location) {
   try {
@@ -224,6 +226,16 @@ export function scanPackedEntry(entry) {
     throw new TypeError(`Packed text file is not valid UTF-8: ${entry.path}`, { cause: error })
   }
   assertNoForbiddenText(text, `Packed ${entry.path}`)
+  if (entry.path.endsWith('.d.ts')) {
+    for (const match of text.matchAll(RELATIVE_DECLARATION_SPECIFIER)) {
+      const specifier = match[3]
+      if (!EXPLICIT_DECLARATION_RUNTIME_EXTENSION.test(specifier)) {
+        throw new TypeError(
+          `Packed ${entry.path} has an extensionless relative declaration specifier ${JSON.stringify(specifier)}`,
+        )
+      }
+    }
+  }
 }
 
 export function validateNpmPackResult(packResult, tarballBytes) {

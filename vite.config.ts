@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import dts from 'vite-plugin-dts'
 import { createReleaseProvenancePlugin } from './scripts/release/bundle-provenance.mjs'
+import { rewriteDeclarationModuleSpecifiers } from './scripts/release/declaration-specifiers.mjs'
 
 const releaseProvenancePath = process.env.WEB_IDE_RELEASE_PROVENANCE_PATH
 const releaseProvenancePlugin = releaseProvenancePath
@@ -20,6 +21,16 @@ export default defineConfig({
       include: ['src'],
       exclude: ['tests'],
       insertTypesEntry: true,
+      beforeWriteFile(filePath, content) {
+        return {
+          content: rewriteDeclarationModuleSpecifiers({
+            filePath,
+            content,
+            sourceRoot: path.resolve(import.meta.dirname, 'src'),
+            outputRoot: path.resolve(import.meta.dirname, 'dist'),
+          }),
+        }
+      },
     }),
     ...(releaseProvenancePlugin ? [releaseProvenancePlugin] : []),
   ],

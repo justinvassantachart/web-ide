@@ -377,6 +377,14 @@ describe('safe tar reading', () => {
     expect(() => scanPackedEntry({ path: 'dist/runtime.wasm', bytes: Buffer.from('wasm') })).toThrow(/text allowlist/u)
     expect(() => scanPackedEntry({ path: 'dist/index.js', bytes: Buffer.from([0xff]) })).toThrow(/valid UTF-8/u)
     expect(() => scanPackedEntry({
+      path: 'dist/index.d.ts',
+      bytes: Buffer.from("export * from './web-ide';\n"),
+    })).toThrow(/extensionless relative declaration specifier/u)
+    expect(() => scanPackedEntry({
+      path: 'dist/index.d.ts',
+      bytes: Buffer.from("export * from './web-ide/index.js';\n"),
+    })).not.toThrow()
+    expect(() => scanPackedEntry({
       path: 'dist/index.js',
       bytes: Buffer.from('const token = "abcdefghijk"\n'),
     })).toThrow(/secret assignment/u)

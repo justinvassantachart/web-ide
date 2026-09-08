@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -b && vite build"
+    "build": "tsc -b && tsc -p tsconfig.nodenext.json && vite build"
   },
   "dependencies": {
     "react": "^19.2.0",
