@@ -172,6 +172,133 @@ describe('configurable clangd provider', () => {
 
   })
 
+  it.each(['local', 'external'] as const)(
+    'makes a post-boot %s workspace file authoritative over provider fallback text',
+    async (origin) => {
+      vi.useFakeTimers()
+      const instance = createWorkbenchInstance()
+      await instance.workspace.initialize({
+        projectId: `clangd-provider-shadow-${origin}`,
+        initialFiles: { '/workspace/main.cpp': 'int main() {}\n' },
+        ephemeral: true,
+      })
+      const supplementalFiles = { '/workspace/nova_test.h': 'provider fallback\n' }
+      const configuration: ClangdProviderConfiguration = {
+        providerId: 'synthetic.clangd',
+        compileFlags: [],
+      }
+      const writeFiles = vi.fn()
+      const deleteFile = vi.fn()
+      const synchronization = attachClangdWorkspaceSync({
+        workspace: {
+          snapshot: () => instance.workspace.snapshot(),
+          revision: () => instance.workspace.revision,
+          subscribe: (listener) => instance.workspace.subscribe(listener),
+        },
+        client: { writeFiles, deleteFile },
+        readFiles: () => collectClangdInitialFiles(
+          instance.workspace.snapshot(),
+          supplementalFiles,
+          configuration,
+        ),
+        debounceMs: 0,
+      })
+      await vi.runAllTimersAsync()
+      expect(writeFiles).toHaveBeenCalledWith(expect.objectContaining({
+        '/workspace/nova_test.h': 'provider fallback\n',
+      }))
+      writeFiles.mockClear()
+
+      if (origin === 'local') {
+        instance.workspace.createFileLocal('/workspace/nova_test.h', 'workspace authority\n')
+        await vi.runAllTimersAsync()
+      } else {
+        await instance.workspace.applyExternal({
+          version: 1,
+          kind: 'apply',
+          transactionId: 'external-provider-shadow',
+          expectedRevision: instance.workspace.revision,
+          origin: { kind: 'external-authority', source: 'remote-clangd' },
+          operations: [{
+            op: 'create',
+            path: '/workspace/nova_test.h',
+            text: 'workspace authority\n',
+          }],
+        })
+      }
+
+      expect(writeFiles).toHaveBeenLastCalledWith({
+        '/workspace/nova_test.h': 'workspace authority\n',
+      })
+      expect(deleteFile).not.toHaveBeenCalledWith('/workspace/nova_test.h')
+      synchronization.dispose()
+      instance.workspace.dispose()
+    },
+  )
+
+  it('contains provider refresh errors while reconciling canonical workspace paths', async () => {
+    vi.useFakeTimers()
+    const instance = createWorkbenchInstance()
+    await instance.workspace.initialize({
+      projectId: 'clangd-provider-error',
+      initialFiles: { '/workspace/main.cpp': 'int main() {}\n' },
+      ephemeral: true,
+    })
+    let providerFails = false
+    const writeFiles = vi.fn()
+    const deleteFile = vi.fn()
+    const onReadError = vi.fn()
+    const synchronization = attachClangdWorkspaceSync({
+      workspace: {
+        snapshot: () => instance.workspace.snapshot(),
+        revision: () => instance.workspace.revision,
+        subscribe: (listener) => instance.workspace.subscribe(listener),
+      },
+      client: { writeFiles, deleteFile },
+      readFiles: () => {
+        if (providerFails) throw new Error('provider refresh failed')
+        return {
+          '/workspace/main.cpp': 'int main() {}\n',
+          '/workspace/nova_test.h': 'provider fallback\n',
+        }
+      },
+      debounceMs: 0,
+      onReadError,
+    })
+    await vi.runAllTimersAsync()
+    writeFiles.mockClear()
+    providerFails = true
+
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'external-provider-error-create',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-clangd' },
+      operations: [{
+        op: 'create',
+        path: '/workspace/nova_test.h',
+        text: 'workspace authority\n',
+      }],
+    })
+    expect(writeFiles).toHaveBeenLastCalledWith({
+      '/workspace/nova_test.h': 'workspace authority\n',
+    })
+
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'external-provider-error-delete',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-clangd' },
+      operations: [{ op: 'delete', path: '/workspace/nova_test.h' }],
+    })
+    expect(deleteFile).toHaveBeenCalledWith('/workspace/nova_test.h')
+    expect(onReadError).toHaveBeenCalledTimes(2)
+    synchronization.dispose()
+    instance.workspace.dispose()
+  })
+
   it('invalidates through the same feed for authoritative external changes', async () => {
     vi.useFakeTimers()
     const instance = createWorkbenchInstance()

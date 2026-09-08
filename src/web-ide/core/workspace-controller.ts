@@ -230,6 +230,7 @@ export class WorkspaceController {
   private transactionSequence = 0
   private initializationGeneration = 0
   private initializationKey: string | undefined
+  private initializationPromise: Promise<void> | undefined
   private projectId = ''
   private ephemeral = true
   private readOnly = false
@@ -422,33 +423,44 @@ export class WorkspaceController {
     // React StrictMode replays effects on the same retained instance. Treat an
     // identical replay as one bootstrap lifecycle, including while OPFS is
     // still resolving, rather than emitting a second synthetic transaction.
-    if (initializationKey === this.initializationKey) return
+    if (initializationKey === this.initializationKey) {
+      await this.initializationPromise
+      return
+    }
     this.initializationKey = initializationKey
     const generation = ++this.initializationGeneration
     this.cancelPendingWrites()
     this.projectId = options.ephemeral ? '' : options.projectId
     this.ephemeral = options.ephemeral === true
 
-    let files: WorkspaceFiles = Object.create(null)
-    if (!this.ephemeral) {
-      try {
-        const { readWorkspaceFromOPFS } = await import('@/vfs/opfs-sync')
-        files = normalizeSnapshot(await readWorkspaceFromOPFS(this.projectId))
-      } catch {
-        // Browser-local persistence is an optional, untrusted cache.
+    const initialization = (async () => {
+      let files: WorkspaceFiles = Object.create(null)
+      if (!this.ephemeral) {
+        try {
+          const { readWorkspaceFromOPFS } = await import('@/vfs/opfs-sync')
+          files = normalizeSnapshot(await readWorkspaceFromOPFS(this.projectId))
+        } catch {
+          // Browser-local persistence is an optional, untrusted cache.
+        }
       }
-    }
-    if (generation !== this.initializationGeneration || this.disposed) return
-    if (Object.keys(files).length === 0) files = initialFiles ?? {}
-    if (Object.keys(files).length === 0 && !this.ephemeral) {
-      const { DEFAULT_MAIN } = await import('@/vfs/default-main')
       if (generation !== this.initializationGeneration || this.disposed) return
-      files = { '/workspace/main.cpp': DEFAULT_MAIN }
+      if (Object.keys(files).length === 0) files = initialFiles ?? {}
+      if (Object.keys(files).length === 0 && !this.ephemeral) {
+        const { DEFAULT_MAIN } = await import('@/vfs/default-main')
+        if (generation !== this.initializationGeneration || this.disposed) return
+        files = { '/workspace/main.cpp': DEFAULT_MAIN }
+      }
+      if (Object.keys(files).length === 0) {
+        files = initialFiles ?? {}
+      }
+      this.applyInternal([{ op: 'replace', files }], { kind: 'bootstrap', source: 'workspace-bootstrap' })
+    })()
+    this.initializationPromise = initialization
+    try {
+      await initialization
+    } finally {
+      if (generation === this.initializationGeneration) this.initializationPromise = undefined
     }
-    if (Object.keys(files).length === 0) {
-      files = initialFiles ?? {}
-    }
-    this.applyInternal([{ op: 'replace', files }], { kind: 'bootstrap', source: 'workspace-bootstrap' })
   }
 
   async flushLocalPersistence(): Promise<void> {
@@ -460,6 +472,7 @@ export class WorkspaceController {
     if (this.disposed) return
     this.disposed = true
     this.initializationGeneration += 1
+    this.initializationPromise = undefined
     this.cancelPendingWrites()
     this.listeners.clear()
     this.statusListeners.clear()

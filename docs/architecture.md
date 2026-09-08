@@ -224,5 +224,8 @@ This is a behavior-preserving package boundary, not the final multi-package
 split. Runtime/plugin managers, workspace/VFS, workbench stores, persistence,
 and Monaco models are isolated per mount; legacy singleton store exports remain
 only as source-compatible low-level exports and are not consumed by a mounted
-`WebIDE`. The C++ language tooling/runtime/testing implementations have separate
+`WebIDE`. Changing the host workspace ID recreates that complete instance
+boundary and delays the new host-persistence attachment until initialization;
+replacing an adapter for the same ID retains the instance. The C++ language
+tooling/runtime/testing implementations have separate
 opt-in subpaths but are not yet independently versioned packages.

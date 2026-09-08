@@ -46,6 +46,30 @@ const harness = vi.hoisted(() => ({
   } }>,
 }))
 
+const opfsHarness = vi.hoisted(() => ({
+  readWorkspaceFromOPFS: vi.fn(async (projectId: string) => {
+    void projectId
+    return {} as Record<string, string>
+  }),
+  syncToOPFS: vi.fn(async (projectId: string, path: string, content: string) => {
+    void [projectId, path, content]
+  }),
+  deleteFromOPFS: vi.fn(async (projectId: string, path: string) => {
+    void [projectId, path]
+  }),
+}))
+
+vi.mock('@/vfs/opfs-sync', () => ({
+  readWorkspaceFromOPFS: opfsHarness.readWorkspaceFromOPFS,
+  syncToOPFS: opfsHarness.syncToOPFS,
+  deleteFromOPFS: opfsHarness.deleteFromOPFS,
+  createFolderInOPFS: vi.fn(async () => undefined),
+  renameInOPFS: vi.fn(async () => undefined),
+  hydrateFromOPFS: vi.fn(async () => undefined),
+  savePchToOPFS: vi.fn(async () => undefined),
+  loadPchFromOPFS: vi.fn(async () => null),
+}))
+
 vi.mock('@monaco-editor/react', async () => {
   const React = await import('react')
   const parseUri = (value: string) => {
@@ -184,6 +208,12 @@ vi.mock('@/clangd/bootstrap', () => ({
 }))
 
 const eventSource = { subscribe: () => () => undefined }
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void
+  const promise = new Promise<Value>((accept) => { resolve = accept })
+  return { promise, resolve }
+}
 
 function createEventSource<Value>() {
   const listeners = new Set<(value: Value) => void>()
@@ -398,12 +428,13 @@ function host(
   id: string,
   text: string,
   persistence: NonNullable<NonNullable<WebIDEHost['workspace']>['persistence']>,
+  localCache: NonNullable<WebIDEHost['workspace']>['localCache'] = 'memory',
 ): WebIDEHost {
   return {
     events: { emit: vi.fn() },
     workspace: {
       id,
-      localCache: 'memory',
+      localCache,
       initialFiles: {
         '/workspace/main.cpp': text,
         '/workspace/z-inactive.h': `${id} inactive\n`,
@@ -431,6 +462,9 @@ afterEach(async () => {
   harness.models.clear()
   harness.runtimeSessions.length = 0
   harness.clangdBoots.length = 0
+  opfsHarness.readWorkspaceFromOPFS.mockReset().mockResolvedValue({})
+  opfsHarness.syncToOPFS.mockReset().mockResolvedValue(undefined)
+  opfsHarness.deleteFromOPFS.mockReset().mockResolvedValue(undefined)
   window.localStorage.removeItem('web-ide.clangd.enabled')
 })
 
@@ -813,6 +847,126 @@ describe('same-realm WebIDE instance isolation', () => {
     })
     expect(oldPersistence.dispose).toHaveBeenCalledTimes(1)
     expect(warnings).toHaveBeenCalledWith(
+      '[web-ide] workspace persistence cleanup failed',
+      expect.anything(),
+    )
+    warnings.mockRestore()
+  })
+
+  it('recreates instance resources before a delayed workspace identity can bind persistence', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+      .IS_REACT_ACT_ENVIRONMENT = true
+    const config = configuration(createRuntimeProvider(vi.fn()))
+    const firstPersistence = { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() }
+    const secondPersistence = { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() }
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const secondRestore = deferred<Record<string, string>>()
+    opfsHarness.readWorkspaceFromOPFS.mockImplementation(async (projectId) => {
+      if (projectId === 'identity-b') return secondRestore.promise
+      return {}
+    })
+    const instanceRef = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+
+    await act(async () => {
+      root?.render(
+        <WebIDEHostMount
+          configuration={config}
+          host={host('identity-a', 'workspace A\n', firstPersistence)}
+          instanceRef={instanceRef}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(
+        instanceRef.current?.workspace.snapshot()['/workspace/main.cpp'],
+      ).toBe('workspace A\n'))
+      await instanceRef.current!.flushWorkspace()
+    })
+    const firstInstance = harness.instances.get('identity-a') as WorkbenchInstance
+    firstPersistence.save.mockClear()
+    firstPersistence.flush.mockClear()
+    firstPersistence.dispose.mockClear()
+
+    // Leave both the host coordinator's two-second debounce and the
+    // controller's browser-local write path pending at the identity boundary.
+    await act(async () => {
+      firstInstance.workspace.writeLocal('/workspace/main.cpp', 'workspace A pending\n')
+      root?.render(
+        <WebIDEHostMount
+          configuration={config}
+          host={host('identity-b', 'workspace B seed\n', secondPersistence, 'opfs')}
+          instanceRef={instanceRef}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const secondInstance = harness.instances.get('identity-b') as WorkbenchInstance
+    expect(secondInstance).toBeDefined()
+    expect(secondInstance).not.toBe(firstInstance)
+    expect(secondInstance.workspace.monacoAuthority).not.toBe(firstInstance.workspace.monacoAuthority)
+    expect(instanceRef.current?.workspace.snapshot()).toEqual({})
+
+    // No persistence lifecycle is exposed for B until its exact OPFS restore
+    // resolves, so an explicit flush during the delay is a safe no-op.
+    await act(async () => instanceRef.current!.flushWorkspace())
+    expect(secondPersistence.save).not.toHaveBeenCalled()
+    expect(secondPersistence.flush).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.waitFor(() => expect(firstPersistence.dispose).toHaveBeenCalledTimes(1))
+    })
+    expect(firstPersistence.save).toHaveBeenCalledWith(
+      expect.objectContaining({ '/workspace/main.cpp': 'workspace A pending\n' }),
+      expect.objectContaining({ workspaceId: 'identity-a', reason: 'flush' }),
+    )
+    expect(firstPersistence.save.mock.calls.every(([, context]) =>
+      context.workspaceId === 'identity-a')).toBe(true)
+    expect(secondPersistence.save).not.toHaveBeenCalled()
+
+    await act(async () => {
+      secondRestore.resolve({
+        '/workspace/main.cpp': 'workspace B restored\n',
+        '/workspace/z-inactive.h': 'identity-b restored inactive\n',
+      })
+      await vi.waitFor(() => expect(
+        instanceRef.current?.workspace.snapshot()['/workspace/main.cpp'],
+      ).toBe('workspace B restored\n'))
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await instanceRef.current!.flushWorkspace()
+    })
+    expect(secondPersistence.flush).toHaveBeenCalledTimes(1)
+    expect(secondPersistence.save).toHaveBeenLastCalledWith(
+      {
+        '/workspace/main.cpp': 'workspace B restored\n',
+        '/workspace/z-inactive.h': 'identity-b restored inactive\n',
+      },
+      expect.objectContaining({ workspaceId: 'identity-b', reason: 'flush' }),
+    )
+
+    // A new debounced B snapshot is still drained only into B by an explicit
+    // flush; no save call on the new adapter may contain workspace A.
+    await act(async () => {
+      secondInstance.workspace.writeLocal('/workspace/main.cpp', 'workspace B edited\n')
+      await instanceRef.current!.flushWorkspace()
+    })
+    expect(secondPersistence.save).toHaveBeenLastCalledWith(
+      expect.objectContaining({ '/workspace/main.cpp': 'workspace B edited\n' }),
+      expect.objectContaining({ workspaceId: 'identity-b', reason: 'flush' }),
+    )
+    expect(secondPersistence.save.mock.calls.every(([files, context]) =>
+      context.workspaceId === 'identity-b'
+      && files['/workspace/main.cpp'] !== 'workspace A\n'
+      && files['/workspace/main.cpp'] !== 'workspace A pending\n')).toBe(true)
+    expect(warnings).not.toHaveBeenCalledWith(
       '[web-ide] workspace persistence cleanup failed',
       expect.anything(),
     )

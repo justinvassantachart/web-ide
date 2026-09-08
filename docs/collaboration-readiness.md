@@ -48,6 +48,21 @@ flush and close remain retryable. Its status feed is additive and extensible.
 Connection and presence state belong to a future provider and must not be
 encoded as persistence status.
 
+A change to the host workspace ID is a hard instance boundary even when the
+outer React mount is retained. The old controller and its persistence/runtime/
+tooling resources drain only to the old namespace, while a new controller is
+created for the new ID. The new persistence adapter is not attached or seeded
+until that controller's exact bootstrap or browser-local restore completes.
+Changing only the persistence adapter for the same workspace ID retains the
+existing controller and preserves immediate full-snapshot replacement seeding.
+
+Provider-supplied editor support under `/workspace/*` is fallback-only for
+language tooling. A canonical workspace file at the same path is authoritative,
+whether created locally or by external application. If refreshing optional
+provider inputs fails after clangd boots, feed synchronization still reconciles
+all canonical C/C++ paths and removes deleted workspace-owned paths rather than
+leaving stale provider text at the committed revision.
+
 Directories are projections of canonical text-file paths, not independently
 persisted entities. Empty-folder creation is unavailable; rename and delete of
 a nonempty projected directory lower to one atomic transaction containing its
@@ -68,14 +83,16 @@ The executable contract is covered by:
   real workbench mounts in one realm, overlapping paths, editor/Monaco,
   panels, clangd, focus-scoped hotkeys, independent stores/breakpoints/feeds/
   persistence, unmount-one/retain-one, mounted Testing V2, replacement-adapter
-  failure isolation, and StrictMode cleanup;
+  failure isolation, delayed workspace-identity restoration, and StrictMode
+  cleanup;
 - `tests/contracts/workspace-controller.test.ts` for atomicity, emit-once,
   reentrant revision ordering, external origin/echo identity, complete
   plain-data validation, read-only separation, directory lowering, and
   throwing-observer isolation;
 - `tests/testing/testing-controller-v2.test.ts` and
   `tests/contracts/configurable-clangd.test.ts` for invalidation after a
-  remote-like transaction through the shared feed;
+  remote-like transaction through the shared feed, workspace-authoritative
+  local/external support-file creation, and provider-refresh error containment;
 - `tests/contracts/workspace-persistence.test.ts` for coalescing, retryable
   flush/close, latest-snapshot retention, status, and disposal behavior;
 - `tests/contracts/frozen-schema-digests.test.ts` for exact-byte binding to the

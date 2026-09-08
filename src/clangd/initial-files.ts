@@ -88,7 +88,13 @@ export function collectClangdInitialFiles(
     }
   }
   for (const [path, content] of Object.entries(providerSupportFiles)) {
-    if (isCppPath(path)) add(path, content, 'supplemental file')
+    if (!isCppPath(path)) continue
+    // Provider editor support is a fallback for paths absent from the
+    // canonical workspace. Once a user or external authority creates that
+    // exact path, the committed workspace text must become authoritative in
+    // clangd as it already is everywhere else in the workbench.
+    if (path.startsWith('/workspace/') && Object.hasOwn(workspaceFiles, path)) continue
+    add(path, content, 'supplemental file')
   }
   for (const [path, content] of Object.entries(configuredSupportFiles)) {
     if (isCppPath(path)) add(path, content, 'support file')

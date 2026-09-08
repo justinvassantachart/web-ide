@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IDEWorkspacePersistence } from '../contracts/host'
 import type { WebIDEInstanceController } from '../core/instance-handle'
 import { WorkspacePersistenceCoordinator } from '../core/workspace-persistence'
@@ -35,22 +35,95 @@ export function WorkspaceHostBridge({
   const persistence = workspace?.persistence
   const initialFiles = mergeWorkspaceFiles(resources, workspace?.initialFiles)
   const seedFingerprint = workspaceFilesFingerprint(initialFiles)
-  const persistenceBinding = useRef<PersistenceBinding | undefined>(undefined)
+  const initializationKey = JSON.stringify([
+    workspaceId ?? 'default-project',
+    localCache ?? null,
+    seedFingerprint,
+  ])
+  const initializationToken = useMemo(() => ({ key: initializationKey }), [initializationKey])
+  const [readyInitializationToken, setReadyInitializationToken] = useState<object>()
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    let cancelled = false
     void instance.workspace.initialize({
       projectId: workspaceId ?? 'default-project',
       initialFiles,
       ephemeral: localCache === 'memory',
-    })
+    }).then(
+      () => {
+        if (!cancelled) setReadyInitializationToken(initializationToken)
+      },
+      (error: unknown) => {
+        if (cancelled) return
+        instance.workspace.setPersistenceError(error)
+        console.warn('[web-ide] workspace initialization failed', error)
+      },
+    )
     // The fingerprint makes semantically identical inline file objects stable;
-    // initVFS itself guards overlapping async hydrations by generation.
+    // the controller itself guards overlapping async hydrations by generation
+    // and shares an in-flight initialization across StrictMode replay.
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instance, localCache, seedFingerprint, workspaceId])
+  }, [initializationKey, initializationToken, instance, localCache, seedFingerprint, workspaceId])
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (instance.workspace.getPersistenceStatus().state === 'saved') return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [instance])
+
+  const pendingInstanceDisposal = useRef<{ cancelled: boolean } | undefined>(undefined)
+  useEffect(() => {
+    if (pendingInstanceDisposal.current) {
+      pendingInstanceDisposal.current.cancelled = true
+      pendingInstanceDisposal.current = undefined
+    }
+    return () => {
+      const ticket = { cancelled: false }
+      pendingInstanceDisposal.current = ticket
+      queueMicrotask(() => {
+        if (ticket.cancelled) return
+        void instance.workspace.flushLocalPersistence().finally(() => {
+          instance.testingV2.dispose()
+          instance.workspace.dispose()
+        })
+      })
+    }
+  }, [instance])
+
+  if (
+    readyInitializationToken !== initializationToken
+    || !workspaceId
+    || !persistence
+  ) return null
+
+  return (
+    <WorkspacePersistenceBinding
+      instanceController={instanceController}
+      persistence={persistence}
+      workspaceId={workspaceId}
+    />
+  )
+}
+
+/** Attaches a host adapter only after its exact workspace has initialized. */
+function WorkspacePersistenceBinding({
+  instanceController,
+  persistence,
+  workspaceId,
+}: {
+  instanceController: WebIDEInstanceController
+  persistence: IDEWorkspacePersistence
+  workspaceId: string
+}) {
+  const instance = useWorkbenchInstance()
+  const persistenceBinding = useRef<PersistenceBinding | undefined>(undefined)
 
   useLayoutEffect(() => {
-    if (!workspaceId || !persistence) return
-
     let binding = persistenceBinding.current
     if (
       binding?.workspaceId === workspaceId &&
@@ -98,16 +171,13 @@ export function WorkspaceHostBridge({
       }
       binding = nextBinding
       persistenceBinding.current = binding
-      // A replacement adapter has never observed the current workspace. Seed
-      // it immediately with a complete retained snapshot rather than waiting
-      // for a future edit. Revision zero is the initial pre-hydration mount;
-      // its bootstrap feed schedules the first authoritative snapshot and must
-      // not race a slow browser-local restore with an empty host save.
-      if (instance.workspace.revision > 0) {
-        binding.coordinator.scheduleSave(
-          projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
-        )
-      }
+      // This component cannot mount until initialization completed, so both a
+      // first adapter and a same-identity replacement are seeded only from the
+      // exact current namespace. No pre-hydration or prior-identity snapshot
+      // can enter this coordinator.
+      binding.coordinator.scheduleSave(
+        projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
+      )
     }
 
     const currentBinding = binding
@@ -137,35 +207,6 @@ export function WorkspaceHostBridge({
       })
     }
   }, [instance, instanceController, persistence, workspaceId])
-
-  useEffect(() => {
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (instance.workspace.getPersistenceStatus().state === 'saved') return
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [instance])
-
-  const pendingInstanceDisposal = useRef<{ cancelled: boolean } | undefined>(undefined)
-  useEffect(() => {
-    if (pendingInstanceDisposal.current) {
-      pendingInstanceDisposal.current.cancelled = true
-      pendingInstanceDisposal.current = undefined
-    }
-    return () => {
-      const ticket = { cancelled: false }
-      pendingInstanceDisposal.current = ticket
-      queueMicrotask(() => {
-        if (ticket.cancelled) return
-        void instance.workspace.flushLocalPersistence().finally(() => {
-          instance.testingV2.dispose()
-          instance.workspace.dispose()
-        })
-      })
-    }
-  }, [instance])
 
   return null
 }

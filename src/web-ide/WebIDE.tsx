@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type Ref,
   type ReactNode,
 } from 'react'
 import { EngineProvider } from '@/engine/EngineContext'
@@ -76,11 +77,30 @@ export interface WebIDEProps {
 }
 
 export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function WebIDE(
-  { configuration },
+  props,
   instanceRef,
 ) {
   const host = useWebIDEHost()
   const workspaceKey = host?.workspace?.id ?? 'default-project'
+  return (
+    <WebIDEWorkspaceMount
+      key={workspaceKey}
+      {...props}
+      instanceRef={instanceRef}
+      workspaceKey={workspaceKey}
+    />
+  )
+})
+
+function WebIDEWorkspaceMount({
+  configuration,
+  instanceRef,
+  workspaceKey,
+}: WebIDEProps & {
+  instanceRef: Ref<WebIDEInstanceHandle>
+  workspaceKey: string
+}) {
+  const host = useWebIDEHost()
   const plugins = useMemo(
     () => new IDEPluginManager(configuration.plugins),
     [configuration.plugins],
@@ -188,7 +208,7 @@ export const WebIDE = forwardRef<WebIDEInstanceHandle, WebIDEProps>(function Web
       </WebIDEConfigurationContext.Provider>
     </WorkbenchInstanceContext.Provider>
   )
-})
+}
 
 function LanguageToolingMount({
   provider,
