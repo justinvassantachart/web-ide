@@ -26,7 +26,7 @@ function uint(value: number, max: number, label: string): void {
   }
 }
 
-/** Mirrors the reviewed R-P01 descriptor boundary exactly. */
+/** Validates the public runtime host-service descriptor boundary. */
 export function validateRuntimeHostServiceV1(service: RuntimeHostServiceV1): void {
   if (service === null || typeof service !== 'object') {
     throw new TypeError('host service must be an object')

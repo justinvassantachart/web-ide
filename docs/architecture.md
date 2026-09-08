@@ -58,8 +58,8 @@ settlement methods let capable providers expose one awaited `completed`,
 numeric exit events remain compatible.
 
 Runtime host services are an optional, capability-gated extension. The public
-descriptor uses the R-P01 limit names `maxFrameBytes`, `maxPendingSends`, and
-`maxInFlightRequests` and is validated before registration. Browser runtime
+descriptor limits `maxFrameBytes`, `maxPendingSends`, and
+`maxInFlightRequests` are validated before registration. Browser runtime
 sessions bind configured services only to their adopted engine instance,
 defer unregister while that engine is running, and release registrations when
 the engine or owning session closes. Existing C++ and Python providers do not

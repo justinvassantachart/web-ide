@@ -77,7 +77,7 @@ const service: RuntimeHostServiceV1 = {
 }
 
 describe('optional runtime host-service bridge', () => {
-  it('binds the exact R-P01 limit names and validates descriptor bounds', () => {
+  it('binds the public limit names and validates descriptor bounds', () => {
     expect(() => validateRuntimeHostServiceV1(service)).not.toThrow()
     expect(Object.keys(service.limits!)).toEqual([
       'maxFrameBytes',

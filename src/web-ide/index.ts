@@ -13,11 +13,6 @@ export {
   sha256Hex,
   workspaceDigestV1,
 } from './public/canonical-contract'
-export {
-  CONTRACT_SCHEMA_DIGESTS,
-  CONTRACT_SCHEMA_SOURCE_REVISION,
-} from './contracts/schema-digests'
-
 export type {
   CppBuildPlanV1,
   CppCompileProfileV1,

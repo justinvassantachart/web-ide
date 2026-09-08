@@ -95,10 +95,6 @@ The executable contract is covered by:
   local/external support-file creation, and provider-refresh error containment;
 - `tests/contracts/workspace-persistence.test.ts` for coalescing, retryable
   flush/close, latest-snapshot retention, status, and disposal behavior;
-- `tests/contracts/frozen-schema-digests.test.ts` for exact-byte binding to the
-  frozen workspace, testing, compile-profile, build-plan, and manifest bytes;
-- `tests/contracts/cross-repo-extension-conformance.test.ts` for the exact
-  Testing V2 request and R-P01 host-limit shapes; and
 - `tests/contracts/browser-runtime-session-lifecycle.test.ts` for configured,
   unsupported, concurrent-instance, deferred-unregister, and session-close
   host-service lifecycles.
