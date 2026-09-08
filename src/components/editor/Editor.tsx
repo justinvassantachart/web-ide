@@ -38,6 +38,7 @@ export function Editor() {
     const languageToolingRef = useRef(languageTooling)
     const lastEditEmit = useRef<Record<string, number>>({})
     const editTrailing = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+    const suppressedModelPaths = useRef(new Set<string>())
     const acceptedBreakpoints = useRef<Record<string, number[]>>({})
     const breakpointSyncTokens = useRef<Record<string, number>>({})
 
@@ -84,19 +85,51 @@ export function Editor() {
             pendingModelDisposal.current.cancelled = true
             pendingModelDisposal.current = undefined
         }
-        const sweep = () => {
+        const synchronizeOwnedModels = (change: Parameters<typeof workspace.subscribe>[0] extends (change: infer T) => void ? T : never) => {
+            const affected = new Set<string>()
+            let replaceAll = false
+            for (const operation of change.operations) {
+                if (operation.op === 'replace') replaceAll = true
+                else if (operation.op === 'rename') {
+                    affected.add(operation.from)
+                    affected.add(operation.to)
+                } else affected.add(operation.path)
+            }
+            const cancelEveryAffectedPath = change.origin.kind !== 'local-user'
+            const timerPaths = replaceAll
+                ? Object.keys(editTrailing.current)
+                : cancelEveryAffectedPath
+                    ? [...affected]
+                    : change.operations.flatMap((operation) =>
+                        operation.op === 'delete'
+                            ? [operation.path]
+                            : operation.op === 'rename'
+                                ? [operation.from, operation.to]
+                                : [],
+                    )
+            for (const path of timerPaths) {
+                clearTimeout(editTrailing.current[path])
+                delete editTrailing.current[path]
+                delete lastEditEmit.current[path]
+            }
+            const files = workspace.snapshot()
             for (const model of monaco.editor.getModels()) {
                 const path = model.uri.path
                 if (!workspace.ownsMonacoUri(model.uri)) continue
-                if (workspace.fileExists(path)) continue
-                model.dispose()
-                decoIdsByPath.current.delete(path)
-                delete lastEditEmit.current[path]
-                // A pending trailing edit-emit for a deleted file would fire
-                // AFTER the host's 'file_delete' event — in a recorded trace
-                // that phantom edit resurrects the file. Kill it with the model.
-                clearTimeout(editTrailing.current[path])
-                delete editTrailing.current[path]
+                if (!replaceAll && !affected.has(path)) continue
+                const next = files[path]
+                if (next === undefined) {
+                    model.dispose()
+                    decoIdsByPath.current.delete(path)
+                    continue
+                }
+                if (model.getValue() === next) continue
+                suppressedModelPaths.current.add(path)
+                try {
+                    model.setValue(next)
+                } finally {
+                    suppressedModelPaths.current.delete(path)
+                }
             }
             // Tabs for deleted/renamed files close with their models.
             instance.editorStore.getState().pruneTabs(
@@ -104,7 +137,7 @@ export function Editor() {
                 (path) => workspace.fileExists(path) ? workspace.readFile(path) : null,
             )
         }
-        const unsubscribe = workspace.subscribe(sweep)
+        const unsubscribe = workspace.subscribe(synchronizeOwnedModels)
         return () => {
             unsubscribe()
             const ticket = { cancelled: false }
@@ -381,6 +414,7 @@ export function Editor() {
 
     const handleChange = useCallback((value: string | undefined) => {
         if (value === undefined || !activeFile) return
+        if (suppressedModelPaths.current.has(activeFile)) return
         // A controller-driven model update (restore/external authority) fires
         // Monaco's onChange callback too. Equal VFS content is that update's
         // acknowledgement, not a new local-user transaction.

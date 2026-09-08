@@ -236,6 +236,12 @@ export class WorkspaceController {
   private mutationPolicy: WorkspaceMutationPolicy | undefined
   private disposed = false
   private readonly listeners = new Set<(change: WorkspaceChangeV1) => void>()
+  private readonly feedDeliveryQueue: Array<{
+    change: WorkspaceChangeV1
+    listeners: readonly ((change: WorkspaceChangeV1) => void)[]
+  }> = []
+  private deliveringFeed = false
+  private committing = false
   private readonly statusListeners = new Set<(status: WorkspacePersistenceStatus) => void>()
   private readonly pendingWrites = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly inFlightWrites = new Set<Promise<void>>()
@@ -351,10 +357,7 @@ export class WorkspaceController {
     this.assertLocalAllowed({ kind: 'delete', path: normalized })
     const descendants = Object.keys(this.snapshot()).filter((candidate) => candidate.startsWith(`${normalized}/`))
     if (descendants.length === 0) {
-      this.volume.rmdirSync(normalized, { recursive: true } as never)
-      this.refreshFileTree()
-      void this.persistDelete(normalized)
-      return undefined
+      throw new WorkspaceTransactionError('path_missing', `${normalized} contains no text files`)
     }
     return this.applyLocal(descendants.map((candidate) => ({ op: 'delete' as const, path: candidate })))
   }
@@ -368,10 +371,7 @@ export class WorkspaceController {
     const descendants = Object.keys(this.snapshot()).filter((candidate) => candidate.startsWith(`${normalizedFrom}/`))
     this.assertLocalAllowed({ kind: 'rename', path: normalizedFrom, to: normalizedTo })
     if (descendants.length === 0) {
-      if (this.volume.existsSync(normalizedTo)) throw new WorkspaceTransactionError('path_exists', `${normalizedTo} already exists`)
-      this.volume.renameSync(normalizedFrom, normalizedTo)
-      this.refreshFileTree()
-      return undefined
+      throw new WorkspaceTransactionError('path_missing', `${normalizedFrom} contains no text files`)
     }
     return this.applyLocal(descendants.map((candidate) => ({
       op: 'rename' as const,
@@ -382,20 +382,22 @@ export class WorkspaceController {
 
   createFolderLocal(path: string): void {
     const normalized = normalizePublicWorkspacePath(path)
-    this.assertLocalAllowed({ kind: 'create', path: normalized })
-    if (!this.volume.existsSync(normalized)) this.volume.mkdirSync(normalized, { recursive: true })
-    this.refreshFileTree()
-    if (this.projectId && !this.ephemeral) {
-      const projectId = this.projectId
-      void import('@/vfs/opfs-sync').then(({ createFolderInOPFS }) => createFolderInOPFS(projectId, normalized))
-    }
+    throw new WorkspaceTransactionError(
+      'permission_denied',
+      `empty workspace directories are derived from text files and cannot be created: ${normalized}`,
+    )
   }
 
   async applyExternal(transaction: WorkspaceApplyTransactionV1): Promise<WorkspaceChangeV1> {
-    if (transaction.origin?.kind !== 'external-authority') {
+    // Validate and clone the complete untrusted value through property
+    // descriptors before authorization. No caller getter or Proxy `get` trap
+    // is observed by the authority check or later normalization.
+    const data = JSON.parse(canonicalStringifyV1(transaction)) as WorkspaceApplyTransactionV1
+    const normalized = this.normalizeApplyTransaction(data)
+    if (normalized.origin.kind !== 'external-authority') {
       throw new WorkspaceTransactionError('permission_denied', 'external facade requires an external-authority origin')
     }
-    return this.applyValidated(transaction, 'external-authority')
+    return this.applyValidated(normalized)
   }
 
   replaceFromRestore(files: WorkspaceFiles, source = 'workspace-restore'): WorkspaceChangeV1 {
@@ -480,25 +482,41 @@ export class WorkspaceController {
     return this.commit(normalizeOperations(operations), normalizeOrigin(origin), this.nextTransactionId(origin.kind))
   }
 
-  private async applyValidated(
-    transaction: WorkspaceApplyTransactionV1,
-    requiredOrigin: WorkspaceOriginV1['kind'],
-  ): Promise<WorkspaceChangeV1> {
-    this.assertLive()
-    canonicalStringifyV1(transaction)
+  private normalizeApplyTransaction(transaction: WorkspaceApplyTransactionV1): WorkspaceApplyTransactionV1 {
     assertPlainObject(transaction, 'workspace transaction')
     assertKeys(transaction, ['version', 'kind', 'transactionId', 'expectedRevision', 'origin', 'operations'], 'workspace transaction')
     if (transaction.version !== 1 || transaction.kind !== 'apply') throw new TypeError('unsupported workspace transaction version or kind')
-    if (!ID.test(transaction.transactionId)) throw new TypeError('workspace transaction id is invalid')
-    if (!Number.isSafeInteger(transaction.expectedRevision) || transaction.expectedRevision < 0) {
+    if (typeof transaction.transactionId !== 'string' || !ID.test(transaction.transactionId)) {
+      throw new TypeError('workspace transaction id is invalid')
+    }
+    if (
+      !Number.isSafeInteger(transaction.expectedRevision)
+      || transaction.expectedRevision < 0
+      || transaction.expectedRevision > MAX_REVISION
+    ) {
       throw new TypeError('workspace expected revision is invalid')
     }
+    const origin = normalizeOrigin(transaction.origin)
+    const operations = normalizeOperations(transaction.operations)
+    return Object.freeze({
+      version: 1,
+      kind: 'apply',
+      transactionId: transaction.transactionId,
+      expectedRevision: transaction.expectedRevision,
+      origin,
+      operations: Object.freeze(operations),
+    })
+  }
+
+  private async applyValidated(
+    transaction: WorkspaceApplyTransactionV1,
+  ): Promise<WorkspaceChangeV1> {
+    this.assertLive()
     if (transaction.expectedRevision !== this.revisionValue) {
       throw new WorkspaceTransactionError('revision_mismatch', `expected revision ${transaction.expectedRevision}, current revision ${this.revisionValue}`)
     }
-    const origin = normalizeOrigin(transaction.origin)
-    if (origin.kind !== requiredOrigin) throw new WorkspaceTransactionError('permission_denied', `workspace origin must be ${requiredOrigin}`)
-    const operations = normalizeOperations(transaction.operations)
+    const origin = transaction.origin
+    const operations = transaction.operations
     const capturedRevision = this.revisionValue
     const current = this.snapshot()
     const candidate = this.applyToCandidate(current, operations)
@@ -557,30 +575,56 @@ export class WorkspaceController {
     origin: WorkspaceOriginV1,
     transactionId: string,
   ): WorkspaceChangeV1 {
+    if (this.committing) {
+      throw new WorkspaceTransactionError(
+        'revision_mismatch',
+        'workspace mutation cannot re-enter an atomic commit',
+      )
+    }
     if (this.revisionValue >= MAX_REVISION) throw new RangeError('workspace revision exhausted')
-    const previous = this.snapshot()
-    const nextVolume = new Volume()
-    nextVolume.mkdirSync('/workspace', { recursive: true })
-    for (const [path, text] of Object.entries(candidate)) {
-      const directory = path.slice(0, path.lastIndexOf('/'))
-      if (!nextVolume.existsSync(directory)) nextVolume.mkdirSync(directory, { recursive: true })
-      nextVolume.writeFileSync(path, text, { encoding: 'utf8' })
+    let change!: WorkspaceChangeV1
+    this.committing = true
+    try {
+      const previous = this.snapshot()
+      const nextVolume = new Volume()
+      nextVolume.mkdirSync('/workspace', { recursive: true })
+      for (const [path, text] of Object.entries(candidate)) {
+        const directory = path.slice(0, path.lastIndexOf('/'))
+        if (!nextVolume.existsSync(directory)) nextVolume.mkdirSync(directory, { recursive: true })
+        nextVolume.writeFileSync(path, text, { encoding: 'utf8' })
+      }
+      this.volume = nextVolume
+      this.synchronizeStores(operations, candidate)
+      this.persistChanges(previous, candidate, operations)
+      change = Object.freeze({
+        version: 1 as const,
+        kind: 'change' as const,
+        revision: ++this.revisionValue,
+        transactionId,
+        origin,
+        operations: Object.freeze([...operations]),
+      })
+    } finally {
+      this.committing = false
     }
-    this.volume = nextVolume
-    this.synchronizeStores(operations, candidate)
-    this.persistChanges(previous, candidate, operations)
-    const change = Object.freeze({
-      version: 1 as const,
-      kind: 'change' as const,
-      revision: ++this.revisionValue,
-      transactionId,
-      origin,
-      operations: Object.freeze([...operations]),
-    })
-    for (const listener of [...this.listeners]) {
-      try { listener(change) } catch (error) { console.warn('[web-ide] workspace listener failed', error) }
-    }
+    this.enqueueFeedDelivery(change)
     return change
+  }
+
+  private enqueueFeedDelivery(change: WorkspaceChangeV1): void {
+    this.feedDeliveryQueue.push({ change, listeners: [...this.listeners] })
+    if (this.deliveringFeed) return
+    this.deliveringFeed = true
+    try {
+      while (this.feedDeliveryQueue.length > 0) {
+        const next = this.feedDeliveryQueue.shift()!
+        for (const listener of next.listeners) {
+          try { listener(next.change) } catch (error) { console.warn('[web-ide] workspace listener failed', error) }
+        }
+      }
+    } finally {
+      this.deliveringFeed = false
+    }
   }
 
   private synchronizeStores(operations: readonly WorkspaceOperationV1[], files: WorkspaceFiles): void {
@@ -589,27 +633,44 @@ export class WorkspaceController {
     const explorer = this.stores.filesStore.getState()
     for (const operation of operations) {
       if (operation.op === 'rename') {
-        editor.renameOpenFile(operation.from, operation.to)
-        debug.renameFileBreakpoints(operation.from, operation.to)
-        explorer.renameExpandedPath(operation.from, operation.to)
+        this.runStoreMutation(() => editor.renameOpenFile(operation.from, operation.to))
+        this.runStoreMutation(() => debug.renameFileBreakpoints(operation.from, operation.to))
+        this.runStoreMutation(() => explorer.renameExpandedPath(operation.from, operation.to))
       }
     }
-    editor.pruneTabs((path) => Object.hasOwn(files, path), (path) => files[path] ?? null)
-    debug.pruneBreakpointFiles((path) => Object.hasOwn(files, path))
-    explorer.pruneExpandedDirs((path) =>
+    this.runStoreMutation(() => editor.pruneTabs(
+      (path) => Object.hasOwn(files, path),
+      (path) => files[path] ?? null,
+    ))
+    this.runStoreMutation(() => debug.pruneBreakpointFiles((path) => Object.hasOwn(files, path)))
+    this.runStoreMutation(() => explorer.pruneExpandedDirs((path) =>
       this.volume.existsSync(path) && this.volume.statSync(path).isDirectory(),
-    )
+    ))
     const current = this.stores.editorStore.getState().activeFile
-    if (current && Object.hasOwn(files, current)) editor.setActiveFile(current, files[current])
+    if (current && Object.hasOwn(files, current)) {
+      this.runStoreMutation(() => editor.setActiveFile(current, files[current]))
+    }
     else {
       const first = Object.keys(files).sort()[0]
-      if (first) editor.setActiveFile(first, files[first])
+      if (first) this.runStoreMutation(() => editor.setActiveFile(first, files[first]))
     }
     this.refreshFileTree()
   }
 
   private refreshFileTree(): void {
-    this.stores.filesStore.getState().setFiles(buildTree(this.volume))
+    const files = buildTree(this.volume)
+    this.runStoreMutation(() => this.stores.filesStore.getState().setFiles(files))
+  }
+
+  private runStoreMutation(mutation: () => void): void {
+    try {
+      mutation()
+    } catch (error) {
+      // Zustand publishes synchronously after assigning the next state. A
+      // throwing observer must not strand the accepted VFS transaction before
+      // its remaining store reconciliation, revision, persistence, or feed.
+      console.warn('[web-ide] workbench store observer failed', error)
+    }
   }
 
   private assertLocalAllowed(request: WorkspaceMutationRequest): void {

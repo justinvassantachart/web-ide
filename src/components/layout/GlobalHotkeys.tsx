@@ -27,6 +27,14 @@ export function GlobalHotkeys() {
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key !== 'F5' && e.key !== 'F10' && e.key !== 'F11') return
+            const root = instance.getRootElement()
+            const target = e.target
+            const active = document.activeElement
+            if (
+                !root
+                || ((!(target instanceof Node) || !root.contains(target))
+                    && (!(active instanceof Node) || !root.contains(active)))
+            ) return
             if (!engine.capabilities.debug) return
 
             const mode = instance.debugStore.getState().debugMode

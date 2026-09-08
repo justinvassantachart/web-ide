@@ -8,6 +8,10 @@ import { createExecutionStore, type ExecutionState } from '@/store/execution-sto
 import { createFilesStore, type FilesState } from '@/store/files-store'
 import { createTestStore, type TestState } from '@/testing/test-store'
 import { WorkspaceController } from '../core/workspace-controller'
+import {
+  createTestingV2ControllerSlot,
+  type TestingV2ControllerSlot,
+} from '@/testing/testing-controller-slot'
 
 export interface WorkbenchInstance {
   readonly editorStore: StoreApi<EditorState>
@@ -16,7 +20,10 @@ export interface WorkbenchInstance {
   readonly executionStore: StoreApi<ExecutionState>
   readonly compilerStore: StoreApi<CompilerState>
   readonly testStore: StoreApi<TestState>
+  readonly testingV2: TestingV2ControllerSlot
   readonly workspace: WorkspaceController
+  getRootElement(): HTMLDivElement | null
+  setRootElement(element: HTMLDivElement | null): void
 }
 
 export function createWorkbenchInstance(): WorkbenchInstance {
@@ -26,7 +33,9 @@ export function createWorkbenchInstance(): WorkbenchInstance {
   const executionStore = createExecutionStore()
   const compilerStore = createCompilerStore()
   const testStore = createTestStore()
+  const testingV2 = createTestingV2ControllerSlot()
   const workspace = new WorkspaceController({ editorStore, filesStore, debugStore })
+  let rootElement: HTMLDivElement | null = null
   return {
     editorStore,
     filesStore,
@@ -34,7 +43,10 @@ export function createWorkbenchInstance(): WorkbenchInstance {
     executionStore,
     compilerStore,
     testStore,
+    testingV2,
     workspace,
+    getRootElement: () => rootElement,
+    setRootElement: (element) => { rootElement = element },
   }
 }
 

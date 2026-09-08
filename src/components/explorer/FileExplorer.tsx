@@ -216,14 +216,13 @@ function TreeRow({
 }
 
 function InlineCreateRow({
-    depth, kind, onSubmit, onCancel,
+    depth, onSubmit, onCancel,
 }: {
     depth: number
-    kind: 'file' | 'folder'
     onSubmit: (name: string) => void
     onCancel: () => void
 }) {
-    const iconUrl = kind === 'folder' ? getFolderIconUrl('', false) : getFileIconUrl('untitled')
+    const iconUrl = getFileIconUrl('untitled')
     return (
         <div className="vsx-row" style={{ paddingLeft: 8 + depth * 8 }}>
             {depth > 0 && (
@@ -255,7 +254,7 @@ export function FileExplorer() {
     const [focusedPath, setFocusedPath] = useState<string | null>(null)
     const [renamingPath, setRenamingPath] = useState<string | null>(null)
     // Inline create has a parent path ('' = root). Null = idle.
-    const [creating, setCreating] = useState<{ parent: string; kind: 'file' | 'folder' } | null>(null)
+    const [creating, setCreating] = useState<{ parent: string } | null>(null)
     const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
     const [sectionCollapsed, setSectionCollapsed] = useState(false)
 
@@ -309,16 +308,15 @@ export function FileExplorer() {
         }
     }, [host, instance, readOnly])
 
-    const handleCreate = useCallback((parent: string, kind: 'file' | 'folder', name: string) => {
+    const handleCreate = useCallback((parent: string, name: string) => {
         if (readOnly) return
         const base = parent || ROOT
         const newPath = `${base}/${name}`
         if (!instance.workspace.fileExists(newPath)) {
             try {
-                if (kind === 'folder') instance.workspace.createFolderLocal(newPath)
-                else instance.workspace.createFileLocal(newPath, '')
-                host?.events?.emit('file_create', { path: newPath, kind })
-                if (kind === 'file') setActiveFile(newPath, '')
+                instance.workspace.createFileLocal(newPath, '')
+                host?.events?.emit('file_create', { path: newPath, kind: 'file' })
+                setActiveFile(newPath, '')
             } catch (error) {
                 console.warn('[web-ide] local workspace create rejected', error)
             }
@@ -327,10 +325,10 @@ export function FileExplorer() {
         setCreating(null)
     }, [host, expandDir, instance, readOnly, setActiveFile])
 
-    const startCreate = useCallback((parent: string, kind: 'file' | 'folder') => {
+    const startCreate = useCallback((parent: string) => {
         if (readOnly) return
         if (parent) expandDir(parent)
-        setCreating({ parent, kind })
+        setCreating({ parent })
     }, [expandDir, readOnly])
 
     // ── Context menu ──────────────────────────────────────────────
@@ -345,8 +343,7 @@ export function FileExplorer() {
             x: e.clientX,
             y: e.clientY,
             items: [
-                { kind: 'item', label: 'New File…', onClick: () => startCreate(parent, 'file') },
-                { kind: 'item', label: 'New Folder…', onClick: () => startCreate(parent, 'folder') },
+                { kind: 'item', label: 'New File…', onClick: () => startCreate(parent) },
                 { kind: 'separator' },
                 { kind: 'item', label: 'Rename…', onClick: () => setRenamingPath(node.path) },
                 { kind: 'item', label: 'Delete', danger: true, onClick: () => handleDelete(node) },
@@ -361,8 +358,7 @@ export function FileExplorer() {
             x: e.clientX,
             y: e.clientY,
             items: [
-                { kind: 'item', label: 'New File…', onClick: () => startCreate('', 'file') },
-                { kind: 'item', label: 'New Folder…', onClick: () => startCreate('', 'folder') },
+                { kind: 'item', label: 'New File…', onClick: () => startCreate('') },
             ],
         })
     }
@@ -434,8 +430,7 @@ export function FileExplorer() {
             <InlineCreateRow
                 key="__create_root"
                 depth={0}
-                kind={creating.kind}
-                onSubmit={(name) => handleCreate('', creating.kind, name)}
+                onSubmit={(name) => handleCreate('', name)}
                 onCancel={() => setCreating(null)}
             />
         )
@@ -473,8 +468,7 @@ export function FileExplorer() {
                 <InlineCreateRow
                     key={`__create_${row.node.path}`}
                     depth={row.depth + 1}
-                    kind={creating.kind}
-                    onSubmit={(name) => handleCreate(row.node.path, creating.kind, name)}
+                    onSubmit={(name) => handleCreate(row.node.path, name)}
                     onCancel={() => setCreating(null)}
                 />
             )
@@ -501,16 +495,9 @@ export function FileExplorer() {
                             <button
                                 className="vsx-action-btn"
                                 title="New File…"
-                                onClick={() => { setSectionCollapsed(false); startCreate('', 'file') }}
+                                onClick={() => { setSectionCollapsed(false); startCreate('') }}
                             >
                                 <Codicon name="new-file" />
-                            </button>
-                            <button
-                                className="vsx-action-btn"
-                                title="New Folder…"
-                                onClick={() => { setSectionCollapsed(false); startCreate('', 'folder') }}
-                            >
-                                <Codicon name="new-folder" />
                             </button>
                         </>
                     )}

@@ -12,9 +12,11 @@ import { useWebIDEHost } from './host-context'
 import { useWorkbenchInstance } from './workbench-instance-context'
 
 interface PersistenceBinding {
+  token: object
   workspaceId: string
   persistence: IDEWorkspacePersistence
   coordinator: WorkspacePersistenceCoordinator
+  reportedPending: boolean
   pendingDisposal?: { cancelled: boolean }
 }
 
@@ -59,27 +61,53 @@ export function WorkspaceHostBridge({
         binding.pendingDisposal = undefined
       }
     } else {
-      binding = {
+      if (binding?.reportedPending) {
+        binding.reportedPending = false
+        instance.workspace.markExternalSaving(false)
+      }
+      const token = {}
+      const coordinator = new WorkspacePersistenceCoordinator({
         workspaceId,
         persistence,
-        coordinator: new WorkspacePersistenceCoordinator({
-          workspaceId,
-          persistence,
-          // Preserve Nova's existing host-save cadence while making the policy
-          // explicit and independently testable.
-          debounceMs: 2000,
-          onPendingChange: (pending) => instance.workspace.markExternalSaving(pending),
-          onStatusChange: (status, error) => {
-            if (status === 'retrying') {
-              const message = error instanceof Error ? error.message : undefined
-              instance.workspace.setPersistenceRetry(message)
-            } else {
-              instance.workspace.clearPersistenceIssue()
-            }
-          },
-        }),
+        // Preserve Nova's existing host-save cadence while making the policy
+        // explicit and independently testable.
+        debounceMs: 2000,
+        onPendingChange: (pending) => {
+          const activeBinding = persistenceBinding.current
+          if (activeBinding?.token === token && activeBinding.reportedPending !== pending) {
+            activeBinding.reportedPending = pending
+            instance.workspace.markExternalSaving(pending)
+          }
+        },
+        onStatusChange: (status, error) => {
+          if (persistenceBinding.current?.token !== token) return
+          if (status === 'retrying') {
+            const message = error instanceof Error ? error.message : undefined
+            instance.workspace.setPersistenceRetry(message)
+          } else {
+            instance.workspace.clearPersistenceIssue()
+          }
+        },
+      })
+      const nextBinding: PersistenceBinding = {
+        token,
+        workspaceId,
+        persistence,
+        coordinator,
+        reportedPending: false,
       }
+      binding = nextBinding
       persistenceBinding.current = binding
+      // A replacement adapter has never observed the current workspace. Seed
+      // it immediately with a complete retained snapshot rather than waiting
+      // for a future edit. Revision zero is the initial pre-hydration mount;
+      // its bootstrap feed schedules the first authoritative snapshot and must
+      // not race a slow browser-local restore with an empty host save.
+      if (instance.workspace.revision > 0) {
+        binding.coordinator.scheduleSave(
+          projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
+        )
+      }
     }
 
     const currentBinding = binding
@@ -131,7 +159,10 @@ export function WorkspaceHostBridge({
       pendingInstanceDisposal.current = ticket
       queueMicrotask(() => {
         if (ticket.cancelled) return
-        void instance.workspace.flushLocalPersistence().finally(() => instance.workspace.dispose())
+        void instance.workspace.flushLocalPersistence().finally(() => {
+          instance.testingV2.dispose()
+          instance.workspace.dispose()
+        })
       })
     }
   }, [instance])

@@ -33,11 +33,16 @@ function assertJsonValue(value: unknown, path: string, ancestors = new WeakSet<o
   if (Array.isArray(value)) {
     if (ancestors.has(value)) throw new TypeError(`${path} contains a cycle`)
     ancestors.add(value)
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
+    if (!lengthDescriptor || !('value' in lengthDescriptor) || !Number.isSafeInteger(lengthDescriptor.value)) {
+      throw new TypeError(`${path} has an invalid array length`)
+    }
+    const length = lengthDescriptor.value as number
     const keys = Reflect.ownKeys(value).filter((key) => key !== 'length')
-    if (keys.length !== value.length || keys.some((key) => !canonicalArrayIndex(key, value.length))) {
+    if (keys.length !== length || keys.some((key) => !canonicalArrayIndex(key, length))) {
       throw new TypeError(`${path} must be a dense array without extra properties`)
     }
-    for (let index = 0; index < value.length; index += 1) {
+    for (let index = 0; index < length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
       if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) {
         throw new TypeError(`${path}[${index}] must be an enumerable data property`)
@@ -72,8 +77,20 @@ function assertJsonValue(value: unknown, path: string, ancestors = new WeakSet<o
 
 function serialize(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(serialize).join(',')}]`
-  return `{${Object.entries(value as Record<string, unknown>)
+  if (Array.isArray(value)) {
+    const length = Object.getOwnPropertyDescriptor(value, 'length')!.value as number
+    const children = Array.from({ length }, (_, index) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))!
+      return serialize(descriptor.value)
+    })
+    return `[${children.join(',')}]`
+  }
+  // `assertJsonValue` has already proved that every own key is an enumerable
+  // data property. Read those descriptors again instead of using Object.entries
+  // so canonicalization never invokes a getter or a Proxy `get` trap after the
+  // validation pass.
+  return `{${Reflect.ownKeys(value)
+    .map((key) => [key as string, Object.getOwnPropertyDescriptor(value, key)!.value] as const)
     .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
     .map(([key, child]) => `${JSON.stringify(key)}:${serialize(child)}`)
     .join(',')}}`

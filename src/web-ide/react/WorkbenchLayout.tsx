@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toolbar } from '@/components/layout/Toolbar'
 import { StatusBar } from '@/components/layout/StatusBar'
@@ -18,6 +18,7 @@ import { useWebIDEConfiguration } from './configuration-context'
 import { usePanelLayout } from './panel-layout-context'
 import '@/components/sidebar/sidebar.css'
 import { useSidebarLayout } from './sidebar-layout-context'
+import { useWorkbenchInstance } from './workbench-instance-context'
 
 /** Reusable workbench UI. Runtime and contribution providers sit above it. */
 export function WorkbenchLayout() {
@@ -25,6 +26,10 @@ export function WorkbenchLayout() {
   const configuration = useWebIDEConfiguration()
   const { initialLayout } = usePanelLayout()
   const { snapshot: sidebarLayout } = useSidebarLayout()
+  const instance = useWorkbenchInstance()
+  const setRootElement = useCallback((element: HTMLDivElement | null) => {
+    instance.setRootElement(element)
+  }, [instance])
   const sidebarCollapsed = sidebarLayout.collapsed
   const chromeSidebar = host?.chrome?.sidebar !== false
   const chromeStatusBar = host?.chrome?.statusBar !== false
@@ -44,7 +49,11 @@ export function WorkbenchLayout() {
     <TooltipProvider delayDuration={300}>
       <GlobalHotkeys />
       <HostEventBridge />
-      <div className="web-ide-root flex flex-col h-full w-full overflow-hidden">
+      <div
+        ref={setRootElement}
+        tabIndex={-1}
+        className="web-ide-root flex flex-col h-full w-full overflow-hidden"
+      >
         <Toolbar />
         <div className="flex-1 min-h-0 flex">
           {chromeSidebar && <ActivityBar />}

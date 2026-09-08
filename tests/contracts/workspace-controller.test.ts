@@ -53,6 +53,95 @@ describe('instance-owned workspace controller', () => {
     expect(listener).toHaveBeenCalledWith(change)
   })
 
+  it('queues reentrant commits so every observer receives each revision once in order', async () => {
+    const instance = await initialized({ '/workspace/main.cpp': 'old\n' })
+    const first: number[] = []
+    const second: number[] = []
+    let reentered = false
+    instance.workspace.subscribe((change) => {
+      first.push(change.revision)
+      if (!reentered) {
+        reentered = true
+        instance.workspace.writeLocal('/workspace/main.cpp', 'nested\n')
+      }
+    })
+    instance.workspace.subscribe((change) => second.push(change.revision))
+    const initialRevision = instance.workspace.revision
+
+    instance.workspace.writeLocal('/workspace/main.cpp', 'outer\n')
+
+    expect(first).toEqual([initialRevision + 1, initialRevision + 2])
+    expect(second).toEqual(first)
+    expect(instance.workspace.readFile('/workspace/main.cpp')).toBe('nested\n')
+  })
+
+  it('completes an accepted commit despite throwing store and public observers', async () => {
+    const instance = await initialized({
+      '/workspace/main.cpp': 'old\n',
+      '/workspace/other.cpp': 'other\n',
+    })
+    instance.debugStore.getState().toggleBreakpoint('/workspace/main.cpp', 3)
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const storeError = new Error('throwing store observer')
+    const unsubscribers = [
+      instance.editorStore.subscribe(() => { throw storeError }),
+      instance.filesStore.subscribe(() => { throw storeError }),
+      instance.debugStore.subscribe(() => { throw storeError }),
+    ]
+    const delivered = vi.fn()
+    instance.workspace.subscribe(() => { throw new Error('throwing feed observer') })
+    instance.workspace.subscribe(delivered)
+    const revision = instance.workspace.revision
+
+    const change = await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'observer-isolation',
+      expectedRevision: revision,
+      origin: { kind: 'external-authority', source: 'external-provider' },
+      operations: [{ op: 'rename', from: '/workspace/main.cpp', to: '/workspace/renamed.cpp' }],
+    })
+
+    expect(instance.workspace.revision).toBe(revision + 1)
+    expect(instance.workspace.snapshot()).toEqual({
+      '/workspace/other.cpp': 'other\n',
+      '/workspace/renamed.cpp': 'old\n',
+    })
+    expect(instance.debugStore.getState().breakpoints['/workspace/renamed.cpp']).toEqual([3])
+    expect(instance.editorStore.getState().openFiles).toContain('/workspace/renamed.cpp')
+    expect(delivered).toHaveBeenCalledExactlyOnceWith(change)
+    expect(warnings).toHaveBeenCalled()
+    unsubscribers.forEach((unsubscribe) => unsubscribe())
+    warnings.mockRestore()
+  })
+
+  it('rejects store-observer mutation reentry before publishing the atomic commit', async () => {
+    const instance = await initialized({ '/workspace/main.cpp': 'old\n' })
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const feed = vi.fn()
+    let attempted = false
+    const unsubscribeStore = instance.editorStore.subscribe(() => {
+      if (attempted) return
+      attempted = true
+      instance.workspace.writeLocal('/workspace/main.cpp', 'reentered\n')
+    })
+    instance.workspace.subscribe(feed)
+    const revision = instance.workspace.revision
+
+    const change = instance.workspace.writeLocal('/workspace/main.cpp', 'accepted\n')
+
+    expect(attempted).toBe(true)
+    expect(instance.workspace.readFile('/workspace/main.cpp')).toBe('accepted\n')
+    expect(instance.workspace.revision).toBe(revision + 1)
+    expect(feed).toHaveBeenCalledExactlyOnceWith(change)
+    expect(warnings).toHaveBeenCalledWith(
+      '[web-ide] workbench store observer failed',
+      expect.objectContaining({ code: 'revision_mismatch' }),
+    )
+    unsubscribeStore()
+    warnings.mockRestore()
+  })
+
   it('treats a StrictMode-style identical initialization replay as one bootstrap', async () => {
     const instance = createWorkbenchInstance()
     const listener = vi.fn()
@@ -156,6 +245,39 @@ describe('instance-owned workspace controller', () => {
       operations: [{ op: 'delete', path: '/workspace/program.cpp' }],
     })
     expect(instance.debugStore.getState().breakpoints).toEqual({})
+  })
+
+  it('derives directories from files and lowers directory rename/delete atomically', async () => {
+    const instance = await initialized({
+      '/workspace/source/a.cpp': 'a\n',
+      '/workspace/source/nested/b.h': 'b\n',
+      '/workspace/keep.cpp': 'keep\n',
+    })
+    const listener = vi.fn()
+    instance.workspace.subscribe(listener)
+
+    expect(() => instance.workspace.createFolderLocal('/workspace/empty'))
+      .toThrow(/derived from text files/)
+    const renameRevision = instance.workspace.revision
+    const renamed = instance.workspace.renameLocal('/workspace/source', '/workspace/lib')
+    expect(renamed).toMatchObject({
+      revision: renameRevision + 1,
+      operations: [
+        { op: 'rename', from: '/workspace/source/a.cpp', to: '/workspace/lib/a.cpp' },
+        { op: 'rename', from: '/workspace/source/nested/b.h', to: '/workspace/lib/nested/b.h' },
+      ],
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(Object.keys(instance.workspace.snapshot())).not.toContain('/workspace/lib')
+
+    const deleteRevision = instance.workspace.revision
+    const deleted = instance.workspace.deleteLocal('/workspace/lib')
+    expect(deleted).toMatchObject({ revision: deleteRevision + 1 })
+    expect(deleted?.operations).toHaveLength(2)
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(instance.workspace.snapshot()).toEqual({ '/workspace/keep.cpp': 'keep\n' })
+    expect(instance.workspace.deleteLocal('/workspace/empty')).toBeUndefined()
+    expect(instance.workspace.renameLocal('/workspace/empty', '/workspace/new')).toBeUndefined()
   })
 
   it('blocks local read-only mutations but accepts authoritative external updates', async () => {
@@ -271,5 +393,43 @@ describe('instance-owned workspace controller', () => {
     })
     await expect(instance.workspace.applyExternal(accessorTransaction)).rejects.toThrow(/data property/)
     expect(sourceGetter).not.toHaveBeenCalled()
+
+    const unauthorizedWithGetter = base()
+    unauthorizedWithGetter.origin.kind = 'local-user' as 'external-authority'
+    const operationGetter = vi.fn(() => 'new\n')
+    Object.defineProperty(unauthorizedWithGetter.operations[0], 'text', {
+      enumerable: true,
+      get: operationGetter,
+    })
+    await expect(instance.workspace.applyExternal(unauthorizedWithGetter)).rejects.toThrow(/data property/)
+    expect(operationGetter).not.toHaveBeenCalled()
+
+    let propertyReads = 0
+    const proxied = new Proxy(base(), {
+      get() {
+        propertyReads += 1
+        throw new Error('untrusted get trap was invoked')
+      },
+    })
+    await expect(instance.workspace.applyExternal(proxied)).resolves.toMatchObject({
+      transactionId: 'invalid-json-shape',
+      origin: { kind: 'external-authority' },
+    })
+    expect(propertyReads).toBe(0)
+
+    const nestedBase = base()
+    let nestedPropertyReads = 0
+    nestedBase.operations = new Proxy(nestedBase.operations, {
+      get() {
+        nestedPropertyReads += 1
+        throw new Error('nested untrusted get trap was invoked')
+      },
+    })
+    await expect(instance.workspace.applyExternal({
+      ...nestedBase,
+      transactionId: 'nested-proxy-shape',
+      expectedRevision: instance.workspace.revision,
+    })).resolves.toMatchObject({ transactionId: 'nested-proxy-shape' })
+    expect(nestedPropertyReads).toBe(0)
   })
 })
