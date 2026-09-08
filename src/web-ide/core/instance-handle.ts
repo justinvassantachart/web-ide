@@ -8,6 +8,7 @@ import {
   type PanelLayoutController,
 } from './panel-layout'
 import type { WorkbenchInstance } from '../react/workbench-instance-context'
+import { normalizePublicWorkspacePath } from './workspace-controller'
 
 function snapshot(
   panelLayout: PanelLayoutController,
@@ -109,12 +110,30 @@ export function createWebIDEInstanceController(
       return workspaceLifecycle?.close(persistedFiles()) ?? Promise.resolve()
     },
     ensureFilesOpen(paths, primaryPath) {
+      let canonicalPaths: string[]
+      let canonicalPrimary: string | undefined
+      try {
+        canonicalPaths = [...new Set(paths.map(normalizePublicWorkspacePath))]
+      } catch {
+        return false
+      }
+      try {
+        canonicalPrimary = primaryPath === undefined
+          ? undefined
+          : normalizePublicWorkspacePath(primaryPath)
+      } catch {
+        // Preserve the original optional-primary behavior: an invalid primary
+        // that is not one of the requested files is ignored, never stored.
+        canonicalPrimary = undefined
+      }
       const exists = (path: string) => instance.workspace.fileExists(path)
       const read = (path: string) => instance.workspace.readFile(path)
-      if (!paths.every(exists)) return false
-      const primary = primaryPath && paths.includes(primaryPath) ? primaryPath : undefined
+      if (!canonicalPaths.every(exists)) return false
+      const primary = canonicalPrimary && canonicalPaths.includes(canonicalPrimary)
+        ? canonicalPrimary
+        : undefined
       const ordered = [
-        ...paths.filter((path) => path !== primary).sort(),
+        ...canonicalPaths.filter((path) => path !== primary).sort(),
         ...(primary ? [primary] : []),
       ]
       for (const path of ordered) {

@@ -125,6 +125,7 @@ function WorkspacePersistenceBinding({
 
   useLayoutEffect(() => {
     let binding = persistenceBinding.current
+    let requiresSeed = false
     if (
       binding?.workspaceId === workspaceId &&
       binding.persistence === persistence
@@ -171,13 +172,7 @@ function WorkspacePersistenceBinding({
       }
       binding = nextBinding
       persistenceBinding.current = binding
-      // This component cannot mount until initialization completed, so both a
-      // first adapter and a same-identity replacement are seeded only from the
-      // exact current namespace. No pre-hydration or prior-identity snapshot
-      // can enter this coordinator.
-      binding.coordinator.scheduleSave(
-        projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
-      )
+      requiresSeed = true
     }
 
     const currentBinding = binding
@@ -190,6 +185,14 @@ function WorkspacePersistenceBinding({
         projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
       ),
     )
+    // Attach both public lifecycle and the change feed before scheduleSave can
+    // synchronously publish `saving`. A status observer may apply an external
+    // transaction reentrantly; that newer snapshot must supersede this seed.
+    if (requiresSeed) {
+      currentBinding.coordinator.scheduleSave(
+        projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
+      )
+    }
 
     return () => {
       unsubscribe()

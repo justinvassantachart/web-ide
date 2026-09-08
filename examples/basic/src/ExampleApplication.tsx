@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   WebIDE,
   WebIDEHostProvider,
@@ -12,14 +12,28 @@ export function ExampleApplication({
   host,
   lifecycleEvents,
   showLifecycleProbe,
+  exposeWorkspaceProbe,
 }: {
   configuration: WebIDEConfiguration
   host: WebIDEHost
   lifecycleEvents: string[]
   showLifecycleProbe: boolean
+  exposeWorkspaceProbe: boolean
 }) {
   const instanceRef = useRef<WebIDEInstanceHandle>(null)
   const [lifecycleStatus, setLifecycleStatus] = useState('Ready for host inspection')
+
+  useEffect(() => {
+    if (!exposeWorkspaceProbe) return
+    const scope = window as typeof window & {
+      __webIDEWorkspaceProbe?: { handle(): WebIDEInstanceHandle | null }
+    }
+    const probe = { handle: () => instanceRef.current }
+    scope.__webIDEWorkspaceProbe = probe
+    return () => {
+      if (scope.__webIDEWorkspaceProbe === probe) delete scope.__webIDEWorkspaceProbe
+    }
+  }, [exposeWorkspaceProbe])
 
   const inspectPersistedFiles = () => {
     const files = instanceRef.current?.persistedFiles() ?? {}

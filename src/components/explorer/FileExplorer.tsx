@@ -9,6 +9,7 @@ import {
     useWorkbenchInstance,
 } from '@/web-ide/react/workbench-instance-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
+import { normalizePublicWorkspacePath } from '@/web-ide/core/workspace-controller'
 import { getFileIconUrl, getFolderIconUrl } from '@/lib/vscode-icons'
 import './explorer.css'
 
@@ -286,14 +287,14 @@ export function FileExplorer() {
     const handleRename = useCallback((node: VFSNode, name: string) => {
         if (readOnly) return
         const parent = node.path.substring(0, node.path.lastIndexOf('/'))
-        const newPath = `${parent}/${name}`
-        if (newPath !== node.path && !instance.workspace.fileExists(newPath)) {
-            try {
+        try {
+            const newPath = normalizePublicWorkspacePath(`${parent}/${name}`)
+            if (newPath !== node.path && !instance.workspace.fileExists(newPath)) {
                 instance.workspace.renameLocal(node.path, newPath)
                 host?.events?.emit('file_rename', { from: node.path, to: newPath })
-            } catch (error) {
-                console.warn('[web-ide] local workspace rename rejected', error)
             }
+        } catch (error) {
+            console.warn('[web-ide] local workspace rename rejected', error)
         }
         setRenamingPath(null)
     }, [host, instance, readOnly])
@@ -311,15 +312,15 @@ export function FileExplorer() {
     const handleCreate = useCallback((parent: string, name: string) => {
         if (readOnly) return
         const base = parent || ROOT
-        const newPath = `${base}/${name}`
-        if (!instance.workspace.fileExists(newPath)) {
-            try {
+        try {
+            const newPath = normalizePublicWorkspacePath(`${base}/${name}`)
+            if (!instance.workspace.fileExists(newPath)) {
                 instance.workspace.createFileLocal(newPath, '')
                 host?.events?.emit('file_create', { path: newPath, kind: 'file' })
                 setActiveFile(newPath, '')
-            } catch (error) {
-                console.warn('[web-ide] local workspace create rejected', error)
             }
+        } catch (error) {
+            console.warn('[web-ide] local workspace create rejected', error)
         }
         if (parent) expandDir(parent)
         setCreating(null)

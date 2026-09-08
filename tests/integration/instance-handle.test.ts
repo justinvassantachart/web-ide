@@ -60,6 +60,25 @@ describe('public Web IDE instance facade', () => {
     expect(snapshot.workspace).toEqual(files)
   })
 
+  it('canonicalizes and deduplicates host-requested editor paths', () => {
+    const decomposed = '/workspace/cafe\u0301.cpp'
+    const canonical = '/workspace/caf\u00e9.cpp'
+    workbench.workspace.createFileLocal(decomposed, 'accented\n')
+    workbench.editorStore.setState({ activeFile: null, activeFileContent: '', openFiles: [] })
+
+    expect(webIDEInstanceHandle.ensureFilesOpen(
+      [decomposed, canonical],
+      decomposed,
+    )).toBe(true)
+
+    expect(webIDEInstanceHandle.snapshot().editor).toEqual({
+      activeFile: canonical,
+      openFiles: [canonical],
+    })
+    expect(webIDEInstanceHandle.snapshot().workspace).toHaveProperty(canonical, 'accented\n')
+    expect(webIDEInstanceHandle.snapshot().workspace).not.toHaveProperty(decomposed)
+  })
+
   it('combines observable changes and provides intent-level reset actions', () => {
     const listener = vi.fn()
     const unsubscribe = webIDEInstanceHandle.subscribe(listener)

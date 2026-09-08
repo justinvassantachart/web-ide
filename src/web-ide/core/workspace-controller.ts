@@ -30,6 +30,11 @@ const MAX_TEXT_LENGTH = 2_097_152
 const WORKSPACE_PREFIX = '/workspace/'
 const LOCAL_WRITE_DELAY_MS = 500
 
+interface PersistenceOperation {
+  path: string
+  settled: Promise<void>
+}
+
 let instanceSequence = 0
 
 function exceedsCodePointLimit(value: string, limit: number): boolean {
@@ -246,7 +251,7 @@ export class WorkspaceController {
   private readonly statusListeners = new Set<(status: WorkspacePersistenceStatus) => void>()
   private readonly pendingWrites = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly inFlightWrites = new Set<Promise<void>>()
-  private readonly persistencePathQueues = new Map<string, Promise<void>>()
+  private readonly persistenceOperations = new Set<PersistenceOperation>()
   private externalSavingCount = 0
   private persistenceIssue: WorkspacePersistenceStatus | undefined
   private persistenceStatus: WorkspacePersistenceStatus = Object.freeze({ state: 'saved' })
@@ -529,6 +534,7 @@ export class WorkspaceController {
     transaction: WorkspaceApplyTransactionV1,
   ): Promise<WorkspaceChangeV1> {
     this.assertLive()
+    const lifecycleGeneration = this.initializationGeneration
     if (transaction.expectedRevision !== this.revisionValue) {
       throw new WorkspaceTransactionError('revision_mismatch', `expected revision ${transaction.expectedRevision}, current revision ${this.revisionValue}`)
     }
@@ -541,10 +547,16 @@ export class WorkspaceController {
       if (!('expectedSha256' in operation) || operation.expectedSha256 === undefined) continue
       const sourcePath = operation.op === 'rename' ? operation.from : operation.path
       const currentText = current[sourcePath]
-      if (currentText === undefined || await sha256Hex(currentText) !== operation.expectedSha256) {
+      if (currentText === undefined) {
+        throw new WorkspaceTransactionError('digest_mismatch', `workspace digest precondition failed for ${sourcePath}`)
+      }
+      const digest = await sha256Hex(currentText)
+      this.assertLifecycleGeneration(lifecycleGeneration)
+      if (digest !== operation.expectedSha256) {
         throw new WorkspaceTransactionError('digest_mismatch', `workspace digest precondition failed for ${sourcePath}`)
       }
     }
+    this.assertLifecycleGeneration(lifecycleGeneration)
     if (this.revisionValue !== capturedRevision) {
       throw new WorkspaceTransactionError('revision_mismatch', 'workspace changed while transaction preconditions were evaluated')
     }
@@ -595,6 +607,7 @@ export class WorkspaceController {
     origin: WorkspaceOriginV1,
     transactionId: string,
   ): WorkspaceChangeV1 {
+    this.assertLive()
     if (this.committing) {
       throw new WorkspaceTransactionError(
         'revision_mismatch',
@@ -761,21 +774,32 @@ export class WorkspaceController {
   }
 
   private enqueuePersistence(path: string, operation: () => Promise<void>): Promise<void> {
-    // A timer may already have started when a newer transaction commits. Keep
-    // conflicting persistence ordered per path without blocking other files or
-    // another controller instance.
-    const task = (this.persistencePathQueues.get(path) ?? Promise.resolve()).then(operation)
-    const queue = task.catch(() => undefined)
-    this.persistencePathQueues.set(path, queue)
+    // OPFS file and directory handles occupy the same namespace. Keep exact,
+    // ancestor, and descendant operations ordered so a fired child write cannot
+    // race a newer file at its parent (or the inverse). Sibling and unrelated
+    // paths remain independent, as do operations owned by another controller.
+    const dependencies = [...this.persistenceOperations]
+      .filter((pending) => this.persistencePathsConflict(path, pending.path))
+      .map((pending) => pending.settled)
+    const task = Promise.all(dependencies).then(operation)
+    const pending: PersistenceOperation = {
+      path,
+      settled: task.catch(() => undefined),
+    }
+    this.persistenceOperations.add(pending)
     this.inFlightWrites.add(task)
     this.refreshPersistenceStatus()
     const settle = () => {
-      if (this.persistencePathQueues.get(path) === queue) this.persistencePathQueues.delete(path)
+      this.persistenceOperations.delete(pending)
       this.inFlightWrites.delete(task)
       this.refreshPersistenceStatus()
     }
     void task.then(settle, settle)
     return task
+  }
+
+  private persistencePathsConflict(left: string, right: string): boolean {
+    return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`)
   }
 
   private cancelScheduledWrite(path: string): boolean {
@@ -811,5 +835,15 @@ export class WorkspaceController {
 
   private assertLive(): void {
     if (this.disposed) throw new WorkspaceTransactionError('disposed', 'workspace controller is disposed')
+  }
+
+  private assertLifecycleGeneration(generation: number): void {
+    this.assertLive()
+    if (generation !== this.initializationGeneration) {
+      throw new WorkspaceTransactionError(
+        'revision_mismatch',
+        'workspace lifecycle changed while transaction preconditions were evaluated',
+      )
+    }
   }
 }

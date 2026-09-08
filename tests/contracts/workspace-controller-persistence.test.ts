@@ -83,12 +83,15 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 const instances: WorkbenchInstance[] = []
 let opfs = createOPFSHarness()
 
-async function initialized(projectId: string): Promise<WorkbenchInstance> {
+async function initialized(
+  projectId: string,
+  initialFiles: Record<string, string> = { '/workspace/main.cpp': 'initial\n' },
+): Promise<WorkbenchInstance> {
   const instance = createWorkbenchInstance()
   instances.push(instance)
   await instance.workspace.initialize({
     projectId,
-    initialFiles: { '/workspace/main.cpp': 'initial\n' },
+    initialFiles,
   })
   await instance.workspace.flushLocalPersistence()
   opfs.calls.length = 0
@@ -229,5 +232,93 @@ describe('instance-owned workspace browser-local persistence ordering', () => {
     expect(opfs.calls).toContainEqual(
       { kind: 'write', projectId, path: '/workspace/remote.h', text: '#pragma once\n' },
     )
+  })
+
+  it('serializes a fired descendant write before replacing its directory with a file', async () => {
+    vi.useFakeTimers()
+    const projectId = 'descendant-to-file-ordering'
+    const childPath = '/workspace/node/child.cpp'
+    const instance = await initialized(projectId, { [childPath]: 'initial child\n' })
+    const stalledChildWrite = deferred()
+    opfs.writeBarriers.push(stalledChildWrite.promise)
+
+    instance.workspace.writeLocal(childPath, 'typed child\n')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(opfs.calls).toEqual([
+      { kind: 'write', projectId, path: childPath, text: 'typed child\n' },
+    ])
+
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'descendant-to-file-after-fired-write',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-provider' },
+      operations: [
+        { op: 'delete', path: childPath },
+        { op: 'create', path: '/workspace/node', text: 'authoritative file\n' },
+        { op: 'create', path: '/workspace/unrelated.cpp', text: 'parallel\n' },
+      ],
+    })
+    await vi.waitFor(() => expect(opfs.calls).toContainEqual({
+      kind: 'write', projectId, path: '/workspace/unrelated.cpp', text: 'parallel\n',
+    }))
+
+    // The unrelated write starts, while both hierarchy-conflicting operations
+    // remain behind the already-fired child write.
+    expect(opfs.calls.some((call) => call.kind === 'delete' && call.path === childPath)).toBe(false)
+    expect(opfs.calls.some((call) => call.kind === 'write' && call.path === '/workspace/node')).toBe(false)
+
+    stalledChildWrite.resolve()
+    await instance.workspace.flushLocalPersistence()
+
+    expect(opfs.calls.filter((call) => call.path === childPath || call.path === '/workspace/node')).toEqual([
+      { kind: 'write', projectId, path: childPath, text: 'typed child\n' },
+      { kind: 'delete', projectId, path: childPath },
+      { kind: 'write', projectId, path: '/workspace/node', text: 'authoritative file\n' },
+    ])
+    expect(persisted(projectId)).toEqual(instance.workspace.snapshot())
+  })
+
+  it('serializes a fired ancestor write before replacing the file with a descendant', async () => {
+    vi.useFakeTimers()
+    const projectId = 'file-to-descendant-ordering'
+    const parentPath = '/workspace/node'
+    const childPath = '/workspace/node/child.cpp'
+    const instance = await initialized(projectId, { [parentPath]: 'initial file\n' })
+    const stalledParentWrite = deferred()
+    opfs.writeBarriers.push(stalledParentWrite.promise)
+
+    instance.workspace.writeLocal(parentPath, 'typed file\n')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(opfs.calls).toEqual([
+      { kind: 'write', projectId, path: parentPath, text: 'typed file\n' },
+    ])
+
+    await instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'file-to-descendant-after-fired-write',
+      expectedRevision: instance.workspace.revision,
+      origin: { kind: 'external-authority', source: 'remote-provider' },
+      operations: [
+        { op: 'delete', path: parentPath },
+        { op: 'create', path: childPath, text: 'authoritative child\n' },
+      ],
+    })
+    for (let index = 0; index < 10; index += 1) await Promise.resolve()
+
+    expect(opfs.calls.some((call) => call.kind === 'delete' && call.path === parentPath)).toBe(false)
+    expect(opfs.calls.some((call) => call.kind === 'write' && call.path === childPath)).toBe(false)
+
+    stalledParentWrite.resolve()
+    await instance.workspace.flushLocalPersistence()
+
+    expect(opfs.calls.filter((call) => call.path === parentPath || call.path === childPath)).toEqual([
+      { kind: 'write', projectId, path: parentPath, text: 'typed file\n' },
+      { kind: 'delete', projectId, path: parentPath },
+      { kind: 'write', projectId, path: childPath, text: 'authoritative child\n' },
+    ])
+    expect(persisted(projectId)).toEqual(instance.workspace.snapshot())
   })
 })

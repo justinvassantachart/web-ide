@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { createWorkbenchInstance } from '../../src/web-ide/react/workbench-instance-context'
 import { WorkspaceTransactionError } from '../../src/web-ide/core/workspace-controller'
 import type { WorkspaceMutationRequest } from '../../src/web-ide/contracts/workspace'
+import { sha256Hex } from '../../src/web-ide/public/canonical-contract'
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void
+  const promise = new Promise<Value>((accept) => { resolve = accept })
+  return { promise, resolve }
+}
 
 async function initialized(files: Record<string, string>) {
   const instance = createWorkbenchInstance()
@@ -511,5 +518,48 @@ describe('instance-owned workspace controller', () => {
     expect(instance.workspace.readFile('/workspace/main.cpp')).toBe('old\n')
     expect(instance.workspace.revision).toBe(revision)
     expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('cannot resume a digest-bearing external transaction after disposal', async () => {
+    const instance = await initialized({ '/workspace/main.cpp': 'old\n' })
+    const expectedSha256 = await sha256Hex('old\n')
+    const digestBytes = Uint8Array.from(
+      expectedSha256.match(/../g)!.map((pair) => Number.parseInt(pair, 16)),
+    ).buffer
+    const digestStarted = deferred<void>()
+    const releaseDigest = deferred<void>()
+    const digest = vi.spyOn(globalThis.crypto.subtle, 'digest').mockImplementation(async () => {
+      digestStarted.resolve()
+      await releaseDigest.promise
+      return digestBytes
+    })
+    const before = instance.workspace.snapshot()
+    const revision = instance.workspace.revision
+    const listener = vi.fn()
+    instance.workspace.subscribe(listener)
+
+    const application = instance.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'dispose-during-digest',
+      expectedRevision: revision,
+      origin: { kind: 'external-authority', source: 'external-provider' },
+      operations: [{
+        op: 'write',
+        path: '/workspace/main.cpp',
+        text: 'must-not-commit\n',
+        expectedSha256,
+      }],
+    })
+    await digestStarted.promise
+
+    instance.workspace.dispose()
+    releaseDigest.resolve()
+
+    await expect(application).rejects.toMatchObject({ code: 'disposed' })
+    expect(instance.workspace.snapshot()).toEqual(before)
+    expect(instance.workspace.revision).toBe(revision)
+    expect(listener).not.toHaveBeenCalled()
+    digest.mockRestore()
   })
 })

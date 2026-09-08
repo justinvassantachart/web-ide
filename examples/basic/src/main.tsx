@@ -25,6 +25,7 @@ const useFailingPythonTest = searchParams.get('tests') === 'failing'
 const useExecutionOnlyResource = searchParams.get('resources') === 'execution-only'
 const showLifecycleProbe = searchParams.get('lifecycle') === 'probe'
 const showExecutionSourceProbe = searchParams.get('source') === 'probe'
+const showOPFSHierarchyProbe = searchParams.get('workspace-probe') === 'opfs-hierarchy'
 const layoutMode = searchParams.get('layout') as LayoutBrowserMode | null
 
 const executionOnlyResourcePlugin: IDEPlugin = {
@@ -82,8 +83,10 @@ const configuration: WebIDEConfiguration = useCppRuntime
       ],
     }
 
-const initialFiles: WorkspaceFiles = useCppRuntime
-  ? {
+const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
+  ? { '/workspace/node/child.cpp': 'initial child\n' }
+  : useCppRuntime
+    ? {
       '/workspace/main.cpp': [
         '#include <iostream>',
         '',
@@ -147,8 +150,10 @@ const initialFiles: WorkspaceFiles = useCppRuntime
             ].join('\n'),
       }
 
-const workspaceId = useCppRuntime
-  ? 'basic-example-cpp-v1'
+const workspaceId = showOPFSHierarchyProbe
+  ? 'browser-opfs-hierarchy-v1'
+  : useCppRuntime
+    ? 'basic-example-cpp-v1'
     : showExecutionSourceProbe
       ? 'basic-example-python-execution-source-v1'
       : useFailingPythonTest
@@ -175,7 +180,7 @@ const lifecyclePersistence: IDEWorkspacePersistence = {
 const host: WebIDEHost = {
   workspace: {
     id: workspaceId,
-    localCache: 'memory',
+    localCache: showOPFSHierarchyProbe ? 'opfs' : 'memory',
     initialFiles,
     ...(showLifecycleProbe ? { persistence: lifecyclePersistence } : {}),
   },
@@ -203,6 +208,7 @@ createRoot(document.getElementById('root')!).render(
             host={host}
             lifecycleEvents={lifecycleEvents}
             showLifecycleProbe={showLifecycleProbe}
+            exposeWorkspaceProbe={showOPFSHierarchyProbe}
           />
         )}
   </StrictMode>,

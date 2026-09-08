@@ -7,6 +7,13 @@ async function getProjectDir(projectId: string): Promise<FileSystemDirectoryHand
     return projects.getDirectoryHandle(projectId, { create: true })
 }
 
+function isTypeMismatch(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'name' in error
+        && error.name === 'TypeMismatchError'
+}
+
 /** Reads one project's text snapshot without mutating the legacy global VFS. */
 export async function readWorkspaceFromOPFS(projectId: string): Promise<Record<string, string>> {
     if (!projectId) return {}
@@ -43,9 +50,22 @@ export async function syncToOPFS(projectId: string, path: string, content: strin
         const parts = path.replace('/workspace/', '').split('/')
         let dir = projectDir
         for (let i = 0; i < parts.length - 1; i++) {
-            dir = await dir.getDirectoryHandle(parts[i], { create: true })
+            try {
+                dir = await dir.getDirectoryHandle(parts[i], { create: true })
+            } catch (error) {
+                if (!isTypeMismatch(error)) throw error
+                await dir.removeEntry(parts[i], { recursive: true })
+                dir = await dir.getDirectoryHandle(parts[i], { create: true })
+            }
         }
-        const handle = await dir.getFileHandle(parts[parts.length - 1], { create: true })
+        let handle: FileSystemFileHandle
+        try {
+            handle = await dir.getFileHandle(parts[parts.length - 1], { create: true })
+        } catch (error) {
+            if (!isTypeMismatch(error)) throw error
+            await dir.removeEntry(parts[parts.length - 1], { recursive: true })
+            handle = await dir.getFileHandle(parts[parts.length - 1], { create: true })
+        }
         const writable = await handle.createWritable()
         await writable.write(content)
         await writable.close()

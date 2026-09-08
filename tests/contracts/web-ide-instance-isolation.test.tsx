@@ -23,6 +23,7 @@ import { useWebIDEHost } from '../../src/web-ide/react/host-context'
 import { createCppClangdProvider } from '../../src/clangd/plugin'
 import type { CppCompileProfileV1 } from '../../src/web-ide/contracts/cpp'
 import { testingPlugin } from '../../src/web-ide/plugins/testing'
+import { coreWorkbenchPlugin } from '../../src/web-ide/plugins/core-workbench'
 import {
   bootstrapWorkspace as bootstrapLegacyWorkspace,
   getAllFiles as getLegacyWorkspaceFiles,
@@ -851,6 +852,158 @@ describe('same-realm WebIDE instance isolation', () => {
       expect.anything(),
     )
     warnings.mockRestore()
+  })
+
+  it('subscribes a replacement adapter before a saving observer applies a newer snapshot', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+      .IS_REACT_ACT_ENVIRONMENT = true
+    const config = configuration(createRuntimeProvider(vi.fn()))
+    const oldPersistence = { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() }
+    const replacementPersistence = { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() }
+    const instanceRef = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+
+    await act(async () => {
+      root?.render(
+        <WebIDEHostMount
+          configuration={config}
+          host={host('replacement-reentry', 'seed snapshot\n', oldPersistence)}
+          instanceRef={instanceRef}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await vi.waitFor(() => expect(instanceRef.current).not.toBeNull())
+    })
+    await act(async () => instanceRef.current!.flushWorkspace())
+    expect(instanceRef.current!.persistence.snapshot().state).toBe('saved')
+
+    let replacementStarted = false
+    let reentrantApplication: Promise<unknown> | undefined
+    const unsubscribe = instanceRef.current!.persistence.subscribe((status) => {
+      if (!replacementStarted || status.state !== 'saving' || reentrantApplication) return
+      reentrantApplication = instanceRef.current!.workspace.apply({
+        version: 1,
+        kind: 'apply',
+        transactionId: 'replacement-saving-reentry',
+        expectedRevision: instanceRef.current!.workspace.revision(),
+        origin: { kind: 'external-authority', source: 'remote-provider' },
+        operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'newer snapshot\n' }],
+      })
+    })
+
+    vi.useFakeTimers()
+    replacementStarted = true
+    await act(async () => {
+      root?.render(
+        <WebIDEHostMount
+          configuration={config}
+          host={host('replacement-reentry', 'seed snapshot\n', replacementPersistence)}
+          instanceRef={instanceRef}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(reentrantApplication).toBeDefined()
+    await act(async () => {
+      await reentrantApplication
+      await vi.advanceTimersByTimeAsync(2000)
+      await Promise.resolve()
+    })
+    vi.useRealTimers()
+
+    expect(instanceRef.current!.workspace.snapshot()['/workspace/main.cpp']).toBe('newer snapshot\n')
+    expect(replacementPersistence.save).toHaveBeenCalledTimes(1)
+    expect(replacementPersistence.save).toHaveBeenCalledWith(
+      {
+        '/workspace/main.cpp': 'newer snapshot\n',
+        '/workspace/z-inactive.h': 'replacement-reentry inactive\n',
+      },
+      expect.objectContaining({ workspaceId: 'replacement-reentry', reason: 'change' }),
+    )
+    unsubscribe()
+  })
+
+  it('keeps Explorer-created and renamed aliases canonical in callbacks and editor state', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+      .IS_REACT_ACT_ENVIRONMENT = true
+    const runtime = createRuntimeProvider(vi.fn())
+    const base = configuration(runtime)
+    const config: WebIDEConfiguration = {
+      ...base,
+      initialLayout: { ...base.initialLayout, selectedActivityId: 'workbench.files' },
+      plugins: [...base.plugins, coreWorkbenchPlugin],
+    }
+    const persistence = { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() }
+    const explorerHost = host('canonical-explorer', 'main\n', persistence)
+    const emit = explorerHost.events!.emit as ReturnType<typeof vi.fn>
+    const instanceRef = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+
+    await act(async () => {
+      root?.render(
+        <WebIDEHostMount
+          configuration={config}
+          host={explorerHost}
+          instanceRef={instanceRef}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(instanceRef.current).not.toBeNull()
+        expect(mountedContainer?.querySelector('[title="New File…"]')).not.toBeNull()
+      })
+    })
+
+    await act(async () => {
+      mountedContainer!.querySelector<HTMLButtonElement>('[title="New File…"]')!.click()
+    })
+    let input = mountedContainer!.querySelector<HTMLInputElement>('.vsx-input')!
+    const setInputValue = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )!.set!
+    await act(async () => {
+      setInputValue.call(input, 'cafe\u0301.cpp')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+
+    const created = '/workspace/caf\u00e9.cpp'
+    expect(instanceRef.current!.workspace.snapshot()).toHaveProperty(created, '')
+    expect(instanceRef.current!.snapshot().editor.activeFile).toBe(created)
+    expect(emit).toHaveBeenCalledWith('file_create', { path: created, kind: 'file' })
+
+    const createdRow = [...mountedContainer!.querySelectorAll<HTMLElement>('.vsx-row')]
+      .find((row) => row.querySelector('.vsx-label')?.textContent === 'café.cpp')!
+    await act(async () => createdRow.click())
+    await act(async () => {
+      mountedContainer!.querySelector<HTMLElement>('.vsx-tree')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }))
+    })
+    input = createdRow.querySelector<HTMLInputElement>('.vsx-input')!
+    await act(async () => {
+      setInputValue.call(input, 'resume\u0301.cpp')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+
+    const renamed = '/workspace/resum\u00e9.cpp'
+    expect(instanceRef.current!.workspace.snapshot()).toHaveProperty(renamed, '')
+    expect(instanceRef.current!.snapshot().editor.activeFile).toBe(renamed)
+    expect(instanceRef.current!.snapshot().editor.openFiles).toContain(renamed)
+    expect(instanceRef.current!.snapshot().editor.openFiles.every(
+      (path) => path === path.normalize('NFC'),
+    )).toBe(true)
+    expect(emit).toHaveBeenCalledWith('file_rename', { from: created, to: renamed })
   })
 
   it('recreates instance resources before a delayed workspace identity can bind persistence', async () => {
