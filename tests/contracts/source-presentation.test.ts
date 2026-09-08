@@ -129,6 +129,31 @@ describe('SourcePresentationController', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('accepts 1,024-code-point source paths and rejects 1,025 before publication', () => {
+    const fileAtLimit = `/workspace/${'s'.repeat(1024 - '/workspace/'.length)}`
+    const fileOverLimit = `${fileAtLimit}s`
+    const visible = new Map([[fileAtLimit, 'visible']])
+    const onReveal = vi.fn()
+    const controller = new SourcePresentationController({
+      readVisibleSource: (path) => visible.get(path),
+      onReveal,
+    })
+    const owner = controller.createOwner()
+
+    owner.replaceDecorations([{ path: fileAtLimit, line: 1, kind: 'current' }])
+    owner.reveal({ path: fileAtLimit, line: 1 })
+    const before = controller.getSnapshot()
+    expect(onReveal).toHaveBeenCalledExactlyOnceWith({ path: fileAtLimit, line: 1 })
+
+    expect(() => owner.reveal({ path: fileOverLimit, line: 1 })).toThrow(/oversized/)
+    expect(() => owner.replaceDecorations([
+      { path: fileAtLimit, line: 1, kind: 'current' },
+      { path: fileOverLimit, line: 1, kind: 'error' },
+    ])).toThrow(/oversized/)
+    expect(onReveal).toHaveBeenCalledTimes(1)
+    expect(controller.getSnapshot()).toBe(before)
+  })
+
   it('isolates owners and controller instances without exposing owner identities', () => {
     const first = createController().controller
     const second = createController().controller

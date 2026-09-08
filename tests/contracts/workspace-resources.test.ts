@@ -10,6 +10,11 @@ import {
 } from '../../src/web-ide/core/workspace-resources'
 import { assertNoFlattenedRuntimePathCollisions } from '../../src/web-ide/core/workspace-path'
 
+const workspacePathAtLimit = `/workspace/${'w'.repeat(1024 - '/workspace/'.length)}`
+const workspacePathOverLimit = `${workspacePathAtLimit}w`
+const sysrootPathAtLimit = `/sysroot/${'s'.repeat(1024 - '/sysroot/'.length)}`
+const sysrootPathOverLimit = `${sysrootPathAtLimit}s`
+
 describe('workspace resource composition', () => {
   it('merges ordered plugin bundles and gives host-owned files final authority', () => {
     const resources: IDEWorkspaceResourceContribution[] = [
@@ -121,6 +126,34 @@ describe('workspace resource composition', () => {
     expect(executionFiles).toEqual({ '/sysroot/same.txt': 'last runtime' })
   })
 
+  it('enforces the shared 1,024-code-point path bound on static resource planes', () => {
+    const legacyWorkspaceAtLimit = workspacePathAtLimit.slice('/workspace/'.length)
+    const legacyWorkspaceOverLimit = workspacePathOverLimit.slice('/workspace/'.length)
+    const legacySysrootAtLimit = sysrootPathAtLimit.slice('/sysroot/'.length)
+    const legacySysrootOverLimit = sysrootPathOverLimit.slice('/sysroot/'.length)
+    expect(partitionWorkspaceResources([{
+      id: 'bounded-workspace',
+      files: { [legacyWorkspaceAtLimit]: 'workspace' },
+    }, {
+      id: 'bounded-runtime',
+      scope: 'execution-only',
+      files: { [legacySysrootAtLimit]: 'runtime' },
+    }])).toEqual({
+      workspaceFiles: { [workspacePathAtLimit]: 'workspace' },
+      executionFiles: { [sysrootPathAtLimit]: 'runtime' },
+    })
+
+    expect(() => partitionWorkspaceResources([{
+      id: 'oversized-workspace',
+      files: { [legacyWorkspaceOverLimit]: 'reject' },
+    }])).toThrow(/oversized/)
+    expect(() => partitionWorkspaceResources([{
+      id: 'oversized-runtime',
+      scope: 'execution-only',
+      files: { [legacySysrootOverLimit]: 'reject' },
+    }])).toThrow(/oversized/)
+  })
+
   it('resolves dynamic execution resources exactly once per run without exposing them to VFS or persistence', () => {
     let calls = 0
     let latestSource: Record<string, string> | undefined
@@ -199,6 +232,47 @@ describe('workspace resource composition', () => {
     expect(() => mergeExecutionResourceFiles(unsafePath, {})).toThrow(
       'Execution file path is not canonical',
     )
+  })
+
+  it('bounds dynamic resources and canonicalizes legacy runtime-plan files before merging', () => {
+    let acceptedCalls = 0
+    const accepted: IDEWorkspaceResourceContribution[] = [{
+      id: 'bounded-dynamic',
+      scope: 'execution-only',
+      files: () => {
+        acceptedCalls += 1
+        return {
+          [sysrootPathAtLimit.slice('/sysroot/'.length)]: 'runtime',
+        }
+      },
+    }]
+    const legacyPlanPath = workspacePathAtLimit.slice('/workspace/'.length)
+
+    expect(mergeExecutionResourceFiles(accepted, {
+      [legacyPlanPath]: 'workspace',
+    })).toEqual({
+      [workspacePathAtLimit]: 'workspace',
+      [sysrootPathAtLimit]: 'runtime',
+    })
+    expect(acceptedCalls).toBe(1)
+
+    let rejectedCalls = 0
+    expect(() => mergeExecutionResourceFiles([{
+      id: 'oversized-dynamic',
+      scope: 'execution-only',
+      files: () => {
+        rejectedCalls += 1
+        return {
+          [sysrootPathOverLimit.slice('/sysroot/'.length)]: 'reject',
+        }
+      },
+    }], { '/workspace/main.py': 'pass' })).toThrow(/oversized/)
+    expect(rejectedCalls).toBe(1)
+
+    expect(() => mergeExecutionResourceFiles(accepted, {
+      [workspacePathOverLimit]: 'reject before callback',
+    })).toThrow(/oversized/)
+    expect(acceptedCalls).toBe(1)
   })
 
   it('rejects workspace-scoped callbacks without invoking them', () => {

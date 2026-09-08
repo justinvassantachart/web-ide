@@ -10,6 +10,7 @@ import { isTestProviderV2, prepareWorkbenchExecution } from '@/testing/test-exec
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { useIDEWorkspaceResources } from '@/web-ide/react/contribution-context'
 import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
+import { canonicalRuntimeFilePath } from '@/web-ide/core/workspace-path'
 import type { IDEExecutionController } from '@/web-ide/contracts/contributions'
 import { useRunPipelineCoordinator } from './run-pipeline-context'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
@@ -84,10 +85,15 @@ export function useRunPipeline() {
                     instance.testStore.getState().finalize()
                     return
                 }
+                // Validate the provider-owned plan fields before invoking any
+                // dynamic resource callback or mutating the selected runtime.
+                const entrypoint = plan.entrypoint === undefined
+                    ? undefined
+                    : canonicalRuntimeFilePath(plan.entrypoint)
                 const files = mergeExecutionResourceFiles(resources, plan.files)
-                if (files !== plan.files) {
-                    plan = { ...plan, files }
-                }
+                plan = entrypoint === undefined
+                    ? { ...plan, files }
+                    : { ...plan, files, entrypoint }
                 executionMode = plan.mode
                 prepared = await engine.prepare(plan)
                 if (!coordinator.isCurrent(generation)) {

@@ -965,7 +965,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     engineCreate.mockResolvedValueOnce(firstEngine).mockResolvedValueOnce(secondEngine)
 
     await expect(first.replaceBreakpointOverlay!(owner, {
-      [`/workspace/${'界'.repeat(1_200)}.py`]: [1],
+      [`/workspace/${'\u{10000}'.repeat(900)}.py`]: [1],
     })).rejects.toThrow(/accepts at most 3500/)
     await first.replaceBreakpointOverlay!(owner, { '/workspace/main.py': [2] })
     for (const invalidPath of [
@@ -977,7 +977,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     ]) {
       await expect(first.replaceBreakpointOverlay!(owner, {
         [invalidPath]: [1],
-      })).rejects.toThrow(/Breakpoint overlay|Workspace file path/u)
+      })).rejects.toThrow(/Breakpoint (?:overlay|path)|Workspace file path/u)
     }
     await Promise.all([
       first.prepare({
@@ -1015,6 +1015,56 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     await Promise.all([firstRun, secondRun])
   })
 
+  it('accepts 1,024-code-point breakpoint paths and rejects 1,025 atomically', async () => {
+    const engine = new FakeEngine()
+    const adapter = pythonRuntimeProvider.createSession()
+    const owner = {}
+    const fileAtLimit = `/workspace/${'b'.repeat(1010)}.py`
+    const fileOverLimit = `/workspace/${'b'.repeat(1011)}.py`
+    sessions.push(adapter)
+    engineCreate.mockResolvedValueOnce(engine)
+
+    expect([...fileAtLimit]).toHaveLength(1024)
+    expect([...fileOverLimit]).toHaveLength(1025)
+    await adapter.setBreakpoints(fileAtLimit, [2])
+    await adapter.setBreakpoints('/workspace/cafe\u0301.py', [6])
+    await adapter.setBreakpoints('/workspace/caf\u00e9.py', [7])
+    await adapter.replaceBreakpointOverlay!(owner, { [fileAtLimit]: [3] })
+    await expect(adapter.setBreakpoints(fileOverLimit, [4])).rejects.toThrow(/oversized/)
+    await expect(adapter.setBreakpoints('/sysroot/private.py', [4])).rejects.toThrow(
+      /below \/workspace/,
+    )
+    await expect(adapter.replaceBreakpointOverlay!(owner, {
+      [fileOverLimit]: [5],
+    })).rejects.toThrow(/oversized/)
+    await expect(adapter.replaceBreakpointOverlay!(owner, {
+      '/workspace/cafe\u0301.py': [8],
+    })).rejects.toThrow(/canonical/)
+
+    await adapter.prepare({
+      files: { '/workspace/main.py': 'print("bounded")' },
+      mode: 'debug',
+      entrypoint: '/workspace/main.py',
+    })
+    const running = adapter.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.debugger.emit('initialized')
+    await vi.waitFor(() => expect(commands(engine, 'configurationDone')).toHaveLength(1))
+    expect(commands(engine, 'setBreakpoints').map(({ arguments: args }) => args)).toEqual([
+      {
+        source: { path: fileAtLimit.slice('/workspace'.length) },
+        breakpoints: [{ line: 2 }, { line: 3 }],
+      },
+      {
+        source: { path: '/caf\u00e9.py' },
+        breakpoints: [{ line: 7 }],
+      },
+    ])
+
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+  })
+
   it('rejects an over-quota editor-plus-multiple-owner aggregate atomically', async () => {
     const engine = new FakeEngine()
     const adapter = pythonRuntimeProvider.createSession()
@@ -1022,7 +1072,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     const ownerB = {}
     const editorFile = `/workspace/${'e'.repeat(1_000)}.py`
     const ownerAFile = `/workspace/${'a'.repeat(1_000)}.py`
-    const rejectedOwnerBFile = `/workspace/${'b'.repeat(1_800)}.py`
+    const rejectedOwnerBFile = `/workspace/${'\u{10000}'.repeat(700)}.py`
     sessions.push(adapter)
     engineCreate.mockResolvedValueOnce(engine)
 

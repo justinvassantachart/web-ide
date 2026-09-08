@@ -78,6 +78,12 @@ export interface RuntimeStreamInterceptor {
 }
 
 export interface RuntimeExecutionPlan {
+  /**
+   * Execution-scoped text files. Legacy relative spellings are accepted by the
+   * built-in runtime, then canonicalized under `/workspace`; explicit
+   * `/sysroot` files retain that scope. Canonical paths are NFC, traversal-free,
+   * and at most 1,024 Unicode code points including the scope prefix.
+   */
   files: WorkspaceFiles
   mode: RuntimeExecutionMode
   /**
@@ -131,7 +137,8 @@ export interface RuntimeStartRequest {
 
 /**
  * Breakpoints contributed for one transient runtime workflow. Keys are
- * workspace source paths and values are one-based source lines.
+ * workspace source paths and values are one-based source lines. Built-in
+ * sessions apply the same canonical 1,024-code-point workspace-path bound.
  */
 export type RuntimeBreakpointMap = Readonly<Record<string, readonly number[]>>
 

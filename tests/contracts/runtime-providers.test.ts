@@ -14,6 +14,9 @@ import {
 } from '../../src/runtimes/providers'
 import type { RuntimeSession } from '../../src/web-ide/contracts/runtime'
 
+const workspacePathAtLimit = `/workspace/${'w'.repeat(1024 - '/workspace/'.length)}`
+const workspacePathOverLimit = `${workspacePathAtLimit}w`
+
 interface Deferred<T> {
   promise: Promise<T>
   resolve(value: T): void
@@ -163,6 +166,54 @@ describe('built-in runtime providers', () => {
     expect(Object.getPrototypeOf(engine.fs)).toBeNull()
     expect(Object.getPrototypeOf(engine.fs.include)).toBeNull()
 
+    engine.complete()
+    await running
+  })
+
+  it('validates complete legacy plans and entrypoints at the shared path bound before state changes', async () => {
+    const engine = new FakeEngine()
+    engineCreate.mockResolvedValueOnce(engine)
+    const session = createSession(cppRuntimeProvider)
+    const clears = vi.fn()
+    const stdout = vi.fn()
+    session.events.terminalClear.subscribe(clears)
+    session.events.stdout.subscribe(stdout)
+    const legacyPathAtLimit = workspacePathAtLimit.slice('/workspace/'.length)
+
+    await expect(session.prepare({
+      files: { [legacyPathAtLimit]: 'accepted at the boundary' },
+      mode: 'run',
+      entrypoint: legacyPathAtLimit,
+    })).resolves.toEqual({ success: true, errors: [] })
+    expect(clears).toHaveBeenCalledTimes(1)
+    expect(stdout).toHaveBeenCalledTimes(1)
+
+    await expect(session.prepare({
+      files: {
+        '/workspace/replacement.cpp': 'must not replace the prepared snapshot',
+        [workspacePathOverLimit]: 'reject the complete transaction',
+      },
+      mode: 'run',
+      entrypoint: '/workspace/replacement.cpp',
+    })).resolves.toMatchObject({
+      success: false,
+      errors: [expect.stringMatching(/oversized/)],
+    })
+    await expect(session.prepare({
+      files: { [workspacePathAtLimit]: 'must not replace the prepared snapshot' },
+      mode: 'run',
+      entrypoint: workspacePathOverLimit,
+    })).resolves.toMatchObject({
+      success: false,
+      errors: [expect.stringMatching(/oversized/)],
+    })
+    expect(clears).toHaveBeenCalledTimes(1)
+    expect(stdout).toHaveBeenCalledTimes(1)
+    expect(engineCreate).not.toHaveBeenCalled()
+
+    const running = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    expect(engine.fs).toEqual({ [legacyPathAtLimit]: 'accepted at the boundary' })
     engine.complete()
     await running
   })

@@ -4,6 +4,7 @@ import {
   assertNoFlattenedRuntimePathCollisions,
   canonicalExecutionFilePath,
   canonicalWorkspaceFilePath,
+  normalizeRuntimeFiles,
 } from './workspace-path'
 
 export interface PartitionedWorkspaceResources {
@@ -48,12 +49,14 @@ function mergeResourceFileMap(
   files: WorkspaceFiles,
   canonicalize: (path: string) => string,
 ): void {
+  const validated = Object.create(null) as WorkspaceFiles
   for (const [path, content] of Object.entries(files)) {
     if (typeof content !== 'string') {
       throw new TypeError(`Workspace file content must be a string: ${JSON.stringify(path)}`)
     }
-    target[canonicalize(path)] = content
+    validated[canonicalize(path)] = content
   }
+  Object.assign(target, validated)
 }
 
 /**
@@ -154,11 +157,12 @@ export function mergeExecutionResourceFiles(
   contributions: readonly IDEWorkspaceResourceContribution[],
   planFiles: WorkspaceFiles,
 ): WorkspaceFiles {
+  const normalizedPlanFiles = normalizeRuntimeFiles(planFiles)
   const executionFiles = resolveExecutionResourceFiles(contributions)
-  if (executionFiles === undefined) return planFiles
+  if (executionFiles === undefined) return normalizedPlanFiles
 
   const overlappingPath = Object.keys(executionFiles)
-    .filter((path) => Object.hasOwn(planFiles, path))
+    .filter((path) => Object.hasOwn(normalizedPlanFiles, path))
     .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))[0]
   if (overlappingPath !== undefined) {
     throw new TypeError(
@@ -168,7 +172,7 @@ export function mergeExecutionResourceFiles(
 
   const merged = Object.assign(
     Object.create(null) as WorkspaceFiles,
-    planFiles,
+    normalizedPlanFiles,
     executionFiles,
   )
   assertNoFlattenedRuntimePathCollisions(merged)

@@ -394,6 +394,14 @@ rejects unsafe paths, non-string bytes, exact execution-plan overlap, and any
 an ownership and presentation boundary, not a confidentiality boundary:
 executing browser code may still read or print support resources.
 
+Every workspace, execution-resource, runtime-plan, entrypoint, breakpoint, and
+source-presentation path uses the same VFS limit: after NFC normalization, the
+absolute `/workspace/...` or `/sysroot/...` path may contain at most 1,024
+Unicode code points. The built-in boundaries accept legacy relative file keys,
+but validate the fully scoped path and the complete input before updating the
+VFS, runtime file tree, breakpoint model, or presentation snapshot. A path of
+exactly 1,024 code points is valid; 1,025 is rejected.
+
 ## Awaited host workspace close
 
 Attach a ref when navigation must wait for persistence:

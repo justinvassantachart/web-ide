@@ -299,6 +299,73 @@ describe('instance-scoped panel execution controller', () => {
     expect(harness.selectPanel).toHaveBeenCalledWith('tests')
   })
 
+  it('canonicalizes 1,024-code-point legacy plans before a custom runtime sees them', async () => {
+    const selectedRuntime = runtime('runtime.bounded-plan')
+    const pathAtLimit = `/workspace/${'p'.repeat(1024 - '/workspace/'.length)}`
+    const legacyPath = pathAtLimit.slice('/workspace/'.length)
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(host())
+    harness.coordinators.push(harness.createCoordinator())
+
+    const controller = useRunPipeline().execution
+    await controller.executePrepared?.({
+      plan: {
+        files: { [legacyPath]: 'bounded plan' },
+        mode: 'run',
+        entrypoint: legacyPath,
+      },
+    })
+
+    expect(selectedRuntime.prepare).toHaveBeenCalledExactlyOnceWith({
+      files: { [pathAtLimit]: 'bounded plan' },
+      mode: 'run',
+      entrypoint: pathAtLimit,
+    })
+    expect(selectedRuntime.start).toHaveBeenCalledExactlyOnceWith({ mode: 'run' })
+  })
+
+  it('rejects 1,025-code-point plans before dynamic resources or runtime mutation', async () => {
+    const selectedRuntime = runtime('runtime.rejected-bounded-plan')
+    const pathAtLimit = `/workspace/${'p'.repeat(1024 - '/workspace/'.length)}`
+    const pathOverLimit = `${pathAtLimit}p`
+    let dynamicCalls = 0
+    harness.resources.push({
+      id: 'runtime.dynamic',
+      scope: 'execution-only',
+      files: () => {
+        dynamicCalls += 1
+        return { '/support.py': 'support' }
+      },
+    })
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(host())
+    harness.coordinators.push(harness.createCoordinator())
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const controller = useRunPipeline().execution
+    await controller.executePrepared?.({
+      plan: {
+        files: { '/workspace/main.py': 'pass' },
+        mode: 'run',
+        entrypoint: pathOverLimit,
+      },
+    })
+    await controller.executePrepared?.({
+      plan: {
+        files: {
+          [pathAtLimit]: 'accepted first',
+          [pathOverLimit]: 'reject complete plan',
+        },
+        mode: 'run',
+      },
+    })
+
+    expect(dynamicCalls).toBe(0)
+    expect(selectedRuntime.prepare).not.toHaveBeenCalled()
+    expect(selectedRuntime.start).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalledTimes(2)
+  })
+
   it('contains start failures and restores an idle workbench', async () => {
     const failure = new Error('start exploded')
     const selectedRuntime = runtime('runtime.start-failure')

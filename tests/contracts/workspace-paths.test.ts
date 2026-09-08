@@ -3,10 +3,17 @@ import { describe, expect, it } from 'vitest'
 import {
   assertNoFlattenedRuntimePathCollisions,
   canonicalExecutionFilePath,
+  canonicalRuntimeFilePath,
   canonicalWorkspaceFilePath,
+  normalizeRuntimeFiles,
   normalizeWorkspaceFiles,
   runtimeRelativeFilePath,
 } from '../../src/web-ide/core/workspace-path'
+
+const workspacePathAtLimit = `/workspace/${'w'.repeat(1024 - '/workspace/'.length)}`
+const workspacePathOverLimit = `${workspacePathAtLimit}w`
+const sysrootPathAtLimit = `/sysroot/${'s'.repeat(1024 - '/sysroot/'.length)}`
+const sysrootPathOverLimit = `${sysrootPathAtLimit}s`
 
 describe('workspace path boundary', () => {
   it('canonicalizes relative and rooted host paths into /workspace', () => {
@@ -32,6 +39,30 @@ describe('workspace path boundary', () => {
     }
     expect(() => canonicalExecutionFilePath('/sysroot/bad\ud800.py')).toThrow()
     expect(() => canonicalExecutionFilePath('/sysroot/lib\\support.py')).toThrow()
+  })
+
+  it('applies the frozen post-NFC 1,024-code-point ceiling to every legacy scope', () => {
+    const legacyAtLimit = workspacePathAtLimit.slice('/workspace/'.length)
+    const normalizedAtLimit = `/workspace/${'e\u0301'.repeat(1024 - '/workspace/'.length)}`
+
+    expect([...canonicalWorkspaceFilePath(workspacePathAtLimit)]).toHaveLength(1024)
+    expect(canonicalWorkspaceFilePath(legacyAtLimit)).toBe(workspacePathAtLimit)
+    expect(canonicalRuntimeFilePath(legacyAtLimit)).toBe(workspacePathAtLimit)
+    expect(runtimeRelativeFilePath(workspacePathAtLimit)).toBe(legacyAtLimit)
+    expect([...canonicalWorkspaceFilePath(normalizedAtLimit)]).toHaveLength(1024)
+    expect(() => canonicalWorkspaceFilePath(workspacePathOverLimit)).toThrow(/oversized/)
+    expect(() => canonicalRuntimeFilePath(workspacePathOverLimit)).toThrow(/oversized/)
+    expect(() => runtimeRelativeFilePath(workspacePathOverLimit)).toThrow(/oversized/)
+
+    expect([...canonicalExecutionFilePath(sysrootPathAtLimit)]).toHaveLength(1024)
+    expect(canonicalExecutionFilePath(sysrootPathAtLimit.slice('/sysroot/'.length)))
+      .toBe(sysrootPathAtLimit)
+    expect(canonicalRuntimeFilePath(sysrootPathAtLimit)).toBe(sysrootPathAtLimit)
+    expect(() => canonicalExecutionFilePath(sysrootPathOverLimit)).toThrow(/oversized/)
+    expect(() => canonicalExecutionFilePath(
+      sysrootPathOverLimit.slice('/sysroot/'.length),
+    )).toThrow(/oversized/)
+    expect(() => canonicalRuntimeFilePath(sysrootPathOverLimit)).toThrow(/oversized/)
   })
 
   it.each([
@@ -101,5 +132,22 @@ describe('workspace path boundary', () => {
 
     expect(() => assertNoFlattenedRuntimePathCollisions(leftFirst)).toThrow(expected)
     expect(() => assertNoFlattenedRuntimePathCollisions(rightFirst)).toThrow(expected)
+  })
+
+  it('canonicalizes a complete runtime map without exposing partial or aliased keys', () => {
+    const normalized = normalizeRuntimeFiles({
+      'cafe\u0301.py': 'workspace',
+      '/sysroot/support.py': 'runtime',
+    })
+
+    expect(normalized).toEqual({
+      '/workspace/caf\u00e9.py': 'workspace',
+      '/sysroot/support.py': 'runtime',
+    })
+    expect(Object.getPrototypeOf(normalized)).toBeNull()
+    expect(() => normalizeRuntimeFiles({
+      [workspacePathAtLimit]: 'accepted first',
+      [workspacePathOverLimit]: 'reject transaction',
+    })).toThrow(/oversized/)
   })
 })

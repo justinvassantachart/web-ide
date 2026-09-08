@@ -793,15 +793,15 @@ describe('Python browser debugger contract', () => {
       session.setBreakpoints('/workspace/main.py', [2]),
     ).resolves.toBeUndefined()
 
-    const oversizedFile = `/workspace/${'界'.repeat(1_200)}.py`
-    await expect(session.setBreakpoints(oversizedFile, [1])).rejects.toThrow(
+    const overQuotaFile = `/workspace/${'\u{10000}'.repeat(900)}.py`
+    await expect(session.setBreakpoints(overQuotaFile, [1])).rejects.toThrow(
       /accepts at most 3500/,
     )
     expect(diagnostics).toEqual([
       expect.stringMatching(/Breakpoint configuration is \d+ bytes; this runtime accepts at most 3500\./),
     ])
     expect(validated).toHaveBeenCalledExactlyOnceWith({
-      file: oversizedFile,
+      file: overQuotaFile,
       lines: [],
     })
     expect(engineCreate).not.toHaveBeenCalled()

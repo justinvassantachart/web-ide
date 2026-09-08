@@ -6,8 +6,8 @@ import { EventEmitter } from '@/lib/event-emitter';
 // the user has even pressed Run. Deferring keeps page-open cost flat.
 import type { DirNode, Engine as EngineType, Lang } from 'debugger-sh';
 import {
-    assertNoFlattenedRuntimePathCollisions,
-    canonicalWorkspaceFilePath,
+    canonicalRuntimeFilePath,
+    normalizeRuntimeFiles,
     runtimeRelativeFilePath,
 } from '@/web-ide/core/workspace-path';
 import type {
@@ -110,28 +110,24 @@ function emptyDirectory(): DirNode {
     return Object.create(null) as DirNode;
 }
 
-function canonicalWorkspacePath(path: string): string {
-    if (path.startsWith('/sysroot/')) {
-        return `/sysroot/${runtimeRelativeFilePath(path)}`;
-    }
-    return `/workspace/${runtimeRelativeFilePath(path)}`;
-}
-
 function runtimeSourceKey(path: unknown): string | null {
     if (typeof path !== 'string' || path.length === 0) return null;
-    let relative = path;
-    if (relative.startsWith('file://')) relative = relative.slice('file://'.length);
-    if (relative.startsWith('/workspace/')) relative = relative.slice('/workspace/'.length);
-    else if (relative.startsWith('/sysroot/')) relative = relative.slice('/sysroot/'.length);
-    else if (relative.startsWith('/')) relative = relative.slice(1);
+    const candidate = path.startsWith('file://') ? path.slice('file://'.length) : path;
+    try {
+        return runtimeRelativeFilePath(candidate);
+    } catch {
+        return null;
+    }
+}
 
-    const segments = relative.split('/');
-    if (
-        relative.length === 0
-        || relative.includes('\0')
-        || segments.some((segment) => segment === '' || segment === '.' || segment === '..')
-    ) return null;
-    return segments.join('/');
+function canonicalBreakpointPath(path: string): string {
+    const canonical = canonicalRuntimeFilePath(path);
+    if (!canonical.startsWith('/workspace/')) {
+        throw new TypeError(
+            `Breakpoint path must resolve below /workspace: ${JSON.stringify(path)}`,
+        );
+    }
+    return canonical;
 }
 
 function buildRuntimeFileTree(files: Readonly<Record<string, string>>): DirNode {
@@ -272,7 +268,6 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private debugPaused = false;
     private breakpointsDirty = false;
     private breakpointAdapterResetPending = false;
-    private fileMap = Object.create(null) as Record<string, string>;
     private readonly runtimePathByWorkspacePath = new Map<string, string>();
     private readonly workspacePathByRuntimePath = new Map<string, string>();
     private readonly userRuntimePaths = new Set<string>();
@@ -426,6 +421,53 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 errors: [`Runtime provider "${this.id}" does not support debugging`],
             };
         }
+
+        let nextFileMap: Record<string, string>;
+        let nextRuntimeFileTree: DirNode;
+        const nextRuntimePathByWorkspacePath = new Map<string, string>();
+        const nextWorkspacePathByRuntimePath = new Map<string, string>();
+        const nextUserRuntimePaths = new Set<string>();
+        try {
+            const normalizedFiles = normalizeRuntimeFiles(files);
+            nextFileMap = Object.create(null) as Record<string, string>;
+            for (const [canonicalPath, content] of Object.entries(normalizedFiles)) {
+                const relativePath = runtimeRelativeFilePath(canonicalPath);
+                nextFileMap[relativePath] = content;
+                nextRuntimePathByWorkspacePath.set(canonicalPath, `/${relativePath}`);
+                nextWorkspacePathByRuntimePath.set(relativePath, canonicalPath);
+                if (canonicalPath.startsWith('/workspace/')) {
+                    nextUserRuntimePaths.add(relativePath);
+                }
+            }
+
+            const canonicalEntrypoint = entrypoint === undefined
+                ? undefined
+                : canonicalRuntimeFilePath(entrypoint);
+            if (canonicalEntrypoint && this.profile.defaultEntrypoint) {
+                const sourcePath = runtimeRelativeFilePath(canonicalEntrypoint);
+                const source = nextFileMap[sourcePath];
+                if (source === undefined) {
+                    throw new TypeError(`Runtime entrypoint "${entrypoint}" was not found in the workspace`);
+                }
+                if (sourcePath !== this.profile.defaultEntrypoint) {
+                    if (Object.hasOwn(nextFileMap, this.profile.defaultEntrypoint)) {
+                        throw new TypeError(
+                            `Runtime entrypoint "${entrypoint}" cannot be selected while the workspace also contains "${this.profile.defaultEntrypoint}"; stage the original file under an ephemeral path before selecting an alternate entrypoint`,
+                        );
+                    }
+                    nextFileMap[this.profile.defaultEntrypoint] =
+                        this.profile.createEntrypointLauncher?.(`/${sourcePath}`) ?? source;
+                }
+            }
+
+            nextRuntimeFileTree = buildRuntimeFileTree(nextFileMap);
+        } catch (error) {
+            return {
+                success: false,
+                errors: [error instanceof Error ? error.message : String(error)],
+            };
+        }
+
         this.flushStreamInterceptor();
         this.streamInterceptor = streamInterceptor;
         this.onClearTerminal.emit();
@@ -433,58 +475,17 @@ export class BrowserRuntimeSession implements RuntimeSession {
             'stdout',
             '\x1b[1;34mInitializing execution environment...\x1b[0m\r\n',
         );
-
-        try {
-            assertNoFlattenedRuntimePathCollisions(files);
-            this.fileMap = Object.create(null) as Record<string, string>;
-            this.runtimePathByWorkspacePath.clear();
-            this.workspacePathByRuntimePath.clear();
-            this.userRuntimePaths.clear();
-            for (const [path, content] of Object.entries(files)) {
-                if (typeof content !== 'string') {
-                    throw new TypeError(`Runtime file content must be a string: ${JSON.stringify(path)}`);
-                }
-                const relativePath = runtimeRelativeFilePath(path);
-                const workspacePath = canonicalWorkspacePath(path);
-                this.fileMap[relativePath] = content;
-                this.runtimePathByWorkspacePath.set(workspacePath, `/${relativePath}`);
-                this.workspacePathByRuntimePath.set(relativePath, workspacePath);
-                if (workspacePath.startsWith('/workspace/')) {
-                    this.userRuntimePaths.add(relativePath);
-                }
-            }
-
-            if (entrypoint && this.profile.defaultEntrypoint) {
-                const sourcePath = runtimeRelativeFilePath(entrypoint);
-                const source = this.fileMap[sourcePath];
-                if (source === undefined) {
-                    throw new TypeError(`Runtime entrypoint "${entrypoint}" was not found in the workspace`);
-                }
-                if (sourcePath !== this.profile.defaultEntrypoint) {
-                    if (Object.hasOwn(this.fileMap, this.profile.defaultEntrypoint)) {
-                        throw new TypeError(
-                            `Runtime entrypoint "${entrypoint}" cannot be selected while the workspace also contains "${this.profile.defaultEntrypoint}"; stage the original file under an ephemeral path before selecting an alternate entrypoint`,
-                        );
-                    }
-                    this.fileMap[this.profile.defaultEntrypoint] =
-                        this.profile.createEntrypointLauncher?.(`/${sourcePath}`) ?? source;
-                }
-            }
-
-            this.runtimeFileTree = buildRuntimeFileTree(this.fileMap);
-        } catch (error) {
-            this.fileMap = Object.create(null) as Record<string, string>;
-            this.runtimePathByWorkspacePath.clear();
-            this.workspacePathByRuntimePath.clear();
-            this.userRuntimePaths.clear();
-            this.runtimeFileTree = emptyDirectory();
-            this.flushStreamInterceptor();
-            return {
-                success: false,
-                errors: [error instanceof Error ? error.message : String(error)],
-            };
+        this.runtimePathByWorkspacePath.clear();
+        for (const [path, runtimePath] of nextRuntimePathByWorkspacePath) {
+            this.runtimePathByWorkspacePath.set(path, runtimePath);
         }
-
+        this.workspacePathByRuntimePath.clear();
+        for (const [runtimePath, path] of nextWorkspacePathByRuntimePath) {
+            this.workspacePathByRuntimePath.set(runtimePath, path);
+        }
+        this.userRuntimePaths.clear();
+        for (const runtimePath of nextUserRuntimePaths) this.userRuntimePaths.add(runtimePath);
+        this.runtimeFileTree = nextRuntimeFileTree;
         return { success: true, errors: [] };
     }
 
@@ -1122,14 +1123,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     private toRuntimePath(file: string): string {
-        const canonicalPath = canonicalWorkspacePath(file);
+        const canonicalPath = canonicalBreakpointPath(file);
         const mappedPath = this.runtimePathByWorkspacePath.get(canonicalPath);
         if (mappedPath) return mappedPath;
 
-        let path = file;
-        if (path.startsWith('/workspace/')) path = '/' + path.substring('/workspace/'.length);
-        else if (!path.startsWith('/')) path = '/' + path;
-        return path;
+        return `/${runtimeRelativeFilePath(canonicalPath)}`;
     }
 
     private toWorkspacePath(path: unknown): string | null {
@@ -1432,7 +1430,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         }
         const normalized = Object.create(null) as Record<string, number[]>;
         for (const [file, lines] of Object.entries(breakpoints)) {
-            const canonicalFile = canonicalWorkspaceFilePath(file);
+            const canonicalFile = canonicalBreakpointPath(file);
             if (canonicalFile !== file) {
                 throw new TypeError(
                     `Breakpoint overlay path must be canonical under /workspace: ${JSON.stringify(file)}`,
@@ -1594,17 +1592,18 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (!this.capabilities.breakpoints) {
             throw new Error(`Runtime provider "${this.id}" does not support breakpoints`);
         }
+        const canonicalFile = canonicalBreakpointPath(file);
         const normalizedLines = [...new Set(lines)].sort((a, b) => a - b);
-        const currentLines = this.activeBreakpoints[file] ?? [];
+        const currentLines = this.activeBreakpoints[canonicalFile] ?? [];
         if (
             currentLines.length === normalizedLines.length
             && currentLines.every((line, index) => line === normalizedLines[index])
         ) return;
         const nextBreakpoints = { ...this.activeBreakpoints };
-        if (normalizedLines.length === 0 && !this.engine) delete nextBreakpoints[file];
-        else nextBreakpoints[file] = normalizedLines;
+        if (normalizedLines.length === 0 && !this.engine) delete nextBreakpoints[canonicalFile];
+        else nextBreakpoints[canonicalFile] = normalizedLines;
         const nextTombstones = new Set(this.breakpointClearTombstones);
-        if (normalizedLines.length > 0) nextTombstones.delete(canonicalWorkspacePath(file));
+        if (normalizedLines.length > 0) nextTombstones.delete(canonicalFile);
         const previousConfiguration = this.mergedBreakpointConfiguration();
         const nextConfiguration = this.mergedBreakpointConfiguration(
             nextBreakpoints,
@@ -1615,7 +1614,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
             previousConfiguration,
             nextConfiguration,
         );
-        const rejectedEditorChange = { file, lines: [...currentLines] };
+        const rejectedEditorChange = { file: canonicalFile, lines: [...currentLines] };
         this.assertBreakpointChangesAllowed(changes, rejectedEditorChange);
         this.assertBreakpointConfigurationWithinLimit(
             nextConfiguration,
@@ -1686,7 +1685,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 nextConfiguration,
             )) {
                 if (previousLines.length > 0 && nextLines.length === 0) {
-                    nextTombstones.add(canonicalWorkspacePath(file));
+                    nextTombstones.add(canonicalBreakpointPath(file));
                 }
             }
             nextConfiguration = this.mergedBreakpointConfiguration(

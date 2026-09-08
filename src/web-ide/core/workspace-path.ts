@@ -1,5 +1,21 @@
 import type { WorkspaceFiles } from '../contracts/host'
-import { isWellFormedUnicode } from '../public/canonical-contract'
+import {
+  isWellFormedUnicode,
+  normalizeVfsPathV1,
+  normalizeWorkspacePathV1,
+} from '../public/canonical-contract'
+
+const WORKSPACE_PREFIX = '/workspace/'
+const SYSROOT_PREFIX = '/sysroot/'
+
+function rethrowCanonicalPathError(
+  kind: 'Workspace' | 'Execution',
+  path: string,
+  error: unknown,
+): never {
+  const reason = error instanceof Error ? `: ${error.message}` : ''
+  throw new TypeError(`${kind} file path is not canonical: ${JSON.stringify(path)}${reason}`)
+}
 
 /**
  * Converts a host/plugin file key into the one canonical VFS namespace.
@@ -22,8 +38,8 @@ export function canonicalWorkspaceFilePath(path: string): string {
     throw new TypeError(`Workspace file path is not canonical: ${JSON.stringify(path)}`)
   }
 
-  const relative = normalized.startsWith('/workspace/')
-    ? normalized.slice('/workspace/'.length)
+  const relative = normalized.startsWith(WORKSPACE_PREFIX)
+    ? normalized.slice(WORKSPACE_PREFIX.length)
     : normalized.replace(/^\/+/, '')
   const segments = relative.split('/')
 
@@ -34,7 +50,11 @@ export function canonicalWorkspaceFilePath(path: string): string {
     throw new TypeError(`Workspace file path is not canonical: ${JSON.stringify(path)}`)
   }
 
-  return `/workspace/${segments.join('/')}`
+  try {
+    return normalizeWorkspacePathV1(`${WORKSPACE_PREFIX}${segments.join('/')}`)
+  } catch (error) {
+    return rethrowCanonicalPathError('Workspace', path, error)
+  }
 }
 
 /**
@@ -59,10 +79,10 @@ export function canonicalExecutionFilePath(path: string): string {
   }
 
   let relative = normalized.replace(/^\/+/, '')
-  if (normalized.startsWith('/workspace/')) {
-    relative = normalized.slice('/workspace/'.length)
-  } else if (normalized.startsWith('/sysroot/')) {
-    relative = normalized.slice('/sysroot/'.length)
+  if (normalized.startsWith(WORKSPACE_PREFIX)) {
+    relative = normalized.slice(WORKSPACE_PREFIX.length)
+  } else if (normalized.startsWith(SYSROOT_PREFIX)) {
+    relative = normalized.slice(SYSROOT_PREFIX.length)
   }
   const segments = relative.split('/')
 
@@ -73,42 +93,33 @@ export function canonicalExecutionFilePath(path: string): string {
     throw new TypeError(`Execution file path is not canonical: ${JSON.stringify(path)}`)
   }
 
-  return `/sysroot/${segments.join('/')}`
+  try {
+    return normalizeVfsPathV1(`${SYSROOT_PREFIX}${segments.join('/')}`)
+  } catch (error) {
+    return rethrowCanonicalPathError('Execution', path, error)
+  }
+}
+
+/**
+ * Canonicalizes one legacy runtime-plan key while retaining its explicit
+ * `/sysroot` ownership. Unscoped legacy spellings remain workspace files.
+ */
+export function canonicalRuntimeFilePath(path: string): string {
+  if (typeof path !== 'string' || path.length === 0) {
+    throw new TypeError('Runtime file paths must be non-empty strings')
+  }
+  if (path === '/sysroot' || path.startsWith(SYSROOT_PREFIX)) {
+    return canonicalExecutionFilePath(path)
+  }
+  return canonicalWorkspaceFilePath(path)
 }
 
 /** Matches the flat path namespace used by the browser runtime engine. */
 export function runtimeRelativeFilePath(path: string): string {
-  if (typeof path !== 'string' || path.length === 0) {
-    throw new TypeError('Runtime file paths must be non-empty strings')
-  }
-  if (path.includes('\\') || !isWellFormedUnicode(path)) {
-    throw new TypeError(`Runtime file path is not canonical: ${JSON.stringify(path)}`)
-  }
-
-  const normalized = path.normalize('NFC')
-  if (normalized === '/workspace' || normalized === '/sysroot') {
-    throw new TypeError(`Runtime file path is not canonical: ${JSON.stringify(path)}`)
-  }
-
-  let relative = normalized
-  if (normalized.startsWith('/workspace/')) {
-    relative = normalized.slice('/workspace/'.length)
-  } else if (normalized.startsWith('/sysroot/')) {
-    relative = normalized.slice('/sysroot/'.length)
-  } else if (normalized.startsWith('/')) {
-    relative = normalized.slice(1)
-  }
-  const segments = relative.split('/')
-
-  if (
-    relative.length === 0
-    || normalized.includes('\0')
-    || segments.some((segment) => segment === '' || segment === '.' || segment === '..')
-  ) {
-    throw new TypeError(`Runtime file path is not canonical: ${JSON.stringify(path)}`)
-  }
-
-  return segments.join('/')
+  const canonical = canonicalRuntimeFilePath(path)
+  return canonical.startsWith(SYSROOT_PREFIX)
+    ? canonical.slice(SYSROOT_PREFIX.length)
+    : canonical.slice(WORKSPACE_PREFIX.length)
 }
 
 /**
@@ -133,6 +144,19 @@ export function assertNoFlattenedRuntimePathCollisions(
     }
     sourceByRuntimePath.set(runtimePath, path)
   }
+}
+
+/** Returns a fresh, prototype-safe, fully validated runtime-plan file map. */
+export function normalizeRuntimeFiles(files: WorkspaceFiles): WorkspaceFiles {
+  assertNoFlattenedRuntimePathCollisions(files)
+  const normalized = Object.create(null) as WorkspaceFiles
+  for (const [path, content] of Object.entries(files)) {
+    if (typeof content !== 'string') {
+      throw new TypeError(`Runtime file content must be a string: ${JSON.stringify(path)}`)
+    }
+    normalized[canonicalRuntimeFilePath(path)] = content
+  }
+  return normalized
 }
 
 /** Returns a fresh, prototype-safe map with canonical workspace paths. */

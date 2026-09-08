@@ -114,6 +114,9 @@ export interface IDEWorkspaceResourceContribution {
   /**
    * A callback is valid only with `scope: 'execution-only'` and is evaluated
    * exactly once per prepared run. Workspace-scoped callbacks are rejected.
+   * Keys are NFC-normalized into `/workspace` or `/sysroot` according to the
+   * scope and may contain at most 1,024 Unicode code points after that prefix
+   * is applied.
    */
   files: WorkspaceFiles | (() => WorkspaceFiles)
   order?: number

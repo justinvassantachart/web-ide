@@ -130,6 +130,33 @@ describe('public Web IDE instance facade', () => {
     })
   })
 
+  it('accepts 1,024-code-point reset paths and rejects 1,025 before any reset', () => {
+    const fileAtLimit = `/workspace/${'r'.repeat(1024 - '/workspace/'.length)}`
+    const fileOverLimit = `${fileAtLimit}r`
+    workbench.debugStore.setState({
+      breakpoints: { [fileAtLimit]: [7] },
+      debugMode: 'paused',
+      currentLine: 7,
+    })
+
+    webIDEInstanceHandle.reset({ breakpointFiles: [fileAtLimit] })
+    expect(webIDEInstanceHandle.snapshot().debug.breakpoints[fileAtLimit]).toEqual([])
+
+    workbench.debugStore.setState({
+      breakpoints: { [fileAtLimit]: [8] },
+      debugMode: 'paused',
+      currentLine: 8,
+    })
+    expect(() => webIDEInstanceHandle.reset({
+      breakpointFiles: [fileAtLimit, fileOverLimit],
+    })).toThrow(/oversized/)
+    expect(webIDEInstanceHandle.snapshot().debug).toMatchObject({
+      debugMode: 'paused',
+      currentLine: 8,
+      breakpoints: { [fileAtLimit]: [8] },
+    })
+  })
+
   it('rejects malformed public reset paths before changing instance state', () => {
     workbench.debugStore.getState().setFileBreakpoints('/workspace/main.cpp', [2])
     workbench.debugStore.setState({ debugMode: 'paused', currentLine: 2 })
