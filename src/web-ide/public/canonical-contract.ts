@@ -34,7 +34,7 @@ function assertJsonValue(value: unknown, path: string, ancestors = new WeakSet<o
     if (ancestors.has(value)) throw new TypeError(`${path} contains a cycle`)
     ancestors.add(value)
     const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length')
-    if (!lengthDescriptor || !('value' in lengthDescriptor) || !Number.isSafeInteger(lengthDescriptor.value)) {
+    if (!lengthDescriptor || !Object.hasOwn(lengthDescriptor, 'value') || !Number.isSafeInteger(lengthDescriptor.value)) {
       throw new TypeError(`${path} has an invalid array length`)
     }
     const length = lengthDescriptor.value as number
@@ -44,7 +44,7 @@ function assertJsonValue(value: unknown, path: string, ancestors = new WeakSet<o
     }
     for (let index = 0; index < length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
-      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) {
+      if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new TypeError(`${path}[${index}] must be an enumerable data property`)
       }
       assertJsonValue(descriptor.value, `${path}[${index}]`, ancestors)
@@ -63,7 +63,7 @@ function assertJsonValue(value: unknown, path: string, ancestors = new WeakSet<o
       if (typeof key !== 'string') throw new TypeError(`${path} contains a symbol key`)
       if (!isWellFormedUnicode(key)) throw new TypeError(`${path} contains an unpaired Unicode surrogate key`)
       const descriptor = Object.getOwnPropertyDescriptor(value, key)
-      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) {
+      if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new TypeError(`${path}.${key} must be an enumerable data property`)
       }
       if (descriptor.value === undefined) throw new TypeError(`${path}.${key} is undefined`)

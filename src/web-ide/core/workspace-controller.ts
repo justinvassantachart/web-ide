@@ -579,6 +579,9 @@ export class WorkspaceController {
         delete candidate[operation.from]
       }
     }
+    if (Object.keys(candidate).length > MAX_FILES) {
+      throw new RangeError('workspace contains more than 500 files')
+    }
     return candidate
   }
 

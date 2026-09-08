@@ -220,6 +220,44 @@ describe('instance-owned workspace controller', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('rejects the 501st local or external create without changing state, revision, or feed', async () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 500 }, (_, index) => [`/workspace/file-${index}.cpp`, `${index}\n`]),
+    )
+    const local = await initialized(files)
+    const localBefore = local.workspace.snapshot()
+    const localRevision = local.workspace.revision
+    const localListener = vi.fn()
+    local.workspace.subscribe(localListener)
+
+    expect(() => local.workspace.createFileLocal('/workspace/file-500.cpp', 'overflow\n'))
+      .toThrow(/more than 500 files/)
+    expect(local.workspace.snapshot()).toEqual(localBefore)
+    expect(local.workspace.revision).toBe(localRevision)
+    expect(localListener).not.toHaveBeenCalled()
+
+    const external = await initialized(files)
+    const externalBefore = external.workspace.snapshot()
+    const externalRevision = external.workspace.revision
+    const externalListener = vi.fn()
+    external.workspace.subscribe(externalListener)
+
+    await expect(external.workspace.applyExternal({
+      version: 1,
+      kind: 'apply',
+      transactionId: 'external-file-limit',
+      expectedRevision: externalRevision,
+      origin: { kind: 'external-authority', source: 'external-provider' },
+      operations: [
+        { op: 'write', path: '/workspace/file-0.cpp', text: 'must-not-commit\n' },
+        { op: 'create', path: '/workspace/file-500.cpp', text: 'overflow\n' },
+      ],
+    })).rejects.toThrow(/more than 500 files/)
+    expect(external.workspace.snapshot()).toEqual(externalBefore)
+    expect(external.workspace.revision).toBe(externalRevision)
+    expect(externalListener).not.toHaveBeenCalled()
+  })
+
   it('renames and prunes breakpoint paths with the committed file transaction', async () => {
     const instance = await initialized({ '/workspace/main.cpp': 'main\n' })
     instance.debugStore.getState().toggleBreakpoint('/workspace/main.cpp', 3)
@@ -431,5 +469,47 @@ describe('instance-owned workspace controller', () => {
       expectedRevision: instance.workspace.revision,
     })).resolves.toMatchObject({ transactionId: 'nested-proxy-shape' })
     expect(nestedPropertyReads).toBe(0)
+  })
+
+  it('rejects accessor descriptors even when Object.prototype fabricates an inherited value', async () => {
+    const instance = await initialized({ '/workspace/main.cpp': 'old\n' })
+    const revision = instance.workspace.revision
+    const listener = vi.fn()
+    instance.workspace.subscribe(listener)
+    const sourceGetter = vi.fn(() => 'must-not-run')
+    const inheritedValueGetter = vi.fn(() => 'external-provider')
+    const previousValueDescriptor = Object.getOwnPropertyDescriptor(Object.prototype, 'value')
+    const origin = { kind: 'external-authority' as const, source: 'placeholder' }
+    Object.defineProperty(origin, 'source', {
+      configurable: true,
+      enumerable: true,
+      get: sourceGetter,
+    })
+    Object.defineProperty(Object.prototype, 'value', {
+      configurable: true,
+      get: inheritedValueGetter,
+    })
+
+    let application!: ReturnType<typeof instance.workspace.applyExternal>
+    try {
+      application = instance.workspace.applyExternal({
+        version: 1,
+        kind: 'apply',
+        transactionId: 'inherited-descriptor-value',
+        expectedRevision: revision,
+        origin,
+        operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'forged\n' }],
+      })
+    } finally {
+      if (previousValueDescriptor) Object.defineProperty(Object.prototype, 'value', previousValueDescriptor)
+      else delete (Object.prototype as Record<string, unknown>).value
+    }
+
+    await expect(application).rejects.toThrow(/data property/)
+    expect(sourceGetter).not.toHaveBeenCalled()
+    expect(inheritedValueGetter).not.toHaveBeenCalled()
+    expect(instance.workspace.readFile('/workspace/main.cpp')).toBe('old\n')
+    expect(instance.workspace.revision).toBe(revision)
+    expect(listener).not.toHaveBeenCalled()
   })
 })
