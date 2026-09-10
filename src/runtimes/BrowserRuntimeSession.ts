@@ -20,6 +20,7 @@ import type {
     RuntimeBreakpointMap,
     RuntimePreparationResult,
     RuntimeOutcome,
+    RuntimeHostDeviceOpener,
     RuntimeHostServiceV1,
     RuntimeSession,
     RuntimeStartRequest,
@@ -55,6 +56,13 @@ interface HostServiceRegistration {
 type HostServiceCapableEngine = EngineType & {
     registerHostService?: (service: RuntimeHostServiceV1) => Disposable;
 };
+
+interface HostDeviceRegistration {
+    readonly opener: RuntimeHostDeviceOpener;
+    engine?: EngineType;
+}
+
+type HostDeviceCapableEngine = EngineType & { hostDevice?: RuntimeHostDeviceOpener };
 
 interface DebugConfigurationState {
     session: number;
@@ -294,12 +302,67 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private disposed = false;
     private readonly profile: BrowserRuntimeSessionProfile;
     private readonly hostServices = new Map<string, HostServiceRegistration>();
+    private hostDeviceRegistration?: HostDeviceRegistration;
 
     constructor(profile: BrowserRuntimeSessionProfile) {
         this.profile = profile;
         this.id = profile.id;
         this.languageIds = profile.languageIds;
         this.capabilities = profile.capabilities;
+    }
+
+    registerHostDevice(opener: RuntimeHostDeviceOpener): Disposable {
+        if (this.disposed) throw new Error('Cannot register a host device on a disposed runtime session');
+        if (this.profile.engineLanguage !== 'c') {
+            throw new Error(`Runtime provider "${this.id}" does not support host devices`);
+        }
+        if (typeof opener !== 'function') throw new TypeError('Host device opener must be a function');
+        if (this.hostDeviceRegistration) throw new Error('A host device is already registered');
+        if (this.activeSettlement && !this.activeSettlement.settled) {
+            throw new Error('Host devices cannot change during a pending or active run');
+        }
+        // Capture this registration's callback, not the mutable registration slot.
+        const record: HostDeviceRegistration = { opener: (device) => opener(device) };
+        this.hostDeviceRegistration = record;
+        try {
+            if (this.engine) this.attachHostDevice(this.engine);
+        } catch (error) {
+            this.hostDeviceRegistration = undefined;
+            throw error;
+        }
+        return {
+            dispose: () => {
+                if (this.hostDeviceRegistration !== record) return;
+                this.hostDeviceRegistration = undefined;
+                if (record.engine) this.releaseEngineHostDevice(record.engine, record);
+            },
+        };
+    }
+
+    private attachHostDevice(engine: EngineType): void {
+        const record = this.hostDeviceRegistration;
+        if (!record) return;
+        const capable = engine as HostDeviceCapableEngine;
+        if (!('hostDevice' in capable)) {
+            throw new Error('The loaded runtime engine does not support configured host devices');
+        }
+        if (capable.hostDevice !== undefined && capable.hostDevice !== record.opener) {
+            throw new Error('The loaded runtime engine already has a host device');
+        }
+        capable.hostDevice = record.opener;
+        record.engine = engine;
+    }
+
+    private releaseEngineHostDevice(
+        engine: EngineType,
+        record = this.hostDeviceRegistration,
+    ): void {
+        if (record?.engine !== engine) return;
+        const capable = engine as HostDeviceCapableEngine;
+        // Engine.run() already captured its opener. The engine owns that run's
+        // signal and cleanup; clearing this slot only affects subsequent runs.
+        if (capable.hostDevice === record.opener) capable.hostDevice = undefined;
+        record.engine = undefined;
     }
 
     registerHostService(service: RuntimeHostServiceV1): Disposable {
@@ -702,6 +765,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         });
         if (settlement) settlement.stopRequested = true;
         this.releaseEngineHostServices(engine);
+        this.releaseEngineHostDevice(engine);
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
@@ -741,10 +805,12 @@ export class BrowserRuntimeSession implements RuntimeSession {
                         engine.debugger.filterInternals = true;
                     }
                     this.attachHostServices(engine);
+                    this.attachHostDevice(engine);
                     this.engine = engine;
                     return engine;
                 } catch (error) {
                     this.releaseEngineHostServices(engine, false);
+                    this.releaseEngineHostDevice(engine);
                     try { engine.stop(); } catch { /* ignore */ }
                     throw error;
                 }
@@ -1116,6 +1182,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         const engine = this.engine;
         if (!engine) return;
         this.releaseEngineHostServices(engine, false);
+        this.releaseEngineHostDevice(engine);
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
@@ -1813,7 +1880,9 @@ export class BrowserRuntimeSession implements RuntimeSession {
             this.cancelScheduledTasks();
             this.debugConfiguration = null;
             if (this.engine) this.releaseEngineHostServices(this.engine, false);
+            if (this.engine) this.releaseEngineHostDevice(this.engine);
             this.hostServices.clear();
+            this.hostDeviceRegistration = undefined;
             this.engine = null;
             this.engineInit = null;
             this.engineInitToken = null;

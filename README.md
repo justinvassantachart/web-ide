@@ -261,6 +261,20 @@ credentials. See
 `src/web-ide/contracts/runtime.ts` and the contract tests under
 `tests/contracts` for the exact lifecycle.
 
+The built-in C/C++ session also exposes optional `registerHostDevice(opener)` for
+engines with a public `hostDevice` byte transport. The exported
+`RuntimeHostDevice` and `RuntimeHostDeviceOpener` types are structural: the device
+provides an abort signal, `onData(listener)` returning an unsubscribe function,
+and `write(Uint8Array)` returning a promise. Await each write before starting
+another. The opener is synchronous and may return a cleanup function; the engine
+opens and cleans it up separately for every run. Hosts own byte framing and rendering.
+
+Register at most one opener on an idle session. Disposing its registration removes
+it from future runs; an active run keeps its captured opener until it ends or is
+stopped. Session disposal stops and awaits active run cleanup. Python rejects this
+registration. Engines without the device fail explicitly when loaded; omitting
+the registration preserves the existing run path and requires no dependency change.
+
 Rendered panels and sidebar activities receive one `IDEExecutionController`
 using the same prepare/start/stop/restart path as toolbar commands. Its
 `stop()` return remains compatible with synchronous callers and is awaitable

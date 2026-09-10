@@ -101,6 +101,8 @@ export type {
   RuntimeEventChannels,
   RuntimeHostChannelLimitsV1,
   RuntimeHostChannelV1,
+  RuntimeHostDevice,
+  RuntimeHostDeviceOpener,
   RuntimeHostRequestV1,
   RuntimeHostServiceV1,
   RuntimeOutcome,

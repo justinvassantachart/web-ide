@@ -183,6 +183,17 @@ export interface RuntimeEventChannels {
   breakpointsValidated: EventSource<{ file: string; lines: number[] }>
 }
 
+/** A per-run byte device. Framing and interpretation belong to the host adapter. */
+export interface RuntimeHostDevice {
+  readonly signal: AbortSignal
+  onData(listener: (chunk: Uint8Array) => void): () => void
+  /** Await each write before writing again. The engine copies the bytes. */
+  write(chunk: Uint8Array): Promise<void>
+}
+
+/** The engine calls the returned cleanup once when this run closes. */
+export type RuntimeHostDeviceOpener = (device: RuntimeHostDevice) => void | (() => void)
+
 /** A long-lived runtime instance owned by exactly one Web IDE mount. */
 export interface RuntimeSession {
   readonly id: string
@@ -216,6 +227,12 @@ export interface RuntimeSession {
   writeStdin?(data: string): void
   /** Registers one instance-scoped service; absent means unsupported. */
   registerHostService?(service: RuntimeHostServiceV1): Disposable
+  /**
+   * Registers one instance-scoped byte-device opener while idle. Built-in C/C++ only;
+   * an engine lacking the device fails explicitly when it is loaded. Disposal removes
+   * future registration; an active run retains its captured opener until run cleanup.
+   */
+  registerHostDevice?(opener: RuntimeHostDeviceOpener): Disposable
   dispose?(): void
   /** Disposes the session and resolves after any initialization/run cleanup. */
   disposeAndWait?(): Promise<RuntimeOutcome>

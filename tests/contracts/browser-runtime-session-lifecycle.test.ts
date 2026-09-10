@@ -14,6 +14,8 @@ import { registerRuntimeHostService } from '../../src/runtimes/host-service'
 import type {
   RuntimeExecutionMode,
   RuntimeHostServiceV1,
+  RuntimeHostDevice,
+  RuntimeHostDeviceOpener,
   RuntimeSession,
 } from '../../src/web-ide/contracts/runtime'
 
@@ -176,6 +178,163 @@ function createSession(): RuntimeSession {
   sessions.push(session)
   return session
 }
+
+function byteDeviceEngine() {
+  const engine = Object.assign(new FakeEngine(), { hostDevice: undefined as RuntimeHostDeviceOpener | undefined })
+  const originalRun = engine.run.getMockImplementation()!
+  const devices: RuntimeHostDevice[] = []
+  engine.run.mockImplementation(() => {
+    const opener = engine.hostDevice
+    const abort = new AbortController()
+    const device: RuntimeHostDevice = {
+      signal: abort.signal,
+      onData: vi.fn(() => vi.fn()),
+      write: vi.fn(async () => {}),
+    }
+    devices.push(device)
+    const cleanup = opener?.(device)
+    // Model the engine contract: each run captures its opener and owns teardown.
+    return originalRun().finally(() => { abort.abort(); cleanup?.() })
+  })
+  return { engine, devices }
+}
+
+describe('optional public byte device registration', () => {
+  it('is lazy, C/C++ only, unique and rejects invalid or disposed registrations', async () => {
+    const session = createSession()
+    const registration = session.registerHostDevice!(() => {})
+    expect(engineCreate).not.toHaveBeenCalled()
+    expect(() => session.registerHostDevice!(() => {})).toThrow('already registered')
+    registration.dispose()
+    expect(() => session.registerHostDevice!(null as unknown as RuntimeHostDeviceOpener)).toThrow('must be a function')
+    const python = pythonRuntimeProvider.createSession()
+    sessions.push(python)
+    expect(() => python.registerHostDevice!(() => {})).toThrow('does not support host devices')
+    await session.disposeAndWait!()
+    expect(() => session.registerHostDevice!(() => {})).toThrow('disposed')
+  })
+
+  it('passes each engine-owned device only to its owning instance and keeps old runs unchanged when omitted', async () => {
+    const first = createSession(), second = createSession(), plain = createSession()
+    const a = byteDeviceEngine(), b = byteDeviceEngine(), legacy = new FakeEngine()
+    engineCreate.mockResolvedValueOnce(a.engine).mockResolvedValueOnce(b.engine).mockResolvedValueOnce(legacy)
+    const openA = vi.fn<RuntimeHostDeviceOpener>(), openB = vi.fn<RuntimeHostDeviceOpener>()
+    first.registerHostDevice!(openA)
+    second.registerHostDevice!(openB)
+    const runA = await beginRun(first, a.engine, 'run')
+    const runB = await beginRun(second, b.engine, 'run')
+    const runPlain = await beginRun(plain, legacy, 'run')
+    expect(openA).toHaveBeenCalledExactlyOnceWith(a.devices[0])
+    expect(openB).toHaveBeenCalledExactlyOnceWith(b.devices[0])
+    expect('hostDevice' in legacy).toBe(false)
+    await first.stopAndWait!()
+    expect(a.devices[0].signal.aborted).toBe(true)
+    expect(b.devices[0].signal.aborted).toBe(false)
+    b.engine.complete({ type: 'completed', exitCode: 0 })
+    legacy.complete({ type: 'completed', exitCode: 0 })
+    await Promise.all([runA.running, runB.running, runPlain.running])
+  })
+
+  it('fails explicitly with an older engine, then permits an omitted-device retry', async () => {
+    const session = createSession(), engine = new FakeEngine()
+    engineCreate.mockResolvedValue(engine)
+    const registration = session.registerHostDevice!(() => {})
+    await session.prepare({ files: workspace, mode: 'run' })
+    await session.start({ mode: 'run' })
+    expect(await session.waitForSettlement!()).toMatchObject({ type: 'error', error: { message: 'The loaded runtime engine does not support configured host devices' } })
+    expect(engine.run).not.toHaveBeenCalled()
+    expect('hostDevice' in engine).toBe(false)
+    registration.dispose()
+    const { running } = await beginRun(session, engine, 'run')
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+  })
+
+  it('retains active cleanup and makes stale disposal harmless to the next registration', async () => {
+    const session = createSession(), { engine, devices } = byteDeviceEngine()
+    engineCreate.mockResolvedValue(engine)
+    const cleanup = vi.fn(), firstOpen = vi.fn(() => cleanup), secondOpen = vi.fn<RuntimeHostDeviceOpener>()
+    const first = session.registerHostDevice!(firstOpen)
+    const { running } = await beginRun(session, engine, 'run')
+    first.dispose()
+    expect(engine.hostDevice).toBeUndefined()
+    expect(devices[0].signal.aborted).toBe(false)
+    expect(cleanup).not.toHaveBeenCalled()
+    expect(() => session.registerHostDevice!(secondOpen)).toThrow('pending or active run')
+    await session.stopAndWait!()
+    await running
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    session.registerHostDevice!(secondOpen)
+    const nextOpener = engine.hostDevice
+    first.dispose()
+    expect(engine.hostDevice).toBe(nextOpener)
+    const next = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
+    expect(firstOpen).toHaveBeenCalledTimes(1)
+    expect(secondOpen).toHaveBeenCalledExactlyOnceWith(devices[1])
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await next
+  })
+
+  it('waits for old run cleanup before reopening during a rapid restart', async () => {
+    const session = createSession(), { engine, devices } = byteDeviceEngine()
+    engine.settleRunOnStop = false
+    engineCreate.mockResolvedValue(engine)
+    const order: string[] = []
+    session.registerHostDevice!(() => { order.push('open'); return () => { order.push('close') } })
+    const first = await beginRun(session, engine, 'run')
+    session.stop()
+    const second = session.start({ mode: 'run' })
+    await Promise.resolve()
+    expect(engine.run).toHaveBeenCalledTimes(1)
+    engine.complete({ type: 'stopped' })
+    await first.running
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
+    expect(order).toEqual(['open', 'close', 'open'])
+    expect(devices[0].signal.aborted).toBe(true)
+    expect(devices[1].signal.aborted).toBe(false)
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await second
+    expect(order).toEqual(['open', 'close', 'open', 'close'])
+  })
+
+  it('rejects new registration during initialization and never adopts a disposed opener', async () => {
+    const session = createSession(), pending = deferred<unknown>(), { engine } = byteDeviceEngine()
+    engineCreate.mockReturnValueOnce(pending.promise)
+    const open = vi.fn<RuntimeHostDeviceOpener>(), registration = session.registerHostDevice!(open)
+    await session.prepare({ files: workspace, mode: 'run' })
+    const start = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engineCreate).toHaveBeenCalledTimes(1))
+    registration.dispose()
+    expect(() => session.registerHostDevice!(open)).toThrow('pending or active run')
+    const disposal = session.disposeAndWait!()
+    pending.resolve(engine)
+    await Promise.all([start, disposal])
+    expect(engine.run).not.toHaveBeenCalled()
+    expect(engine.hostDevice).toBeUndefined()
+    expect(open).not.toHaveBeenCalled()
+    expect(engine.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('reattaches the same registration only to the replacement engine after a DAP crash', async () => {
+    const session = createSession(), first = byteDeviceEngine(), second = byteDeviceEngine()
+    first.engine.debugger.responder = () => { throw new Error('synthetic DAP crash') }
+    engineCreate.mockResolvedValueOnce(first.engine).mockResolvedValueOnce(second.engine)
+    const cleanup = vi.fn(), open = vi.fn(() => cleanup)
+    session.registerHostDevice!(open)
+    const crashing = await beginRun(session, first.engine, 'debug')
+    await crashing.running
+    expect(await session.waitForSettlement!()).toMatchObject({ type: 'error' })
+    expect(first.engine.hostDevice).toBeUndefined()
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    const next = await beginRun(session, second.engine, 'run')
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(open).toHaveBeenLastCalledWith(second.devices[0])
+    second.engine.complete({ type: 'completed', exitCode: 0 })
+    await next.running
+    expect(cleanup).toHaveBeenCalledTimes(2)
+  })
+})
 
 function createHostSession(): RuntimeSession {
   const session = new BrowserRuntimeSession({
