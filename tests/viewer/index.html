@@ -1,0 +1,8 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Packed workspace stability</title>
+<style>html,body,#root{height:100%;margin:0}#root{white-space:nowrap}#root>div{white-space:normal}</style></head>
+<body><div id="root"></div>
+<script>window.reactCommits=0;window.__REACT_DEVTOOLS_GLOBAL_HOOK__={supportsFiber:true,inject(){return 1},onCommitFiberRoot(){window.reactCommits++},onCommitFiberUnmount(){}};</script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.56.0/min/vs/loader.js"></script>
+<script>require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@0.56.0/min/vs'}});window.monacoReady=new Promise(resolve=>require(['vs/editor/editor.main'],resolve));</script>
+<script type="module" src="/main.tsx"></script></body></html>

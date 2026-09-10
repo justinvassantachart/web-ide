@@ -106,3 +106,31 @@ workspace switch, iframe isolation, identity model, awareness/presence
 protocol, collaboration UI, or course-specific behavior. A future optional
 provider must consume the public transaction/feed surface and must not reach
 into editor models, stores, or the in-memory filesystem.
+
+## External editor updates
+
+Surviving open models synchronize through bounded in-place text edits, including
+full replacements and inactive files. A per-editor cache preserves directional
+multiple selections, horizontal scroll and the top source position with its
+pixel remainder. Insertions above the viewport shift numeric scroll to retain
+that source. Deleted/replaced endpoints map to the nearest surviving boundary
+(ties to the beginning); document extent may clamp scrolling. Model text uses
+Monaco's existing line-ending convention while controller snapshots retain the
+authoritative file bytes. Real rename operations transfer browsing state to the
+new URI; undo history cannot transfer across that model change. Snapshot-only
+delete/create does not imply rename identity. Deleting the viewed path retains
+the controller's existing close/fallback behavior.
+
+The editor applies external changes synchronously with origin/equality guards,
+without adding local-user transactions, edit events, or user undo entries.
+Restoration precedes explicit source/debug navigation. Hosts implementing a
+memory-only viewer must omit persistence; generic full-snapshot host
+persistence intentionally continues to observe every workspace origin.
+
+Breakpoint positions follow the mapped current source. If source changes
+externally during an active run, breakpoint synchronization for that path is
+deferred until the engine is idle, preserving the run's captured coordinates.
+An explicit user toggle overrides that deferral; unchanged sets are not resent
+on every debugger transition. Opaque contribution state for an inactive model
+is discarded after source edits rather than replaying stale fold/find ranges.
+Explicit source/debug navigation still takes priority over browsing restoration.

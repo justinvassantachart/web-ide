@@ -275,3 +275,22 @@ protocol and asset changes, run the focused provider/lifecycle suites, run
 `npm run validate:production`, repeat the browser suite at least three times,
 and then rerun Nova's host regression. Do not widen the supported version range
 until the same compatibility matrix has passed for every version in the range.
+
+## Packed external-viewer regression
+
+`npm run test:viewer` registers the `packed-viewer` Playwright project in
+`playwright.viewer.config.ts`. `npm run test:browser` runs it after the regular
+production examples, so it is included in `validate:production`. The fixture
+builds and packs the library, verifies the exact committed consumer-lock
+integrity before installation, installs with scripts disabled and isolated npm
+configuration, and builds only public package imports in a temporary consumer.
+The fixture's Monaco and React instrumentation is test-only.
+
+Assertions distinguish React commits, DOM replacement, editor/model identity
+and disposal, selections, source anchors, scroll offsets, edit-origin echoes,
+undo, inactive tabs, actual rename/deletion, two simultaneous instances, and
+large full snapshots. The native Chromium lifecycle test bypasses Playwright's
+focus emulation and requires observed hidden/freeze/resume/visible events; a
+synthetic event or a page still reporting visible fails. This test requires a
+desktop display (or a virtual X display on Linux). No production viewer policy
+may depend on a background timer running on schedule.

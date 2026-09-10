@@ -3,6 +3,7 @@ import type { editor } from 'monaco-editor'
 import { useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { Codicon } from '@/components/ui/codicon'
 import { EditorTabs } from './EditorTabs'
+import { WorkspaceModelViews } from './workspace-model-view'
 import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { useLanguageTooling } from '@/web-ide/react/language-tooling-context'
@@ -41,7 +42,10 @@ export function Editor() {
     const suppressedModelPaths = useRef(new Set<string>())
     const acceptedBreakpoints = useRef<Record<string, number[]>>({})
     const breakpointSyncTokens = useRef<Record<string, number>>({})
+    const deferredBreakpoints = useRef(new Map<string, readonly number[]>())
+    const requestedBreakpoints = useRef<Record<string, readonly number[]>>({})
 
+    const modelViews = useRef(new WorkspaceModelViews())
     const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
     const decoIdsByPath = useRef<Map<string, DecoIds>>(new Map())
     const ghostIdsRef = useRef<string[]>([])
@@ -55,20 +59,18 @@ export function Editor() {
     const lastDebugState = useRef({ file: null as string | null, line: null as number | null })
     const lastSourceReveal = useRef(0)
 
-    // Keep Monaco's per-URI model cache in sync with the editor store.
-    // Monaco models are global state — when the workspace gets re-seeded
-    // (e.g. switching student submissions, where both happen to use the
-    // same file paths), the cached model would otherwise still hold the
-    // previous workspace's content even after `setActiveFile` updates the
-    // store. We only call setValue when the model already exists and is
-    // out of sync, which leaves the normal user-typing path untouched
-    // (model is already equal to activeFileContent at that point).
+    // The controller reconciles its store before publishing the feed. This
+    // equality-guarded fallback also uses range edits, so a later React effect
+    // cannot replace the buffer after the synchronous feed preserved its view.
     useEffect(() => {
         if (!monaco || !activeFile) return
         const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(activeFile)))
-        if (!model) return
-        if (model.getValue() === activeFileContent) return
-        model.setValue(activeFileContent)
+        if (!model || !workspace.fileExists(activeFile)) return
+        const committed = workspace.readFile(activeFile)
+        if (model.getValue() === committed) return
+        suppressedModelPaths.current.add(activeFile)
+        try { modelViews.current.update(model, committed) }
+        finally { suppressedModelPaths.current.delete(activeFile) }
     }, [activeFile, activeFileContent, monaco, workspace])
 
     // Dispose Monaco models for files that no longer exist in the VFS.
@@ -91,6 +93,7 @@ export function Editor() {
             for (const operation of change.operations) {
                 if (operation.op === 'replace') replaceAll = true
                 else if (operation.op === 'rename') {
+                    modelViews.current.rename(operation.from, operation.to)
                     affected.add(operation.from)
                     affected.add(operation.to)
                 } else affected.add(operation.path)
@@ -120,13 +123,32 @@ export function Editor() {
                 const next = files[path]
                 if (next === undefined) {
                     model.dispose()
+                    // Disposing the active model may capture its outgoing view.
+                    // Forget it after that synchronous notification finishes.
+                    modelViews.current.remove(path)
                     decoIdsByPath.current.delete(path)
                     continue
                 }
                 if (model.getValue() === next) continue
                 suppressedModelPaths.current.add(path)
                 try {
-                    model.setValue(next)
+                    modelViews.current.update(model, next)
+                    if (change.origin.kind !== 'local-user') {
+                        const ids = decoIdsByPath.current.get(path)?.bp
+                        if (ids?.length) {
+                            const lines = ids.flatMap(id => {
+                                const range = model.getDecorationRange(id)
+                                return range ? [range.startLineNumber] : []
+                            })
+                            // Dots follow current source; a running engine still
+                            // owns its captured file coordinates until it stops.
+                            if (instance.debugStore.getState().debugMode !== 'idle') {
+                                deferredBreakpoints.current.set(path, lines)
+                            }
+                            breakpointSyncTokens.current[path] = (breakpointSyncTokens.current[path] ?? 0) + 1
+                            instance.debugStore.getState().setFileBreakpoints(path, lines)
+                        }
+                    }
                 } finally {
                     suppressedModelPaths.current.delete(path)
                 }
@@ -176,6 +198,8 @@ export function Editor() {
 
     const handleMount: OnMount = (editorInstance, monacoInstance) => {
         editorRef.current = editorInstance
+        modelViews.current.attach(editorInstance)
+        editorInstance.onDidDispose(() => modelViews.current.detach())
 
         // Let the optional selected tooling provider lazily start when the
         // user engages with a supported file. Monaco owns these listeners.
@@ -256,8 +280,9 @@ export function Editor() {
     }
 
     // Sync breakpoint decorations onto every known model (so toggling lines in
-    // file A while viewing file B still updates A's gutter), then push the
-    // currently active file's set to the engine.
+    // file A while viewing file B still updates A's gutter). Push changed user
+    // intent, but retain captured coordinates for a source-only remapping until
+    // idle. An explicit toggle after remapping overrides that deferral.
     useEffect(() => {
         if (!monaco || !editorReady || !engine.capabilities.breakpoints) return
 
@@ -272,9 +297,14 @@ export function Editor() {
             ids.bp = model.deltaDecorations(ids.bp, decos)
         }
 
-        if (activeFile) {
-            const file = activeFile
-            const requested = [...(breakpoints[file] ?? [])]
+        for (const [file, lines] of Object.entries(breakpoints)) {
+            const same = (left: readonly number[] | undefined, right: readonly number[]) =>
+                left?.length === right.length && left.every((line, index) => line === right[index])
+            if (debugMode !== 'idle' && same(deferredBreakpoints.current.get(file), lines)) continue
+            deferredBreakpoints.current.delete(file)
+            if (same(requestedBreakpoints.current[file], lines)) continue
+            const requested = [...lines]
+            requestedBreakpoints.current[file] = requested
             const token = (breakpointSyncTokens.current[file] ?? 0) + 1
             breakpointSyncTokens.current[file] = token
             engine.setBreakpoints(file, requested).then(() => {
@@ -284,13 +314,14 @@ export function Editor() {
             }).catch((error: unknown) => {
                 console.warn(error)
                 if (breakpointSyncTokens.current[file] !== token) return
+                requestedBreakpoints.current[file] = acceptedBreakpoints.current[file] ?? []
                 instance.debugStore.getState().setFileBreakpoints(
                     file,
                     acceptedBreakpoints.current[file] ?? [],
                 )
             })
         }
-    }, [activeFile, breakpoints, editorReady, engine, instance, monaco, workspace])
+    }, [activeFile, breakpoints, debugMode, editorReady, engine, instance, monaco, workspace])
 
     // Step indicator: paint the paused line on its own model, clear everywhere
     // else. Reveal the line only when the user is actively viewing that file.
@@ -428,7 +459,7 @@ export function Editor() {
                 ? workspace.readFile(activeFile)
                 : ''
             const model = editorRef.current?.getModel()
-            if (model && model.getValue() !== committed) model.setValue(committed)
+            if (model && model.getValue() !== committed) modelViews.current.update(model, committed)
             console.warn('[web-ide] local workspace edit rejected', error)
             return
         }
@@ -488,7 +519,8 @@ export function Editor() {
                 content and undo history). We disable the wrapper's module-global
                 path-keyed view-state cache: it crosses IDE instances and can
                 restore a canceled contribution while source playback switches
-                models. Explicit debug/source reveals own navigation instead. We pass
+                models. Our instance-owned cache restores browsing synchronously
+                on model change; subsequent explicit debug/source reveals win. We pass
                 `defaultValue` for first-time model creation but deliberately
                 omit `value` — passing it would re-fire executeEdits on every
                 store update and wipe undo. The model is the source of truth. */}

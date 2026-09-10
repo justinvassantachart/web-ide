@@ -65,7 +65,7 @@
     "lint": "eslint .",
     "test": "vitest run --exclude \"tests/browser/**\"",
     "test:watch": "vitest --exclude \"tests/browser/**\"",
-    "test:browser": "playwright test",
+    "test:browser": "playwright test && playwright test --config playwright.viewer.config.ts",
     "test:browser:headed": "playwright test --headed",
     "test:consumer": "node tests/consumer/run-packed-consumer.mjs",
     "test:release": "vitest run tests/release",
@@ -77,7 +77,8 @@
     "release:gate": "node scripts/release/run-validation-gate.mjs",
     "release:finalize": "node scripts/release/finalize-release-evidence.mjs",
     "validate": "npm run lint && npm run test && npm run typecheck && npm run build && npm run test:consumer && npm run pack:check",
-    "validate:production": "npm run validate && npm run test:browser"
+    "validate:production": "npm run validate && npm run test:browser",
+    "test:viewer": "playwright test --config playwright.viewer.config.ts"
   },
   "workspaces": [
     "examples/basic",

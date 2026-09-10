@@ -170,9 +170,13 @@ can therefore coexist in one realm while using identical canonical paths.
 
 Web IDE pins the loader runtime to Monaco `0.56.0`, matching its reviewed
 editor API/types dependency. The React wrapper's module-global, path-keyed
-view-state cache is disabled: Monaco models retain content and undo state per
-IDE instance, while debug/source reveal requests own navigation without cross-
-instance view state or canceled restore work.
+view-state cache is disabled. Each editor owns its own path-keyed browsing
+state, captured before model switching and restored synchronously on return.
+Authoritative content updates apply bounded source-anchored range edits to
+surviving models and map directional selections and viewport anchors through
+those edits. Later debug/source reveal requests retain navigation priority.
+Model URI changes on actual rename transfer browsing state, but cannot transfer
+Monaco undo history. Deleted paths retain the controller's deterministic fallback.
 
 `WebIDEInstanceHandle` is a per-mount host integration seam for snapshots,
 subscriptions, ensuring files are open, resetting a session, projecting only

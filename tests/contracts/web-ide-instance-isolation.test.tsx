@@ -124,6 +124,15 @@ vi.mock('@monaco-editor/react', async () => {
         const created = {
           uri,
           getValue: () => value,
+          getEOL: () => "\n",
+          getOffsetAt: (p: { lineNumber: number; column: number }) => value.split('\n').slice(0, p.lineNumber - 1).reduce((n, l) => n + l.length + 1, 0) + p.column - 1,
+          getPositionAt: (at: number) => { const lines = value.slice(0, at).split('\n'); return { lineNumber: lines.length, column: lines.at(-1)!.length + 1 } },
+          applyEdits(edits: Array<{ range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; text: string }>) {
+            const offset = (line: number, column: number) => value.split('\n').slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0) + column - 1
+            const changes = edits.map(e => ({ start: offset(e.range.startLineNumber, e.range.startColumn), end: offset(e.range.endLineNumber, e.range.endColumn), text: e.text }))
+            for (const e of changes.reverse()) value = value.slice(0, e.start) + e.text + value.slice(e.end)
+            for (const listener of [...changeListeners]) listener(value)
+          },
           setValue(next: string) {
             value = next
             for (const listener of [...changeListeners]) listener(next)
@@ -142,6 +151,10 @@ vi.mock('@monaco-editor/react', async () => {
         const focusListeners = new Set<() => void>()
         const editor = {
           getModel: () => model,
+          onWillChangeModel: () => ({ dispose() {} }),
+          onDidChangeModel: () => ({ dispose() {} }),
+          onDidDispose: () => ({ dispose() {} }),
+          saveViewState: () => null,
           getPosition: () => ({ lineNumber: 1, column: 1 }),
           onDidFocusEditorWidget: (listener: () => void) => { focusListeners.add(listener) },
           onKeyDown: vi.fn(),
