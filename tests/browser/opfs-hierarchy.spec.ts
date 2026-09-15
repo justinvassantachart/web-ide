@@ -163,6 +163,13 @@ test('persists overlapping file-directory replacements through real OPFS in both
   await waitForLocalCache(page)
   await expect.poll(() => readOPFSFile(page, '/workspace/node/child.cpp')).toBe('initial child\n')
 
+  // Replacing the last model stops its worker; let the lazy bootstrap finish first.
+  await expect.poll(async () => (await Promise.all(page.workers().map(worker =>
+    worker.evaluate(() => performance.getEntriesByName(
+      'https://cdn.jsdelivr.net/npm/monaco-editor@0.56.0/min/vs/assets/editor.worker-lj3bdIIn.js',
+    ).some(entry => entry.entryType === 'resource')),
+  ))).some(Boolean)).toBe(true)
+
   await armNextOPFSClose(page)
   await apply(page, 'browser-fired-child-write', [
     { op: 'write', path: '/workspace/node/child.cpp', text: 'fired child\n' },
