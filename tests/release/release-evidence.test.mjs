@@ -554,21 +554,17 @@ function forkConsumerFixture(manifest, lock) {
 }
 
 describe('committed exact-candidate consumer fixture', () => {
-  it('fails closed until the committed fork engine input and lock are published bytes', async () => {
-    const committed = await loadEngineForkInput(undefined, { requireFinal: false })
-    expect(committed.status).toBe('pending-publication')
+  it('binds the committed consumer graph to the published fork engine', async () => {
+    const committed = await loadEngineForkInput()
+    expect(committed.status).toBe('final')
     expect(committed.engine.distribution.url).toBe(FORK_ENGINE_URL)
-    expect(committed.engine).not.toHaveProperty('build')
-    expect(committed.engine.source).not.toHaveProperty('commit')
+    expect(committed.engine.source.commit).toBe('b7236bda9c8fef31cd771fe770c2145f11ac0682')
     expect(committed.engine.source.acceptedBaseCommit)
       .toBe('58cbc9369e3f7738a6dc9b01082723d144bb9c97')
-    expect(committed.engine.distribution).not.toHaveProperty('sha256')
-    expect(committed.engine.embeddedWasm).not.toHaveProperty('wasmSha256')
-    await expect(loadEngineForkInput()).rejects.toThrow(/pending-publication/u)
     const lock = await readJSON(path.join(repositoryRoot, 'tests/consumer/package-lock.json'))
     await expect(validateCommittedConsumerFixture(
       lock.packages['node_modules/web-ide'].integrity,
-    )).rejects.toThrow(/pending-publication/u)
+    )).resolves.toHaveProperty('candidateSha512Integrity', lock.packages['node_modules/web-ide'].integrity)
   })
 
   it('hashes both metadata files and binds the lock to the candidate SRI', async () => {
@@ -1431,7 +1427,7 @@ describe('committed fork engine input', () => {
     ])
   })
 
-  it('rejects registry mislabelling, mutable asset URLs, and hidden pending bytes', () => {
+  it('rejects registry mislabelling, mutable asset URLs, and incomplete input', () => {
     const record = forkInputFixture()
     expect(() => validateEngineForkInput({ ...record, extra: true })).toThrow(/unknown field/u)
     const cases = [
@@ -1471,34 +1467,11 @@ describe('committed fork engine input', () => {
     for (const [label, engine] of cases) {
       expect(() => validateEngineForkInput({ ...record, engine }), label).toThrow()
     }
-    const pending = structuredClone(record)
-    pending.status = 'pending-publication'
-    pending.pendingSteps = ['Publish the reviewed fork asset.']
-    delete pending.consumerGraph
-    delete pending.engine.build
-    delete pending.engine.source.commit
-    delete pending.engine.distribution.size
-    delete pending.engine.distribution.sha256
-    delete pending.engine.distribution.sha512Integrity
-    delete pending.engine.embeddedWasm.wasmSize
-    delete pending.engine.embeddedWasm.wasmSha256
-    delete pending.engine.embeddedWasm.moduleSize
-    delete pending.engine.embeddedWasm.moduleSha256
-    expect(validateEngineForkInput(pending).status).toBe('pending-publication')
-    for (const hidden of [
-      { ...pending, engine: { ...pending.engine, build: record.engine.build } },
-      {
-        ...pending,
-        engine: {
-          ...pending.engine,
-          distribution: { ...pending.engine.distribution, sha256: record.engine.distribution.sha256 },
-        },
-      },
-      { ...pending, consumerGraph: record.consumerGraph },
-      { ...pending, pendingSteps: [] },
-      { ...pending, engine: { ...pending.engine, source: record.engine.source } },
-    ]) {
-      expect(() => validateEngineForkInput(hidden)).toThrow()
+    expect(() => validateEngineForkInput({ ...record, status: 'pending-publication' })).toThrow()
+    for (const field of ['build', 'source', 'distribution', 'embeddedWasm']) {
+      const incomplete = structuredClone(record)
+      delete incomplete.engine[field]
+      expect(() => validateEngineForkInput(incomplete)).toThrow()
     }
   })
 })

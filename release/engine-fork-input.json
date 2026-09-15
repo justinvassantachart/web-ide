@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "package": "web-ide",
-  "status": "pending-publication",
+  "status": "final",
   "engine": {
     "name": "debugger-sh",
     "version": "0.3.15-webide.0.4.0.1",
@@ -13,30 +13,41 @@
     },
     "source": {
       "repository": "https://github.com/justinvassantachart/engine",
-      "acceptedBaseCommit": "58cbc9369e3f7738a6dc9b01082723d144bb9c97"
+      "acceptedBaseCommit": "58cbc9369e3f7738a6dc9b01082723d144bb9c97",
+      "commit": "b7236bda9c8fef31cd771fe770c2145f11ac0682"
+    },
+    "build": {
+      "kind": "embedded-wasm-library-build",
+      "toolchain": {
+        "node": "v24.11.1",
+        "npm": "11.6.2",
+        "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+        "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+        "wasmPack": "wasm-pack 0.14.0"
+      }
     },
     "distribution": {
       "mechanism": "public-github-release-asset",
       "repository": "justinvassantachart/engine",
       "tag": "debugger-sh-v0.3.15-webide.0.4.0.1",
+      "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz",
       "assetFilename": "debugger-sh-0.3.15-webide.0.4.0.1.tgz",
-      "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+      "size": 27818347,
+      "sha256": "feaaf9da592ee6be8ee68705bd2c2ad79db69528df4fcdf2d1c20b01b51f1bf7",
+      "sha512Integrity": "sha512-EMYupTFpj9buXYwQ9yt8vZNr7yEaKG7K4/9KHmPMhPN+RRk+/Zm0oyTsJlt5Xjcb7Z3XtWGRkz5dnAt2S4X7iA=="
     },
     "embeddedWasm": {
       "wasmPath": "dist/engine_bg.wasm",
       "wasmLoadedAtRuntime": false,
       "modulePath": "dist/debugger-sh.js",
-      "remotelyFetched": false
+      "remotelyFetched": false,
+      "wasmSize": 8880594,
+      "wasmSha256": "df46b583db11d22ed49006746cdf630e3632f3a34499798d4dc19b7634928d24",
+      "moduleSize": 23760324,
+      "moduleSha256": "fc29a20e6318c41583fae83fddef24c7ee068001ad2f43e97acb6154b319f6b4"
     }
   },
-  "pendingSteps": [
-    "Root publishes the reviewed fork asset at engine.distribution.url and returns the re-download publication receipt.",
-    "Record engine.source.commit as the exact reviewed fork commit whose pack produced the published asset (a descendant of engine.source.acceptedBaseCommit that carries the fork package metadata).",
-    "Copy the exact final engine.distribution size/sha256/sha512Integrity and engine.embeddedWasm wasmSize/wasmSha256/moduleSize/moduleSha256 from the re-downloaded published bytes, confirming they match the engine author's reviewed build evidence and that engine.embeddedWasm.modulePath is the published package's exports['.'].import target.",
-    "Copy the exact engine.build kind and node/npm/rustc/cargo/wasmPack toolchain identities from the same final evidence.",
-    "Repin package.json dependencies['debugger-sh'] to engine.distribution.url and regenerate package-lock.json plus tests/consumer/package-lock.json from the published bytes.",
-    "Set consumerGraph.normalizedLockSha256 to the regenerated packed-consumer normalized-lock digest and flip status to \"final\".",
-    "Regenerate the shipped THIRD_PARTY_LICENSES.txt: the removed debugger-sh.engine-bg.wasm runtime-asset record and the new installed engine version both change the generated license evidence.",
-    "Re-run the production browser matrix against the installed fork and confirm the observed remote request set still equals the 26 locked runtime assets: no engine WebAssembly download and no new fork asset URL such as the C++ exceptions runtime archive."
-  ]
+  "consumerGraph": {
+    "normalizedLockSha256": "1c7d56cf2db8a10edfd865f2ccf6fa9518721f10c16af6f05047615befceb2b7"
+  }
 }

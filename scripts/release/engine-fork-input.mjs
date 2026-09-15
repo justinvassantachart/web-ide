@@ -69,10 +69,10 @@ function validateUpstream(upstream, location) {
   assertCommit(upstream.commit, `${location}.commit`)
 }
 
-function validateSource(source, upstream, { final }, location) {
+function validateSource(source, upstream, location) {
   assertExactKeys(
     source,
-    ['repository', 'acceptedBaseCommit', ...(final ? ['commit'] : [])],
+    ['repository', 'acceptedBaseCommit', 'commit'],
     [],
     location,
   )
@@ -84,7 +84,6 @@ function validateSource(source, upstream, { final }, location) {
   if (source.acceptedBaseCommit === upstream.commit) {
     throw new TypeError(`${location}.acceptedBaseCommit must differ from the upstream release commit`)
   }
-  if (!final) return
   assertCommit(source.commit, `${location}.commit`)
   if (source.commit === upstream.commit) {
     throw new TypeError(`${location}.commit must differ from the upstream release commit`)
@@ -100,10 +99,10 @@ function validateBuild(build, location) {
   }
 }
 
-function validateDistribution(distribution, engine, { final }, location) {
+function validateDistribution(distribution, engine, location) {
   assertExactKeys(
     distribution,
-    ['mechanism', 'repository', 'tag', 'assetFilename', 'url', ...(final ? ['size', 'sha256', 'sha512Integrity'] : [])],
+    ['mechanism', 'repository', 'tag', 'assetFilename', 'url', 'size', 'sha256', 'sha512Integrity'],
     [],
     location,
   )
@@ -124,7 +123,6 @@ function validateDistribution(distribution, engine, { final }, location) {
   if (url.pathname !== expectedPath) {
     throw new TypeError(`${location}.url must be the immutable release asset URL ${expectedPath}`)
   }
-  if (!final) return
   assertSize(distribution.size, `${location}.size`)
   assertDigest(distribution.sha256, `${location}.sha256`)
   if (!SHA512_INTEGRITY_PATTERN.test(distribution.sha512Integrity)) {
@@ -132,12 +130,12 @@ function validateDistribution(distribution, engine, { final }, location) {
   }
 }
 
-function validateEmbeddedWasm(embedded, { final }, location) {
+function validateEmbeddedWasm(embedded, location) {
   assertExactKeys(
     embedded,
     [
       'wasmPath', 'wasmLoadedAtRuntime', 'modulePath', 'remotelyFetched',
-      ...(final ? ['wasmSize', 'wasmSha256', 'moduleSize', 'moduleSha256'] : []),
+      'wasmSize', 'wasmSha256', 'moduleSize', 'moduleSha256',
     ],
     [],
     location,
@@ -152,7 +150,6 @@ function validateEmbeddedWasm(embedded, { final }, location) {
       throw new TypeError(`${location}.${field} must be false for an embedded engine build`)
     }
   }
-  if (!final) return
   assertSize(embedded.wasmSize, `${location}.wasmSize`)
   assertDigest(embedded.wasmSha256, `${location}.wasmSha256`)
   assertSize(embedded.moduleSize, `${location}.moduleSize`)
@@ -163,25 +160,24 @@ function validateEmbeddedWasm(embedded, { final }, location) {
 }
 
 export function validateEngineForkInput(record, location = 'engine fork input') {
-  const final = record?.status === 'final'
   assertExactKeys(
     record,
-    ['schemaVersion', 'package', 'status', 'engine', ...(final ? ['consumerGraph'] : ['pendingSteps'])],
+    ['schemaVersion', 'package', 'status', 'engine', 'consumerGraph'],
     [],
     location,
   )
   if (record.schemaVersion !== 1 || record.package !== 'web-ide') {
     throw new TypeError(`Unsupported ${location} identity`)
   }
-  if (!final && record.status !== 'pending-publication') {
-    throw new TypeError(`${location}.status must be "final" or "pending-publication"`)
+  if (record.status !== 'final') {
+    throw new TypeError(`${location}.status must be "final"`)
   }
   const engine = record.engine
   assertExactKeys(
     engine,
     [
       'name', 'version', 'registryPublished', 'upstream', 'source',
-      'distribution', 'embeddedWasm', ...(final ? ['build'] : []),
+      'distribution', 'embeddedWasm', 'build',
     ],
     [],
     `${location}.engine`,
@@ -199,39 +195,21 @@ export function validateEngineForkInput(record, location = 'engine fork input') 
   if (!engine.version.startsWith(`${engine.upstream.version}-webide.`)) {
     throw new TypeError(`${location}.engine.version must extend the exact upstream version`)
   }
-  validateSource(engine.source, engine.upstream, { final }, `${location}.engine.source`)
-  validateDistribution(engine.distribution, engine, { final }, `${location}.engine.distribution`)
-  validateEmbeddedWasm(engine.embeddedWasm, { final }, `${location}.engine.embeddedWasm`)
-  if (final) {
-    validateBuild(engine.build, `${location}.engine.build`)
-    assertExactKeys(record.consumerGraph, ['normalizedLockSha256'], [], `${location}.consumerGraph`)
-    assertDigest(record.consumerGraph.normalizedLockSha256, `${location}.consumerGraph.normalizedLockSha256`)
-    return record
-  }
-  if (!Array.isArray(record.pendingSteps) || record.pendingSteps.length === 0) {
-    throw new TypeError(`${location}.pendingSteps must record the remaining publication steps`)
-  }
-  record.pendingSteps.forEach((step, index) => assertNonEmptyString(step, `${location}.pendingSteps[${index}]`))
+  validateSource(engine.source, engine.upstream, `${location}.engine.source`)
+  validateDistribution(engine.distribution, engine, `${location}.engine.distribution`)
+  validateEmbeddedWasm(engine.embeddedWasm, `${location}.engine.embeddedWasm`)
+  validateBuild(engine.build, `${location}.engine.build`)
+  assertExactKeys(record.consumerGraph, ['normalizedLockSha256'], [], `${location}.consumerGraph`)
+  assertDigest(record.consumerGraph.normalizedLockSha256, `${location}.consumerGraph.normalizedLockSha256`)
   return record
 }
 
-export function assertFinalEngineForkInput(record, location = 'engine fork input') {
-  validateEngineForkInput(record, location)
-  if (record.status !== 'final') {
-    throw new TypeError(
-      `${location} is ${record.status}: the fork engine asset is not published yet. Remaining steps: `
-        + record.pendingSteps.join(' '),
-    )
-  }
-  return record
-}
+export const assertFinalEngineForkInput = validateEngineForkInput
 
 export async function loadEngineForkInput(
   filePath = path.join(repositoryRoot, ENGINE_FORK_INPUT_PATH),
-  { requireFinal = true } = {},
 ) {
-  const record = await readJSON(filePath)
-  return requireFinal ? assertFinalEngineForkInput(record) : validateEngineForkInput(record)
+  return validateEngineForkInput(await readJSON(filePath))
 }
 
 export function engineDependencySpecifier(record) {

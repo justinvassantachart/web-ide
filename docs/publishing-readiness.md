@@ -17,9 +17,8 @@ immutable release in Hamilton's private repository.
   `release/engine-fork-input.json` is the committed exact fork input record
   (fork source commit, build toolchain, GitHub release asset identity, and the
   engine WebAssembly that the fork embeds in its module instead of fetching).
-  At this commit that record is still `pending-publication`: the release tools,
-  the SBOM, the packed-consumer graph, and the artifact manifest all fail closed
-  until it carries the published bytes and `package.json` pins that exact URL.
+  The record binds the published fork and the complete packed-consumer graph;
+  release tools reject any dependency, integrity, or embedded-engine drift.
 - Host-neutral ESM exports, declarations, compiled CSS, clangd worker output,
   and raw C++ test resources remain package inputs.
 - The clean packed consumer imports the root and `web-ide/host` public exports,
