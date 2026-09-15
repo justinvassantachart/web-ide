@@ -3,7 +3,8 @@ import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';import path from 'node:path';
 export async function runNativeLifecycle({url, executablePath}) {
 const profile=await mkdtemp(path.join(tmpdir(),'shared-native-browser-'));
-const browserProcess=spawn(executablePath,['--remote-debugging-port=0','--remote-debugging-address=127.0.0.1',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','about:blank'],{stdio:'ignore'});
+// Isolate native Chromium from the macOS login keychain, as Playwright does.
+const browserProcess=spawn(executablePath,[...(process.platform==='darwin'?['--use-mock-keychain']:[]),'--remote-debugging-port=0','--remote-debugging-address=127.0.0.1',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','about:blank'],{stdio:'ignore'});
 let ws;const events=[],waiters=new Map();let sequence=0;
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 try{

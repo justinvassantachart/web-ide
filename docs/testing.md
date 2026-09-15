@@ -41,7 +41,7 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.4.0-source` tag, or a toolchain mismatch. The immutable
+`web-ide-v0.4.0-source-r2` tag, or a toolchain mismatch. The immutable
 `web-ide-v0.3.1-source` tag remains the previous release's source identity, and
 `web-ide-v0.3.0-source` remains the preceding release identity. The earlier
 `v0.2.0`, `web-ide-v0.2.0-source`, `web-ide-v0.2.0-source-r2`, and
