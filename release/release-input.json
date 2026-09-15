@@ -4,7 +4,7 @@
   "sourceRepository": "https://github.com/justinvassantachart/web-ide.git",
   "sourceTag": "web-ide-v0.4.0-source",
   "sourceAssetFilename": "web-ide-0.4.0-source.tar.gz",
-  "capabilityReleaseId": "hamilton.python/2",
+  "capabilityReleaseId": "hamilton.python/4",
   "packageRole": "web-ide",
   "releaseRepository": "justinvassantachart/ths-ide",
   "releaseTag": "web-ide-v0.4.0",

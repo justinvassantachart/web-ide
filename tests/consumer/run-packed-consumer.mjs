@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { withVerifiedPackedCandidate } from './packed-candidate.mjs'
 import { validateConsumerFixtureValues } from '../../scripts/release/consumer-fixture.mjs'
+import { loadEngineForkInput } from '../../scripts/release/engine-fork-input.mjs'
 import { settleOperations } from '../../scripts/release/process-utils.mjs'
 
 const fixtureRoot = path.dirname(fileURLToPath(import.meta.url))
@@ -159,6 +160,7 @@ try {
     copiedManifest,
     copiedLock,
     copiedLock.packages?.['node_modules/web-ide']?.integrity,
+    await loadEngineForkInput(),
   )
   await withVerifiedPackedCandidate(
     { candidatePath: candidateTarball, consumerRoot: temporaryConsumer },

@@ -2,6 +2,12 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { canonicalJSONString } from './canonical-json.mjs'
+import {
+  assertEngineLockEntry,
+  ENGINE_LOCK_PATH,
+  engineDependencySpecifier,
+  loadEngineForkInput,
+} from './engine-fork-input.mjs'
 import { VALIDATION_GATES } from './release-inputs.mjs'
 import {
   assertExactKeys,
@@ -16,7 +22,6 @@ import { validateReleaseSchema } from './validate-release-schema.mjs'
 
 const expectedPackageContract = {
   engines: { node: '^20.19.0 || >=22.12.0' },
-  dependencies: { 'debugger-sh': '0.3.15' },
   peerDependencies: {
     react: '^18.3.0 || ^19.0.0',
     'react-dom': '^18.3.0 || ^19.0.0',
@@ -51,8 +56,8 @@ const expectedValidationLogKinds = VALIDATION_GATES
   .sort()
 
 const expectedCapabilityReleaseIds = Object.freeze([
-  'hamilton.python-karel/4',
-  'hamilton.python/2',
+  'hamilton.python-karel/8',
+  'hamilton.python/4',
 ])
 
 function validateDigest(value, location) {
@@ -124,10 +129,30 @@ function validateBuildInputs(buildInputs, sourceDateEpoch) {
   assertNonEmptyString(buildInputs.pathNormalization, 'artifact manifest buildInputs.pathNormalization')
 }
 
-function validateRuntime(runtime) {
+function engineEvidence(forkInput, lockEntry) {
+  const { engine } = forkInput
+  return {
+    name: engine.name,
+    version: engine.version,
+    registryPublished: false,
+    source: {
+      repository: engine.source.repository,
+      commit: engine.source.commit,
+      upstreamRepository: engine.upstream.repository,
+      upstreamVersion: engine.upstream.version,
+      upstreamCommit: engine.upstream.commit,
+    },
+    build: { kind: engine.build.kind, toolchain: { ...engine.build.toolchain } },
+    distribution: { ...engine.distribution },
+    lock: assertEngineLockEntry(lockEntry, forkInput, `${ENGINE_LOCK_PATH} lock entry`),
+    embeddedWasm: { ...engine.embeddedWasm },
+  }
+}
+
+function validateRuntime(runtime, forkInput) {
   assertExactKeys(
     runtime,
-    ['observedDate', 'digestRepresentation', 'expectedRedirectCount', 'requestTimeoutMs', 'scope', 'limitations', 'assets', 'debuggerSh'],
+    ['observedDate', 'digestRepresentation', 'expectedRedirectCount', 'requestTimeoutMs', 'scope', 'limitations', 'assets', 'engine'],
     [],
     'artifact manifest runtime',
   )
@@ -135,7 +160,7 @@ function validateRuntime(runtime) {
     runtime.expectedRedirectCount !== 0
     || !Array.isArray(runtime.limitations)
     || !Array.isArray(runtime.assets)
-    || runtime.assets.length !== 27
+    || runtime.assets.length !== 26
   ) {
     throw new TypeError('Artifact manifest runtime evidence is incomplete')
   }
@@ -164,20 +189,26 @@ function validateRuntime(runtime) {
   if (JSON.stringify(ids) !== JSON.stringify(sortStrings(ids)) || new Set(ids).size !== ids.length) {
     throw new TypeError('Artifact manifest runtime assets must have unique sorted identities')
   }
-  assertExactKeys(runtime.debuggerSh, ['registry', 'source', 'distribution'], [], 'artifact manifest debuggerSh')
-  assertExactKeys(runtime.debuggerSh.registry, ['name', 'version', 'resolved', 'integrity'], [], 'artifact manifest debuggerSh.registry')
-  assertExactKeys(runtime.debuggerSh.source, ['repository', 'tag', 'commit'], [], 'artifact manifest debuggerSh.source')
-  assertExactKeys(runtime.debuggerSh.distribution, ['path', 'size', 'sha256'], [], 'artifact manifest debuggerSh.distribution')
+  for (const asset of runtime.assets) {
+    if (asset.id.startsWith(`${forkInput.engine.name}.engine`)) {
+      throw new TypeError('The embedded fork engine WebAssembly must not be locked as a remote runtime asset')
+    }
+  }
+  assertExactKeys(
+    runtime.engine,
+    ['name', 'version', 'registryPublished', 'source', 'build', 'distribution', 'lock', 'embeddedWasm'],
+    [],
+    'artifact manifest runtime.engine',
+  )
   if (
-    runtime.debuggerSh.registry.name !== 'debugger-sh'
-    || runtime.debuggerSh.registry.version !== '0.3.15'
-    || runtime.debuggerSh.source.commit !== 'cc250508fabb5b091075e073ceb2e14899fd8423'
-    || runtime.debuggerSh.distribution.path !== 'dist/engine_bg.wasm'
-  ) throw new TypeError('Artifact manifest debugger-sh identity is invalid')
-  validateDigest(runtime.debuggerSh.distribution.sha256, 'artifact manifest debuggerSh.distribution.sha256')
+    canonicalJSONString(runtime.engine)
+    !== canonicalJSONString(engineEvidence(forkInput, runtime.engine.lock))
+  ) {
+    throw new TypeError('Artifact manifest engine identity does not match the committed exact fork input')
+  }
 }
 
-export function validateArtifactManifest(manifest, configuration) {
+export function validateArtifactManifest(manifest, configuration, forkInput) {
   assertExactKeys(
     manifest,
     [
@@ -210,10 +241,16 @@ export function validateArtifactManifest(manifest, configuration) {
     || manifest.package.private !== true
     || manifest.package.license !== 'MIT'
   ) throw new TypeError('Artifact manifest package identity is invalid')
-  for (const field of ['engines', 'dependencies', 'peerDependencies', 'exports']) {
+  for (const field of ['engines', 'peerDependencies', 'exports']) {
     if (canonicalJSONString(manifest.package[field]) !== canonicalJSONString(expectedPackageContract[field])) {
       throw new TypeError(`Artifact manifest package ${field} changed from the reviewed contract`)
     }
+  }
+  if (
+    canonicalJSONString(manifest.package.dependencies)
+    !== canonicalJSONString({ [forkInput.engine.name]: engineDependencySpecifier(forkInput) })
+  ) {
+    throw new TypeError('Artifact manifest package dependencies do not pin the committed exact fork engine asset')
   }
   assertExactKeys(
     manifest.source,
@@ -286,7 +323,7 @@ export function validateArtifactManifest(manifest, configuration) {
   if (JSON.stringify(inventoryPaths) !== JSON.stringify(sortStrings(inventoryPaths)) || new Set(inventoryPaths).size !== inventoryPaths.length) {
     throw new TypeError('Artifact manifest file inventory is not unique and sorted')
   }
-  validateRuntime(manifest.runtime)
+  validateRuntime(manifest.runtime, forkInput)
   assertExactKeys(manifest.validation, ['candidateSha256', 'gateCount', 'logCount'], [], 'artifact manifest validation')
   if (
     manifest.validation.candidateSha256 !== artifact.sha256
@@ -324,12 +361,20 @@ async function evidenceFile(outputDirectory, kind, fileName) {
   return { kind, fileName, size, sha256: digest }
 }
 
-async function sourceInputFile(fileName) {
-  const { size, digest } = await hashFile(path.join(repositoryRoot, fileName))
+async function sourceInputFile(fileName, absolutePath = path.join(repositoryRoot, fileName)) {
+  const { size, digest } = await hashFile(absolutePath)
   return { kind: 'source-input', fileName, size, sha256: digest }
 }
 
-export async function createArtifactManifest({ outputDirectory, configuration, source, packageManifest }) {
+export async function createArtifactManifest({
+  outputDirectory,
+  configuration,
+  source,
+  packageManifest,
+  engineForkInputPath,
+  packageLockPath = path.join(repositoryRoot, 'package-lock.json'),
+}) {
+  const forkInput = await loadEngineForkInput(engineForkInputPath)
   const validationSummary = await readJSON(path.join(outputDirectory, 'validation-summary.json'))
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
@@ -355,19 +400,19 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
     evidenceFile(outputDirectory, 'package-tarball', configuration.releaseAssetFilename),
     evidenceFile(outputDirectory, 'source-archive', configuration.sourceAssetFilename),
     sourceInputFile('package.json'),
-    sourceInputFile('package-lock.json'),
+    sourceInputFile('package-lock.json', packageLockPath),
   ])
   const [inspection, runtimeLock, runtimeSources, packageLock, determinism] = await Promise.all([
     readJSON(path.join(outputDirectory, 'package-inspection.json')),
     readJSON(path.join(repositoryRoot, 'release/runtime-assets.lock.json')),
     readJSON(path.join(repositoryRoot, 'release/runtime-source-provenance.json')),
-    readJSON(path.join(repositoryRoot, 'package-lock.json')),
+    readJSON(packageLockPath),
     readJSON(path.join(outputDirectory, 'deterministic-builds.json')),
   ])
-  const debuggerLock = packageLock.packages?.['node_modules/debugger-sh']
-  const debuggerSource = runtimeSources.records.find((record) => record.id === 'debugger-sh-engine')
-  const debuggerAsset = runtimeLock.assets.find((asset) => asset.id === 'debugger-sh.engine-bg.wasm')
-  if (!debuggerLock || !debuggerSource || !debuggerAsset) throw new TypeError('Debugger.sh release identity is incomplete')
+  const engine = engineEvidence(forkInput, packageLock.packages?.[ENGINE_LOCK_PATH])
+  if (runtimeSources.records.some((record) => record.assets.some((asset) => asset.startsWith(`${forkInput.engine.name}.engine`)))) {
+    throw new TypeError('Runtime source provenance still records the embedded fork engine WebAssembly as a remote asset')
+  }
   if (
     inspection.tarball.filename !== artifactEvidence.fileName
     || inspection.tarball.size !== artifactEvidence.size
@@ -439,24 +484,7 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
         headers: asset.headers,
         license: asset.license,
       })),
-      debuggerSh: {
-        registry: {
-          name: 'debugger-sh',
-          version: debuggerLock.version,
-          resolved: debuggerLock.resolved,
-          integrity: debuggerLock.integrity,
-        },
-        source: {
-          repository: debuggerSource.source.repository,
-          tag: 'v0.3.15',
-          commit: debuggerSource.source.commit,
-        },
-        distribution: {
-          path: 'dist/engine_bg.wasm',
-          size: debuggerAsset.size,
-          sha256: debuggerAsset.sha256,
-        },
-      },
+      engine,
     },
     validation: {
       candidateSha256: validationSummary.candidateSha256,
@@ -466,6 +494,6 @@ export async function createArtifactManifest({ outputDirectory, configuration, s
     evidence,
   }
   const manifestId = `urn:sha256:${sha256Bytes(Buffer.from(canonicalJSONString(draft)))}`
-  const manifest = validateArtifactManifest({ ...draft, manifestId }, configuration)
+  const manifest = validateArtifactManifest({ ...draft, manifestId }, configuration, forkInput)
   return await validateReleaseSchema('artifact-manifest.schema.json', manifest, 'Artifact manifest')
 }

@@ -32,8 +32,8 @@
     },
     "capabilityReleaseIds": {
       "const": [
-        "hamilton.python-karel/4",
-        "hamilton.python/2"
+        "hamilton.python-karel/8",
+        "hamilton.python/4"
       ]
     },
     "packageRole": {
@@ -72,7 +72,7 @@
         },
         "dependencies": {
           "const": {
-            "debugger-sh": "0.3.15"
+            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
           }
         },
         "peerDependencies": {
@@ -619,7 +619,7 @@
         "scope",
         "limitations",
         "assets",
-        "debuggerSh"
+        "engine"
       ],
       "properties": {
         "observedDate": {
@@ -649,8 +649,8 @@
         },
         "assets": {
           "type": "array",
-          "minItems": 27,
-          "maxItems": 27,
+          "minItems": 26,
+          "maxItems": 26,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -720,56 +720,100 @@
             }
           }
         },
-        "debuggerSh": {
+        "engine": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "registry",
+            "name",
+            "version",
+            "registryPublished",
             "source",
-            "distribution"
+            "build",
+            "distribution",
+            "lock",
+            "embeddedWasm"
           ],
           "properties": {
-            "registry": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "name",
-                "version",
-                "resolved",
-                "integrity"
-              ],
-              "properties": {
-                "name": {
-                  "const": "debugger-sh"
-                },
-                "version": {
-                  "const": "0.3.15"
-                },
-                "resolved": {
-                  "const": "https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15.tgz"
-                },
-                "integrity": {
-                  "const": "sha512-Sx4B8RPU5t5Pj50vFs7ngLvOr1YLwF9xsqdF/p2vbLRA38gv8iJ06EmPmuVfXoFFyI0fo+7kVe6tQRYwTC8lNA=="
-                }
-              }
+            "name": {
+              "const": "debugger-sh"
+            },
+            "version": {
+              "const": "0.3.15-webide.0.4.0.1"
+            },
+            "registryPublished": {
+              "const": false
             },
             "source": {
               "type": "object",
               "additionalProperties": false,
               "required": [
                 "repository",
-                "tag",
-                "commit"
+                "commit",
+                "upstreamRepository",
+                "upstreamVersion",
+                "upstreamCommit"
               ],
               "properties": {
                 "repository": {
-                  "const": "https://github.com/debugger-sh/engine"
-                },
-                "tag": {
-                  "const": "v0.3.15"
+                  "const": "https://github.com/justinvassantachart/engine"
                 },
                 "commit": {
+                  "const": "58cbc9369e3f7738a6dc9b01082723d144bb9c97"
+                },
+                "upstreamRepository": {
+                  "const": "https://github.com/debugger-sh/engine"
+                },
+                "upstreamVersion": {
+                  "const": "0.3.15"
+                },
+                "upstreamCommit": {
                   "const": "cc250508fabb5b091075e073ceb2e14899fd8423"
+                }
+              }
+            },
+            "build": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "toolchain"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "embedded-wasm-library-build"
+                },
+                "toolchain": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "node",
+                    "npm",
+                    "rustc",
+                    "cargo",
+                    "wasmPack"
+                  ],
+                  "properties": {
+                    "node": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "npm": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "rustc": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "cargo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "wasmPack": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 }
               }
             },
@@ -777,19 +821,103 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "path",
+                "mechanism",
+                "repository",
+                "tag",
+                "assetFilename",
+                "url",
                 "size",
-                "sha256"
+                "sha256",
+                "sha512Integrity"
               ],
               "properties": {
-                "path": {
-                  "const": "dist/engine_bg.wasm"
+                "mechanism": {
+                  "const": "public-github-release-asset"
+                },
+                "repository": {
+                  "const": "justinvassantachart/engine"
+                },
+                "tag": {
+                  "const": "debugger-sh-v0.3.15-webide.0.4.0.1"
+                },
+                "assetFilename": {
+                  "const": "debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+                },
+                "url": {
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
                 },
                 "size": {
-                  "const": 8760773
+                  "type": "integer",
+                  "minimum": 1
                 },
                 "sha256": {
-                  "const": "65379e4e786195233151269f7cd7f55dc3891dcd0725f5eee048d70de39b959b"
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "sha512Integrity": {
+                  "type": "string",
+                  "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+                }
+              }
+            },
+            "lock": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "resolved",
+                "integrity"
+              ],
+              "properties": {
+                "version": {
+                  "const": "0.3.15-webide.0.4.0.1"
+                },
+                "resolved": {
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+                },
+                "integrity": {
+                  "type": "string",
+                  "pattern": "^sha512-[A-Za-z0-9+/]{86}==$"
+                }
+              }
+            },
+            "embeddedWasm": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "wasmPath",
+                "modulePath",
+                "remotelyFetched",
+                "wasmSize",
+                "wasmSha256",
+                "moduleSize",
+                "moduleSha256"
+              ],
+              "properties": {
+                "wasmPath": {
+                  "const": "dist/engine_bg.wasm"
+                },
+                "modulePath": {
+                  "const": "dist/debugger-sh.js"
+                },
+                "remotelyFetched": {
+                  "const": false
+                },
+                "wasmSize": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "wasmSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "moduleSize": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "moduleSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
                 }
               }
             }

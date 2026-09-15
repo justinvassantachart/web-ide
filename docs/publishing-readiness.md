@@ -9,8 +9,17 @@ immutable release in Hamilton's private repository.
 ## Source checkpoint complete
 
 - The manifest records the public GitHub source, issue tracker, homepage,
-  semantic version, and MIT source license without changing the export map,
-  React peer ranges, or exact `debugger-sh@0.3.15` runtime pin.
+  semantic version, and MIT source license without changing the export map or
+  React peer ranges.
+- The runtime engine pin moves from the upstream `debugger-sh@0.3.15` registry
+  release to one exact immutable public fork release asset. That asset is
+  neither an upstream registry release nor an npm publication of this project;
+  `release/engine-fork-input.json` is the committed exact fork input record
+  (fork source commit, build toolchain, GitHub release asset identity, and the
+  engine WebAssembly that the fork embeds in its module instead of fetching).
+  At this commit that record is still `pending-publication`: the release tools,
+  the SBOM, the packed-consumer graph, and the artifact manifest all fail closed
+  until it carries the published bytes and `package.json` pins that exact URL.
 - Host-neutral ESM exports, declarations, compiled CSS, clangd worker output,
   and raw C++ test resources remain package inputs.
 - The clean packed consumer imports the root and `web-ide/host` public exports,
@@ -69,8 +78,11 @@ Candidate construction then:
   CycloneDX, SPDX, and JSF schemas;
 - emits a complete machine inventory and the exact generated
   `THIRD_PARTY_LICENSES.txt` shipped inside the tarball; and
-- streams all 27 reviewed reachable runtime assets under timeout and exact
+- streams all 26 reviewed reachable runtime assets under timeout and exact
   size, SHA-256, final URL, zero-redirect, content-type, CORS, and CORP checks.
+  The engine WebAssembly is no longer one of them: the fork build embeds it, so
+  it is represented as the fork record's embedded-module evidence instead of a
+  jsDelivr npm CDN download.
 
 The source verifier neutralizes system/global Git configuration, system
 attributes, and replacement objects; rejects worktree configuration, includes,
@@ -87,6 +99,14 @@ and copied machine-receipted validation-log digests. It records only intended
 Hamilton release names before publication; it has no post-publication ID and no
 Karel-manifest dependency. The Karel compatibility log can therefore finalize
 Web evidence before Karel binds the resulting Web manifest.
+
+Because the fork engine pin changes the candidate bytes, this release uses the
+forward compatibility evidence identities `hamilton.python/4` and
+`hamilton.python-karel/8` instead of rebinding the historical
+`hamilton.python/2` and `hamilton.python-karel/4` names, which stay bound to
+their own earlier bytes. The paired Karel package must declare the same exact
+pair, and Hamilton's existing shared `hamilton.python/3` and
+`hamilton.python-karel/6`/`/7` identities are unchanged.
 
 The repository does not claim npm availability, Rust, bundled Karel behavior,
 offline operation, collaboration transport, presence, or graphics output.

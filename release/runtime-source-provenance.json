@@ -22,22 +22,6 @@
       ]
     },
     {
-      "id": "debugger-sh-engine",
-      "assets": ["debugger-sh.engine-bg.wasm"],
-      "relationship": "exact-versioned-npm-file-match",
-      "source": {
-        "repository": "https://github.com/debugger-sh/engine",
-        "commit": "cc250508fabb5b091075e073ceb2e14899fd8423",
-        "paths": ["LICENSE", "src/worker/mod.rs", "src/python/worker/mod.rs"]
-      },
-      "inputs": [
-        "debugger-sh@0.3.15 npm integrity sha512-Sx4B8RPU5t5Pj50vFs7ngLvOr1YLwF9xsqdF/p2vbLRA38gv8iJ06EmPmuVfXoFFyI0fo+7kVe6tQRYwTC8lNA=="
-      ],
-      "limitations": [
-        "The npm package retains its top-level MIT license but does not ship a generated license inventory for Rust crates compiled into engine_bg.wasm."
-      ]
-    },
-    {
       "id": "debugger-sh-llvm",
       "assets": ["debugger-sh.llvm-core.wasm", "debugger-sh.llvm-resources.tar.gz"],
       "relationship": "exact-host-git-blob-match-with-strong-inferred-build-provenance",

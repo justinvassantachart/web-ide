@@ -66,7 +66,7 @@ export async function loadReleaseConfiguration() {
   for (const field of Object.keys(input).filter((key) => key !== 'schemaVersion')) {
     assertNonEmptyString(input[field], `release input.${field}`)
   }
-  if (input.capabilityReleaseId !== 'hamilton.python/2' || input.packageRole !== 'web-ide') {
+  if (input.capabilityReleaseId !== 'hamilton.python/4' || input.packageRole !== 'web-ide') {
     throw new TypeError('Release input does not match the accepted Hamilton composition identity')
   }
   if (input.sourceTag !== 'web-ide-v0.4.0-source') {

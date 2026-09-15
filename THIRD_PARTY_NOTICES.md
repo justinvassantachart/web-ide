@@ -9,7 +9,13 @@ SBOM.
 
 Notable retained dependencies and source provenance include:
 
-- Debugger.sh — MIT; dynamically loads its engine and language toolchain assets.
+- Debugger.sh — MIT; dynamically loads its language toolchain assets. Web IDE
+  0.4.0 pins one exact immutable public fork release asset instead of the
+  upstream npm release; `release/engine-fork-input.json` records that exact fork
+  input, including the engine WebAssembly the fork embeds in its module rather
+  than downloading. The package keeps its top-level MIT license and still does
+  not ship a generated license inventory for the Rust crates compiled into that
+  embedded engine WebAssembly.
 - Monaco Editor — MIT and its bundled third-party notices.
 - `@monaco-editor/react` — MIT.
 - VS Code Codicons — CC BY 4.0 for icons/font and MIT-licensed code files.

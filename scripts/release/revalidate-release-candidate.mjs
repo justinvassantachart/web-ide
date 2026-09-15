@@ -6,6 +6,7 @@ import { validateBundleProvenance } from './bundle-provenance.mjs'
 import { buildDeterministicCandidates } from './candidate-builds.mjs'
 import { canonicalJSONString } from './canonical-json.mjs'
 import { validateCommittedConsumerFixture } from './consumer-fixture.mjs'
+import { loadEngineForkInput } from './engine-fork-input.mjs'
 import { reinspectPackedPackage } from './package-inspection.mjs'
 import {
   readCanonicalJSON,
@@ -40,6 +41,7 @@ export async function revalidateReleaseCandidate({
   source,
   sourceOptions = {},
 }) {
+  const forkInput = await loadEngineForkInput()
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'web-ide-release-revalidate-'))
   try {
     const rebuilt = await buildDeterministicCandidates({
@@ -60,6 +62,7 @@ export async function revalidateReleaseCandidate({
     assertCanonicalEqual(inspection, rebuilt.inspection, 'Package inspection')
     const consumerFixture = await validateCommittedConsumerFixture(
       reinspection.tarball.sha512Integrity,
+      forkInput,
     )
 
     const provenance = validateBundleProvenance(await readCanonicalJSON(
@@ -120,6 +123,7 @@ export async function revalidateReleaseCandidate({
       packageManifest,
       packageLock,
       candidate: inspection.tarball,
+      forkInput,
     })
     await validateCycloneDx(expectedSbom)
     const sbom = await readCanonicalJSON(

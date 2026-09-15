@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { validateBundleProvenance } from './bundle-provenance.mjs'
+import { assertEngineLockEntry, ENGINE_LOCK_PATH } from './engine-fork-input.mjs'
 import {
   assertExactKeys,
   assertNonEmptyString,
@@ -35,10 +36,19 @@ function lockHash(integrity) {
   return { alg: 'SHA-512', content: bytes.toString('hex') }
 }
 
-function packageComponent({ name, version, lockPath, inclusion, lockEntry, extraProperties = [] }) {
+function packageComponent({
+  name,
+  version,
+  lockPath,
+  inclusion,
+  lockEntry,
+  extraProperties = [],
+  purlQualifiers = null,
+  extraExternalReferences = [],
+}) {
   const license = assertNonEmptyString(lockEntry.license, `${lockPath}.license`)
-  const purl = npmPurl(name, version)
-  const bomRef = `${purl}?web_ide_lock_path=${encodeURIComponent(lockPath)}`
+  const purl = purlQualifiers ? `${npmPurl(name, version)}?${purlQualifiers}` : npmPurl(name, version)
+  const bomRef = `${purl}${purlQualifiers ? '&' : '?'}web_ide_lock_path=${encodeURIComponent(lockPath)}`
   const properties = [
     { name: 'web-ide:evidence:inclusion', value: inclusion },
     { name: 'web-ide:evidence:lock-path', value: lockPath },
@@ -55,9 +65,11 @@ function packageComponent({ name, version, lockPath, inclusion, lockEntry, extra
     licenses: [{ expression: license }],
     properties,
   }
-  if (typeof lockEntry.resolved === 'string') {
-    component.externalReferences = [{ type: 'distribution', url: lockEntry.resolved }]
-  }
+  const externalReferences = [
+    ...(typeof lockEntry.resolved === 'string' ? [{ type: 'distribution', url: lockEntry.resolved }] : []),
+    ...extraExternalReferences,
+  ]
+  if (externalReferences.length > 0) component.externalReferences = externalReferences
   return component
 }
 
@@ -84,12 +96,40 @@ function runtimeAssetComponent(asset) {
   }
 }
 
+function engineComponent(forkInput, packageManifest, lockPackages) {
+  const { engine } = forkInput
+  const lockEntry = lockPackages[ENGINE_LOCK_PATH]
+  assertEngineLockEntry(lockEntry, forkInput, `${ENGINE_LOCK_PATH} lock entry`)
+  if (packageManifest.dependencies?.[engine.name] !== engine.distribution.url) {
+    throw new TypeError('Release manifest does not pin the committed exact fork engine asset')
+  }
+  return packageComponent({
+    name: engine.name,
+    version: engine.version,
+    lockPath: ENGINE_LOCK_PATH,
+    inclusion: 'runtime-external',
+    lockEntry,
+    purlQualifiers: `download_url=${encodeURIComponent(engine.distribution.url)}`,
+    extraExternalReferences: [{ type: 'vcs', url: engine.source.repository }],
+    extraProperties: [
+      { name: 'web-ide:evidence:engine-distribution-mechanism', value: engine.distribution.mechanism },
+      { name: 'web-ide:evidence:engine-embedded-wasm-path', value: engine.embeddedWasm.wasmPath },
+      { name: 'web-ide:evidence:engine-embedded-wasm-sha256', value: engine.embeddedWasm.wasmSha256 },
+      { name: 'web-ide:evidence:engine-registry-published', value: 'false' },
+      { name: 'web-ide:evidence:engine-remote-wasm-fetch', value: String(engine.embeddedWasm.remotelyFetched) },
+      { name: 'web-ide:evidence:engine-source-commit', value: engine.source.commit },
+      { name: 'web-ide:evidence:engine-upstream-version', value: engine.upstream.version },
+    ],
+  })
+}
+
 export async function generateCycloneDx({
   provenancePath,
   runtimeLock,
   packageManifest,
   packageLock,
   candidate,
+  forkInput,
 }) {
   assertExactKeys(candidate, ['filename', 'size', 'sha256', 'sha512Integrity'], [], 'SBOM candidate')
   if (!Number.isSafeInteger(candidate.size) || candidate.size <= 0 || !/^[a-f0-9]{64}$/u.test(candidate.sha256)) {
@@ -121,8 +161,10 @@ export async function generateCycloneDx({
     byBomRef.set(component['bom-ref'], component)
   }
 
+  const engine = engineComponent(forkInput, packageManifest, lockPackages)
+  byBomRef.set(engine['bom-ref'], engine)
+
   const externalPackages = [
-    ['debugger-sh', 'runtime-external', packageManifest.dependencies?.['debugger-sh']],
     ['monaco-editor', 'runtime-external', lockPackages['node_modules/monaco-editor']?.version],
     ['react', 'peer-external', lockPackages['node_modules/react']?.version],
     ['react-dom', 'peer-external', lockPackages['node_modules/react-dom']?.version],

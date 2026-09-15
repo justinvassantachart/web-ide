@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { buildDeterministicCandidates } from './candidate-builds.mjs'
 import { canonicalJSONString } from './canonical-json.mjs'
+import { loadEngineForkInput } from './engine-fork-input.mjs'
 import { loadReleaseConfiguration } from './release-inputs.mjs'
 import {
   assertCanonicalSnapshotUnchanged,
@@ -31,6 +32,7 @@ let outputTransaction
 
 try {
 const configuration = await loadReleaseConfiguration()
+const forkInput = await loadEngineForkInput()
 const preflightRemoteInput = process.env.WEB_IDE_RELEASE_PREFLIGHT_REMOTE
 const preflightRemote = preflightRemoteInput
   ? await assertExternalOutputPath(preflightRemoteInput, 'Preflight fixture remote')
@@ -120,6 +122,7 @@ const sbom = await generateCycloneDx({
   packageManifest,
   packageLock,
   candidate: candidate.inspection.tarball,
+  forkInput,
 })
 await validateCycloneDx(sbom)
 await writeCanonicalJSON(path.join(outputDirectory, 'web-ide-0.4.0.cdx.json'), sbom)

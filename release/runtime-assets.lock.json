@@ -53,25 +53,8 @@
       "sourceLocations": ["src/clangd/config.ts"]
     },
     {
-      "id": "debugger-sh.engine-bg.wasm",
-      "version": "0.3.15",
-      "requestedUrl": "https://cdn.jsdelivr.net/npm/debugger-sh@0.3.15/dist/engine_bg.wasm",
-      "finalUrl": "https://cdn.jsdelivr.net/npm/debugger-sh@0.3.15/dist/engine_bg.wasm",
-      "size": 8760773,
-      "sha256": "65379e4e786195233151269f7cd7f55dc3891dcd0725f5eee048d70de39b959b",
-      "contentType": "application/wasm",
-      "headers": {
-        "access-control-allow-origin": "*",
-        "cross-origin-resource-policy": "cross-origin"
-      },
-      "license": "MIT",
-      "licenseTextPaths": ["node_modules/debugger-sh/LICENSE"],
-      "sourceRepository": "https://github.com/debugger-sh/engine",
-      "sourceLocations": ["node_modules/debugger-sh/dist/debugger-sh.js"]
-    },
-    {
       "id": "debugger-sh.llvm-core.wasm",
-      "version": "debugger-sh-0.3.15",
+      "version": "debugger-sh-0.3.15-webide.0.4.0.1",
       "requestedUrl": "https://fabioibanez.github.io/website/llvm.core.wasm",
       "finalUrl": "https://fabioibanez.github.io/website/llvm.core.wasm",
       "size": 75532134,
@@ -91,7 +74,7 @@
     },
     {
       "id": "debugger-sh.llvm-resources.tar.gz",
-      "version": "debugger-sh-0.3.15",
+      "version": "debugger-sh-0.3.15-webide.0.4.0.1",
       "requestedUrl": "https://fabioibanez.github.io/website/llvm-resources.tar.gz",
       "finalUrl": "https://fabioibanez.github.io/website/llvm-resources.tar.gz",
       "size": 4243142,

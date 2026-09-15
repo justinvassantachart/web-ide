@@ -268,13 +268,18 @@ the exact direct browser shims that replaced the former whole-stdlib polyfill
 plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
-The built-in browser providers are currently certified against exactly
-`debugger-sh@0.3.15`, which is intentionally pinned in `package.json`. A runtime
-dependency upgrade must update that exact version and lockfile, review upstream
+The built-in browser providers are certified against exactly one pinned engine
+build. The retained certification evidence covers `debugger-sh@0.3.15`, and
+Web IDE 0.4.0 repins that dependency to the exact immutable
+`debugger-sh@0.3.15-webide.0.4.0.1` fork release asset recorded in
+`release/engine-fork-input.json`. An engine change must update that record,
+`package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
 `npm run validate:production`, repeat the browser suite at least three times,
-and then rerun Nova's host regression. Do not widen the supported version range
-until the same compatibility matrix has passed for every version in the range.
+and then rerun Nova's host regression. That fork matrix has not run yet, so the
+pinned-engine certification for 0.4.0 is not claimed. Do not widen the supported
+version range until the same compatibility matrix has passed for every version
+in the range.
 
 ## Packed external-viewer regression
 

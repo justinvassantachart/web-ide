@@ -2,6 +2,12 @@ import path from 'node:path'
 
 import { canonicalJSONString } from './canonical-json.mjs'
 import {
+  assertEngineLockEntry,
+  assertFinalEngineForkInput,
+  ENGINE_LOCK_PATH,
+  loadEngineForkInput,
+} from './engine-fork-input.mjs'
+import {
   assertExactKeys,
   readRegularFileSnapshot,
   repositoryRoot,
@@ -9,7 +15,6 @@ import {
 } from './release-utils.mjs'
 
 const CANDIDATE_REFERENCE = 'file:web-ide.tgz'
-const NORMALIZED_LOCK_SHA256 = 'fcb17101e404e366b2072d453369f235add72430b921fe553b7a0dc0c96792c6'
 const CANDIDATE_INTEGRITY_PLACEHOLDER = '<candidate-sha512-integrity>'
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u
 const PACKAGE_PATH_PATTERN = /^node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+(?:\/node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)*$/u
@@ -61,18 +66,20 @@ const EXPECTED_MANIFEST = {
   },
 }
 
-const EXPECTED_CANDIDATE = {
-  version: '0.4.0',
-  resolved: CANDIDATE_REFERENCE,
-  integrity: CANDIDATE_INTEGRITY_PLACEHOLDER,
-  license: 'MIT',
-  workspaces: ['examples/basic', 'examples/plugin-demo'],
-  dependencies: { 'debugger-sh': '0.3.15' },
-  engines: { node: '^20.19.0 || >=22.12.0' },
-  peerDependencies: {
-    react: '^18.3.0 || ^19.0.0',
-    'react-dom': '^18.3.0 || ^19.0.0',
-  },
+function expectedCandidateNode(forkInput) {
+  return {
+    version: '0.4.0',
+    resolved: CANDIDATE_REFERENCE,
+    integrity: CANDIDATE_INTEGRITY_PLACEHOLDER,
+    license: 'MIT',
+    workspaces: ['examples/basic', 'examples/plugin-demo'],
+    dependencies: { [forkInput.engine.name]: forkInput.engine.distribution.url },
+    engines: { node: '^20.19.0 || >=22.12.0' },
+    peerDependencies: {
+      react: '^18.3.0 || ^19.0.0',
+      'react-dom': '^18.3.0 || ^19.0.0',
+    },
+  }
 }
 
 function parse(bytes, location) {
@@ -112,19 +119,14 @@ function packageNameForPath(packagePath) {
   return packagePath.slice(packagePath.lastIndexOf(marker) + marker.length)
 }
 
-function assertRegistryPackage(packagePath, node) {
-  const required = ['version', 'resolved', 'integrity', 'license']
-  assertExactKeys(
-    node,
-    required,
-    ORDINARY_PACKAGE_KEYS.filter((key) => !required.includes(key)),
-    packagePath,
-  )
-  if (!VERSION_PATTERN.test(node.version)) throw new TypeError(`${packagePath}.version is invalid`)
-  if (!SHA512_INTEGRITY_PATTERN.test(node.integrity)) throw new TypeError(`${packagePath}.integrity is invalid`)
-  if (typeof node.license !== 'string' || node.license.length === 0) {
-    throw new TypeError(`${packagePath}.license is missing`)
+function assertEngineForkDistribution(packagePath, node, forkInput) {
+  assertEngineLockEntry(node, forkInput, packagePath)
+  for (const forbidden of ['dev', 'optional', 'peer']) {
+    if (forbidden in node) throw new TypeError(`${packagePath}.${forbidden} is forbidden for the pinned engine asset`)
   }
+}
+
+function assertRegistryDistribution(packagePath, node) {
   let resolved
   try {
     resolved = new URL(node.resolved)
@@ -140,6 +142,26 @@ function assertRegistryPackage(packagePath, node) {
     || resolved.hash !== ''
     || !resolved.pathname.endsWith('.tgz')
   ) throw new TypeError(`${packagePath}.resolved is not an exact registry.npmjs.org tarball URL`)
+}
+
+function assertLockedPackage(packagePath, node, forkInput) {
+  const required = ['version', 'resolved', 'integrity', 'license']
+  assertExactKeys(
+    node,
+    required,
+    ORDINARY_PACKAGE_KEYS.filter((key) => !required.includes(key)),
+    packagePath,
+  )
+  if (!VERSION_PATTERN.test(node.version)) throw new TypeError(`${packagePath}.version is invalid`)
+  if (!SHA512_INTEGRITY_PATTERN.test(node.integrity)) throw new TypeError(`${packagePath}.integrity is invalid`)
+  if (typeof node.license !== 'string' || node.license.length === 0) {
+    throw new TypeError(`${packagePath}.license is missing`)
+  }
+  if (packagePath === ENGINE_LOCK_PATH) {
+    assertEngineForkDistribution(packagePath, node, forkInput)
+  } else {
+    assertRegistryDistribution(packagePath, node)
+  }
 
   for (const field of ['dev', 'optional', 'peer']) {
     if (field in node && node[field] !== true) throw new TypeError(`${packagePath}.${field} must be true when present`)
@@ -183,7 +205,8 @@ function assertRegistryPackage(packagePath, node) {
   }
 }
 
-export function validateConsumerFixtureValues(manifest, lock, candidateIntegrity) {
+export function validateConsumerFixtureValues(manifest, lock, candidateIntegrity, forkInput) {
+  assertFinalEngineForkInput(forkInput)
   if (!SHA512_INTEGRITY_PATTERN.test(candidateIntegrity)) {
     throw new TypeError('Candidate SHA-512 integrity is malformed')
   }
@@ -228,8 +251,11 @@ export function validateConsumerFixtureValues(manifest, lock, candidateIntegrity
   const normalizedCandidate = { ...candidate, integrity: CANDIDATE_INTEGRITY_PLACEHOLDER }
   if (
     candidate.integrity !== candidateIntegrity
-    || canonicalJSONString(normalizedCandidate) !== canonicalJSONString(EXPECTED_CANDIDATE)
+    || canonicalJSONString(normalizedCandidate) !== canonicalJSONString(expectedCandidateNode(forkInput))
   ) throw new TypeError('Packed consumer lock does not bind the exact candidate')
+  if (!(ENGINE_LOCK_PATH in lock.packages)) {
+    throw new TypeError('Packed consumer lock does not install the pinned fork engine asset')
+  }
 
   for (const [packagePath, node] of Object.entries(lock.packages)) {
     if (packagePath === '' || packagePath === 'node_modules/web-ide') continue
@@ -245,18 +271,22 @@ export function validateConsumerFixtureValues(manifest, lock, candidateIntegrity
     for (const key of Object.keys(node)) {
       if (!ORDINARY_PACKAGE_KEYS.includes(key)) throw new TypeError(`${packagePath} has unknown field ${key}`)
     }
-    assertRegistryPackage(packagePath, node)
+    assertLockedPackage(packagePath, node, forkInput)
   }
 
   const normalizedLock = structuredClone(lock)
   normalizedLock.packages['node_modules/web-ide'].integrity = CANDIDATE_INTEGRITY_PLACEHOLDER
-  if (sha256Bytes(Buffer.from(canonicalJSONString(normalizedLock))) !== NORMALIZED_LOCK_SHA256) {
+  if (
+    sha256Bytes(Buffer.from(canonicalJSONString(normalizedLock)))
+    !== forkInput.consumerGraph.normalizedLockSha256
+  ) {
     throw new TypeError('Packed consumer lock differs from the reviewed complete dependency graph')
   }
   return { manifest, lock }
 }
 
-export async function validateCommittedConsumerFixture(candidateIntegrity) {
+export async function validateCommittedConsumerFixture(candidateIntegrity, forkInput) {
+  const engineForkInput = forkInput ?? await loadEngineForkInput()
   const packagePath = path.join(repositoryRoot, 'tests/consumer/package.json')
   const lockPath = path.join(repositoryRoot, 'tests/consumer/package-lock.json')
   const [packageSnapshot, lockSnapshot] = await Promise.all([
@@ -269,6 +299,7 @@ export async function validateCommittedConsumerFixture(candidateIntegrity) {
     parse(packageBytes, 'package.json'),
     parse(lockBytes, 'package-lock.json'),
     candidateIntegrity,
+    engineForkInput,
   )
   return {
     packageJson: {
