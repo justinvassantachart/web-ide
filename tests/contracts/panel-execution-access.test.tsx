@@ -56,6 +56,7 @@ const harness = vi.hoisted(() => {
 vi.mock('react', async (importOriginal) => ({
   ...await importOriginal<typeof import('react')>(),
   useEffect: vi.fn(),
+  useMemo: <T,>(factory: () => T) => factory(),
 }))
 
 vi.mock('@/engine/engine-context', () => ({

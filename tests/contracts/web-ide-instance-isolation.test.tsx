@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
+  IDEPanelServices,
   IDEPlugin,
   RuntimeEventChannels,
   RuntimeProvider,
@@ -32,6 +33,7 @@ import {
 
 const harness = vi.hoisted(() => ({
   instances: new Map<string, unknown>(),
+  contributionFeeds: new Map<string, IDEPanelServices['workspace'][]>(),
   models: new Map<string, {
     uri: { authority: string; path: string; toString(): string }
     getValue(): string
@@ -242,7 +244,11 @@ function createEventSource<Value>() {
   }
 }
 
-function CapturePanel() {
+function captureFeed(key: string, workspace: IDEPanelServices['workspace']) {
+  harness.contributionFeeds.set(key, [...(harness.contributionFeeds.get(key) ?? []), workspace])
+}
+
+function CapturePanel({ workspace }: IDEPanelServices) {
   const instance = useWorkbenchInstance()
   const workspaceId = useWebIDEHost()?.workspace?.id ?? 'standalone'
   useLayoutEffect(() => {
@@ -251,10 +257,13 @@ function CapturePanel() {
       if (harness.instances.get(workspaceId) === instance) harness.instances.delete(workspaceId)
     }
   }, [instance, workspaceId])
+  useLayoutEffect(() => { captureFeed(`panel:${workspaceId}`, workspace) })
   return <div data-instance-capture={workspaceId} />
 }
 
-function CaptureActivity() {
+function CaptureActivity({ workspace }: IDEPanelServices) {
+  const workspaceId = useWebIDEHost()?.workspace?.id ?? 'standalone'
+  useLayoutEffect(() => { captureFeed(`activity:${workspaceId}`, workspace) })
   return <div data-activity-capture />
 }
 
@@ -473,6 +482,7 @@ afterEach(async () => {
   mountedContainer?.remove()
   mountedContainer = undefined
   harness.instances.clear()
+  harness.contributionFeeds.clear()
   harness.models.clear()
   harness.runtimeSessions.length = 0
   harness.clangdBoots.length = 0
@@ -500,7 +510,7 @@ describe('same-realm WebIDE instance isolation', () => {
     window.localStorage.setItem('web-ide.clangd.enabled', 'true')
     bootstrapLegacyWorkspace({ '/workspace/main.cpp': 'legacy singleton\n' })
 
-    await act(async () => {
+    const renderWorkbenches = () => {
       root?.render(
         <>
           <WebIDEHostMount key="first"
@@ -515,6 +525,9 @@ describe('same-realm WebIDE instance isolation', () => {
           />
         </>,
       )
+    }
+    await act(async () => {
+      renderWorkbenches()
       await Promise.resolve()
     })
 
@@ -540,10 +553,46 @@ describe('same-realm WebIDE instance isolation', () => {
     secondPersistence.flush.mockClear()
     const first = harness.instances.get('first-workspace') as WorkbenchInstance
     const second = harness.instances.get('second-workspace') as WorkbenchInstance
+    const contributions = [...harness.contributionFeeds].map(([key, feeds]) => ({
+      key, workspace: feeds.at(-1)!, renders: feeds.length,
+    }))
+    expect(contributions).toHaveLength(4)
+    for (const surface of ['panel', 'activity']) {
+      const firstWorkspace = harness.contributionFeeds.get(`${surface}:first-workspace`)!.at(-1)!
+      const secondWorkspace = harness.contributionFeeds.get(`${surface}:second-workspace`)!.at(-1)!
+      expect(firstWorkspace).not.toBe(secondWorkspace)
+      for (const method of ['snapshot', 'revision', 'subscribe'] as const) {
+        expect(firstWorkspace[method]).toBeTypeOf('function')
+        expect(secondWorkspace[method]).toBeTypeOf('function')
+        expect(firstWorkspace[method]).not.toBe(secondWorkspace[method])
+      }
+    }
+    for (const [isCompiling, isRunning, debugMode] of [
+      [true, false, 'idle'], [false, true, 'running'],
+      [false, true, 'paused'], [false, false, 'idle'],
+    ] as const) {
+      await act(async () => {
+        first.executionStore.getState().setIsCompiling(isCompiling)
+        first.executionStore.getState().setIsRunning(isRunning)
+        first.debugStore.getState().setDebugMode(debugMode)
+        renderWorkbenches()
+      })
+      for (const contribution of contributions) {
+        const observed = harness.contributionFeeds.get(contribution.key)!
+        expect(observed.length).toBeGreaterThan(contribution.renders)
+        contribution.renders = observed.length
+        expect(observed.at(-1)).toBe(contribution.workspace)
+        for (const method of ['snapshot', 'revision', 'subscribe'] as const) {
+          expect(observed.at(-1)![method]).toBe(contribution.workspace[method])
+        }
+      }
+    }
     const firstFeed = vi.fn()
     const secondFeed = vi.fn()
-    const unsubscribeFirst = firstRef.current!.workspace.subscribe(firstFeed)
-    const unsubscribeSecond = secondRef.current!.workspace.subscribe(secondFeed)
+    const unsubscribeFirst = harness.contributionFeeds.get('panel:first-workspace')!.at(-1)!.subscribe!(firstFeed)
+    const unsubscribeSecond = harness.contributionFeeds.get('panel:second-workspace')!.at(-1)!.subscribe!(secondFeed)
+    const activityFeed = vi.fn()
+    const unsubscribeActivity = harness.contributionFeeds.get('activity:first-workspace')!.at(-1)!.subscribe!(activityFeed)
 
     const firstMainUri = first.workspace.toMonacoUri('/workspace/main.cpp')
     const secondMainUri = second.workspace.toMonacoUri('/workspace/main.cpp')
@@ -631,7 +680,13 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(first.workspace.toMonacoUri('/workspace/main.cpp'))
       .not.toBe(second.workspace.toMonacoUri('/workspace/main.cpp'))
     expect(firstFeed).toHaveBeenCalledTimes(4)
+    expect(activityFeed).toHaveBeenCalledTimes(4)
     expect(secondFeed).not.toHaveBeenCalled()
+    for (const contribution of contributions) {
+      const current = contribution.key.endsWith(':first-workspace') ? firstRef.current! : secondRef.current!
+      expect(contribution.workspace.snapshot()).toEqual(current.workspace.snapshot())
+      expect(contribution.workspace.revision!()).toBe(current.workspace.revision())
+    }
     expect(firstRef.current!.persistence.snapshot().state).toBe('saving')
     expect(secondRef.current!.persistence.snapshot().state).toBe('saved')
     expect(getLegacyWorkspaceFiles()['/workspace/main.cpp']).toBe('legacy singleton\n')
@@ -652,6 +707,7 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(secondPersistence.save).not.toHaveBeenCalled()
     unsubscribeFirst()
     unsubscribeSecond()
+    unsubscribeActivity()
 
     await act(async () => {
       root?.render(

@@ -1,10 +1,11 @@
-import { useEffect, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, type KeyboardEvent } from 'react'
 import { Terminal } from '@/components/terminal/Terminal'
 import { useIDEPanels } from '@/web-ide/react/contribution-context'
 import { useEngine } from '@/engine/engine-context'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { useRunPipeline } from './use-run-pipeline'
 import { ContributionSurface } from '@/web-ide/react/ContributionSurface'
+import type { IDEWorkspaceFeed } from '@/web-ide/contracts/workspace'
 import {
     ResizableHandle,
     ResizablePanel,
@@ -22,7 +23,12 @@ export function RightPanel() {
     const runtime = useEngine()
     const { execution } = useRunPipeline()
     const { isCompiling, isRunning } = useWorkbenchExecutionStore()
-    const instance = useWorkbenchInstance()
+    const { workspace } = useWorkbenchInstance()
+    const workspaceFeed = useMemo<IDEWorkspaceFeed>(() => ({
+        snapshot: () => workspace.snapshot(),
+        revision: () => workspace.revision,
+        subscribe: (listener) => workspace.subscribe(listener),
+    }), [workspace])
     const {
         controller,
         initialLayout,
@@ -130,11 +136,7 @@ export function RightPanel() {
                                 component={SelectedPanel}
                                 runtime={runtime}
                                 execution={execution}
-                                workspace={{
-                                    snapshot: () => instance.workspace.snapshot(),
-                                    revision: () => instance.workspace.revision,
-                                    subscribe: (listener) => instance.workspace.subscribe(listener),
-                                }}
+                                workspace={workspaceFeed}
                                 revealPanel={setActiveTab}
                             />
                         )}
