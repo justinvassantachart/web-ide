@@ -138,6 +138,7 @@ function engineEvidence(forkInput, lockEntry) {
     source: {
       repository: engine.source.repository,
       commit: engine.source.commit,
+      acceptedBaseCommit: engine.source.acceptedBaseCommit,
       upstreamRepository: engine.upstream.repository,
       upstreamVersion: engine.upstream.version,
       upstreamCommit: engine.upstream.commit,

@@ -13,7 +13,7 @@
     },
     "source": {
       "repository": "https://github.com/justinvassantachart/engine",
-      "commit": "58cbc9369e3f7738a6dc9b01082723d144bb9c97"
+      "acceptedBaseCommit": "58cbc9369e3f7738a6dc9b01082723d144bb9c97"
     },
     "distribution": {
       "mechanism": "public-github-release-asset",
@@ -24,13 +24,15 @@
     },
     "embeddedWasm": {
       "wasmPath": "dist/engine_bg.wasm",
+      "wasmLoadedAtRuntime": false,
       "modulePath": "dist/debugger-sh.js",
       "remotelyFetched": false
     }
   },
   "pendingSteps": [
     "Root publishes the reviewed fork asset at engine.distribution.url and returns the re-download publication receipt.",
-    "Copy the exact final engine.distribution size/sha256/sha512Integrity and engine.embeddedWasm wasmSize/wasmSha256/moduleSize/moduleSha256 from the engine author's evidence/implementation.json, confirming engine.embeddedWasm.modulePath is the published package's exports['.'].import target.",
+    "Record engine.source.commit as the exact reviewed fork commit whose pack produced the published asset (a descendant of engine.source.acceptedBaseCommit that carries the fork package metadata).",
+    "Copy the exact final engine.distribution size/sha256/sha512Integrity and engine.embeddedWasm wasmSize/wasmSha256/moduleSize/moduleSha256 from the re-downloaded published bytes, confirming they match the engine author's reviewed build evidence and that engine.embeddedWasm.modulePath is the published package's exports['.'].import target.",
     "Copy the exact engine.build kind and node/npm/rustc/cargo/wasmPack toolchain identities from the same final evidence.",
     "Repin package.json dependencies['debugger-sh'] to engine.distribution.url and regenerate package-lock.json plus tests/consumer/package-lock.json from the published bytes.",
     "Set consumerGraph.normalizedLockSha256 to the regenerated packed-consumer normalized-lock digest and flip status to \"final\".",

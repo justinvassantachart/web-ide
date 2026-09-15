@@ -749,6 +749,7 @@
               "required": [
                 "repository",
                 "commit",
+                "acceptedBaseCommit",
                 "upstreamRepository",
                 "upstreamVersion",
                 "upstreamCommit"
@@ -758,6 +759,10 @@
                   "const": "https://github.com/justinvassantachart/engine"
                 },
                 "commit": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}$"
+                },
+                "acceptedBaseCommit": {
                   "const": "58cbc9369e3f7738a6dc9b01082723d144bb9c97"
                 },
                 "upstreamRepository": {
@@ -886,6 +891,7 @@
               "additionalProperties": false,
               "required": [
                 "wasmPath",
+                "wasmLoadedAtRuntime",
                 "modulePath",
                 "remotelyFetched",
                 "wasmSize",
@@ -896,6 +902,9 @@
               "properties": {
                 "wasmPath": {
                   "const": "dist/engine_bg.wasm"
+                },
+                "wasmLoadedAtRuntime": {
+                  "const": false
                 },
                 "modulePath": {
                   "const": "dist/debugger-sh.js"

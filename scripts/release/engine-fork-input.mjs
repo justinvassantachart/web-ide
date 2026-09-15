@@ -69,13 +69,26 @@ function validateUpstream(upstream, location) {
   assertCommit(upstream.commit, `${location}.commit`)
 }
 
-function validateSource(source, location) {
-  assertExactKeys(source, ['repository', 'commit'], [], location)
+function validateSource(source, upstream, { final }, location) {
+  assertExactKeys(
+    source,
+    ['repository', 'acceptedBaseCommit', ...(final ? ['commit'] : [])],
+    [],
+    location,
+  )
   const repository = assertGitHubHttpsUrl(source.repository, `${location}.repository`)
   if (repository.pathname === '/debugger-sh/engine') {
     throw new TypeError(`${location}.repository must be the fork repository, not upstream`)
   }
+  assertCommit(source.acceptedBaseCommit, `${location}.acceptedBaseCommit`)
+  if (source.acceptedBaseCommit === upstream.commit) {
+    throw new TypeError(`${location}.acceptedBaseCommit must differ from the upstream release commit`)
+  }
+  if (!final) return
   assertCommit(source.commit, `${location}.commit`)
+  if (source.commit === upstream.commit) {
+    throw new TypeError(`${location}.commit must differ from the upstream release commit`)
+  }
 }
 
 function validateBuild(build, location) {
@@ -123,7 +136,7 @@ function validateEmbeddedWasm(embedded, { final }, location) {
   assertExactKeys(
     embedded,
     [
-      'wasmPath', 'modulePath', 'remotelyFetched',
+      'wasmPath', 'wasmLoadedAtRuntime', 'modulePath', 'remotelyFetched',
       ...(final ? ['wasmSize', 'wasmSha256', 'moduleSize', 'moduleSha256'] : []),
     ],
     [],
@@ -134,8 +147,10 @@ function validateEmbeddedWasm(embedded, { final }, location) {
   if (embedded.wasmPath === embedded.modulePath) {
     throw new TypeError(`${location}.modulePath must be the module that embeds the engine WebAssembly`)
   }
-  if (embedded.remotelyFetched !== false) {
-    throw new TypeError(`${location}.remotelyFetched must be false for an embedded engine build`)
+  for (const field of ['remotelyFetched', 'wasmLoadedAtRuntime']) {
+    if (embedded[field] !== false) {
+      throw new TypeError(`${location}.${field} must be false for an embedded engine build`)
+    }
   }
   if (!final) return
   assertSize(embedded.wasmSize, `${location}.wasmSize`)
@@ -184,10 +199,7 @@ export function validateEngineForkInput(record, location = 'engine fork input') 
   if (!engine.version.startsWith(`${engine.upstream.version}-webide.`)) {
     throw new TypeError(`${location}.engine.version must extend the exact upstream version`)
   }
-  validateSource(engine.source, `${location}.engine.source`)
-  if (engine.source.commit === engine.upstream.commit) {
-    throw new TypeError(`${location}.engine.source.commit must differ from the upstream release commit`)
-  }
+  validateSource(engine.source, engine.upstream, { final }, `${location}.engine.source`)
   validateDistribution(engine.distribution, engine, { final }, `${location}.engine.distribution`)
   validateEmbeddedWasm(engine.embeddedWasm, { final }, `${location}.engine.embeddedWasm`)
   if (final) {

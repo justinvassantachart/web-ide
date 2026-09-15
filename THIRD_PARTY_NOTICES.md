@@ -15,7 +15,12 @@ Notable retained dependencies and source provenance include:
   input, including the engine WebAssembly the fork embeds in its module rather
   than downloading. The package keeps its top-level MIT license and still does
   not ship a generated license inventory for the Rust crates compiled into that
-  embedded engine WebAssembly.
+  embedded engine WebAssembly. Its C++ exception-handling objects are compiled
+  into the same WebAssembly and are also shipped as
+  `assets/cpp-exceptions/runtime.tar.gz` inside the installed engine package;
+  the libc++abi and libunwind license texts, notice, and provenance for those
+  objects travel inside that archive under `share/licenses/cpp-exceptions/`
+  rather than in this repository's generated inventory.
 - Monaco Editor — MIT and its bundled third-party notices.
 - `@monaco-editor/react` — MIT.
 - VS Code Codicons — CC BY 4.0 for icons/font and MIT-licensed code files.

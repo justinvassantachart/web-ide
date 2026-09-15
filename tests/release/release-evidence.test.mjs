@@ -174,7 +174,8 @@ function forkInputFixture(overrides = {}) {
       },
       source: {
         repository: 'https://github.com/justinvassantachart/engine',
-        commit: '58cbc9369e3f7738a6dc9b01082723d144bb9c97',
+        commit: 'b7236bda9c8fef31cd771fe770c2145f11ac0682',
+        acceptedBaseCommit: '58cbc9369e3f7738a6dc9b01082723d144bb9c97',
       },
       build: {
         kind: 'embedded-wasm-library-build',
@@ -198,6 +199,7 @@ function forkInputFixture(overrides = {}) {
       },
       embeddedWasm: {
         wasmPath: 'dist/engine_bg.wasm',
+        wasmLoadedAtRuntime: false,
         modulePath: 'dist/debugger-sh.js',
         remotelyFetched: false,
         wasmSize: 8880594,
@@ -557,6 +559,9 @@ describe('committed exact-candidate consumer fixture', () => {
     expect(committed.status).toBe('pending-publication')
     expect(committed.engine.distribution.url).toBe(FORK_ENGINE_URL)
     expect(committed.engine).not.toHaveProperty('build')
+    expect(committed.engine.source).not.toHaveProperty('commit')
+    expect(committed.engine.source.acceptedBaseCommit)
+      .toBe('58cbc9369e3f7738a6dc9b01082723d144bb9c97')
     expect(committed.engine.distribution).not.toHaveProperty('sha256')
     expect(committed.engine.embeddedWasm).not.toHaveProperty('wasmSha256')
     await expect(loadEngineForkInput()).rejects.toThrow(/pending-publication/u)
@@ -1433,10 +1438,15 @@ describe('committed fork engine input', () => {
       ['registryPublished', { ...record.engine, registryPublished: true }],
       ['upstream source', {
         ...record.engine,
-        source: {
-          repository: record.engine.upstream.repository,
-          commit: record.engine.source.commit,
-        },
+        source: { ...record.engine.source, repository: record.engine.upstream.repository },
+      }],
+      ['upstream accepted base', {
+        ...record.engine,
+        source: { ...record.engine.source, acceptedBaseCommit: record.engine.upstream.commit },
+      }],
+      ['loaded standalone WebAssembly', {
+        ...record.engine,
+        embeddedWasm: { ...record.engine.embeddedWasm, wasmLoadedAtRuntime: true },
       }],
       ['mutable URL', {
         ...record.engine,
@@ -1466,6 +1476,7 @@ describe('committed fork engine input', () => {
     pending.pendingSteps = ['Publish the reviewed fork asset.']
     delete pending.consumerGraph
     delete pending.engine.build
+    delete pending.engine.source.commit
     delete pending.engine.distribution.size
     delete pending.engine.distribution.sha256
     delete pending.engine.distribution.sha512Integrity
@@ -1485,6 +1496,7 @@ describe('committed fork engine input', () => {
       },
       { ...pending, consumerGraph: record.consumerGraph },
       { ...pending, pendingSteps: [] },
+      { ...pending, engine: { ...pending.engine, source: record.engine.source } },
     ]) {
       expect(() => validateEngineForkInput(hidden)).toThrow()
     }
@@ -1926,7 +1938,12 @@ describe('artifact manifest', () => {
       registryPublished: false,
       distribution: { mechanism: 'public-github-release-asset', url: FORK_ENGINE_URL },
       lock: { resolved: FORK_ENGINE_URL, integrity: FORK_ENGINE_INTEGRITY },
-      embeddedWasm: { wasmPath: 'dist/engine_bg.wasm', remotelyFetched: false },
+      embeddedWasm: {
+        wasmPath: 'dist/engine_bg.wasm',
+        wasmLoadedAtRuntime: false,
+        remotelyFetched: false,
+      },
+      source: { acceptedBaseCommit: '58cbc9369e3f7738a6dc9b01082723d144bb9c97' },
     })
     expect(manifest.package.dependencies).toEqual({ 'debugger-sh': FORK_ENGINE_URL })
     for (const drifted of [
