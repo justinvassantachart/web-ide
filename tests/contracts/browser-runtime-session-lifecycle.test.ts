@@ -17,6 +17,7 @@ import type {
   RuntimeHostDevice,
   RuntimeHostDeviceOpener,
   RuntimeSession,
+  RuntimeExecutionPlan,
 } from '../../src/web-ide/contracts/runtime'
 
 interface Deferred<T> {
@@ -389,6 +390,46 @@ afterEach(() => {
 })
 
 describe('BrowserRuntimeSession run lifecycle', () => {
+  it('snapshots binary inputs, maps artifact paths and clears them on the next prepare', async () => {
+    const session = createSession()
+    const engine = Object.assign(new FakeEngine(), {
+      binaryFiles: {} as Record<string, Uint8Array>,
+      cppArtifacts: undefined as RuntimeExecutionPlan['cppArtifacts'],
+    })
+    engineCreate.mockResolvedValue(engine)
+    const bytes = new Uint8Array([1, 2, 3])
+    const sources = ['/workspace/main.cpp']
+    expect(await session.prepare({ files: workspace, mode: 'run',
+      binaryFiles: { '/sysroot/support.a': bytes },
+      cppArtifacts: { sources, archives: ['/sysroot/support.a'] },
+    })).toEqual({ success: true, errors: [] })
+    bytes.fill(0); sources[0] = '/workspace/changed.cpp'
+    const running = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledOnce())
+    expect(engine.binaryFiles).toEqual({ '/support.a': new Uint8Array([1, 2, 3]) })
+    expect(engine.cppArtifacts).toMatchObject({ sources: ['/main.cpp'], archives: ['/support.a'] })
+    engine.complete({ type: 'completed', exitCode: 0 }); await running
+    const next = await beginRun(session, engine, 'run')
+    expect(engine.binaryFiles).toEqual({}); expect(engine.cppArtifacts).toBeUndefined()
+    engine.complete({ type: 'completed', exitCode: 0 }); await next.running
+  })
+
+  it('rejects binary path collisions and unsupported engines without starting them', async () => {
+    const session = createSession(), engine = new FakeEngine()
+    engineCreate.mockResolvedValue(engine)
+    for (const path of ['/sysroot/main.cpp', '/sysroot/main.cpp/child', '/sysroot/../support.a']) {
+      expect((await session.prepare({ files: workspace, mode: 'run',
+        binaryFiles: { [path]: new Uint8Array([1]) },
+      })).success).toBe(false)
+    }
+    await session.prepare({ files: workspace, mode: 'run', binaryFiles: { '/sysroot/support.a': new Uint8Array([1]) } })
+    await session.start({ mode: 'run' })
+    expect(await session.waitForSettlement!()).toMatchObject({ type: 'error', error: {
+      message: 'This debugger-sh build does not support precompiled C++ inputs',
+    } })
+    expect(engine.run).not.toHaveBeenCalled()
+  })
+
   it('keeps default providers unsupported without loading or mutating an engine', () => {
     const adapter = createSession()
     expect(() => registerRuntimeHostService(adapter, hostService)).toThrow(/does not support host services/)

@@ -12,27 +12,22 @@ export const VALIDATION_GATES = Object.freeze([
   Object.freeze({
     id: 'validate-production',
     command: 'npm run validate:production',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
   }),
   Object.freeze({
     id: 'consumer-exact-candidate',
     command: 'WEB_IDE_CANDIDATE_TARBALL=<candidate> npm run test:consumer',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
   }),
   Object.freeze({
     id: 'audit-production',
     command: 'npm audit --omit=dev',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
   }),
   Object.freeze({
     id: 'audit-full',
     command: 'npm audit',
-    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
-  }),
-  Object.freeze({
-    id: 'karel-compatibility',
-    command: 'Karel exact-candidate compatibility gate',
-    receiptEmitter: 'karel:release-compatibility-gate@2',
+    receiptEmitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
   }),
 ])
 
@@ -60,20 +55,20 @@ export async function loadReleaseConfiguration() {
     [],
     'release input',
   )
-  if (input.schemaVersion !== 1 || input.package !== 'web-ide@0.4.0') {
+  if (input.schemaVersion !== 1 || input.package !== 'web-ide@0.5.0') {
     throw new TypeError('Unsupported release input identity')
   }
   for (const field of Object.keys(input).filter((key) => key !== 'schemaVersion')) {
     assertNonEmptyString(input[field], `release input.${field}`)
   }
-  if (input.capabilityReleaseId !== 'hamilton.python/4' || input.packageRole !== 'web-ide') {
-    throw new TypeError('Release input does not match the accepted Hamilton composition identity')
+  if (input.capabilityReleaseId !== 'cs106b.source/2' || input.packageRole !== 'web-ide') {
+    throw new TypeError('Release input does not match the accepted CS106B composition identity')
   }
-  if (input.sourceTag !== 'web-ide-v0.4.0-source-r4') {
-    throw new TypeError('Release input does not use the forward-only Web IDE 0.4.0 source tag')
+  if (input.sourceTag !== 'web-ide-v0.5.0-source') {
+    throw new TypeError('Release input does not use the forward-only Web IDE 0.5.0 source tag')
   }
-  if (input.releaseAssetFilename !== 'web-ide-0.4.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.4.0-source.tar.gz') {
-    throw new TypeError('Release asset names do not match the accepted Web IDE 0.4.0 identity')
+  if (input.releaseAssetFilename !== 'web-ide-0.5.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.5.0-source.tar.gz') {
+    throw new TypeError('Release asset names do not match the accepted Web IDE 0.5.0 identity')
   }
   return input
 }
@@ -85,7 +80,7 @@ export function validateValidationSummary(summary, sourceCommit, candidateSha256
     [],
     'validation summary',
   )
-  if (summary.schemaVersion !== 1 || summary.package !== 'web-ide@0.4.0') {
+  if (summary.schemaVersion !== 1 || summary.package !== 'web-ide@0.5.0') {
     throw new TypeError('Unsupported validation summary identity')
   }
   if (summary.sourceCommit !== sourceCommit) throw new TypeError('Validation summary sourceCommit does not match HEAD')
@@ -174,7 +169,7 @@ export function validateFinalCandidateState(state, configuration, source) {
     'runtime-source-provenance.json',
     'third-party-licenses.json',
     'THIRD_PARTY_LICENSES.txt',
-    'web-ide-0.4.0.cdx.json',
+    'web-ide-0.5.0.cdx.json',
   ].sort()
   if (JSON.stringify(names) !== JSON.stringify(expectedNames) || new Set(names).size !== names.length) {
     throw new TypeError('Candidate state artifact identities are incomplete, duplicated, or unsorted')

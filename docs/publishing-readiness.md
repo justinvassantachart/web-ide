@@ -1,18 +1,18 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.4.0` source candidate is
+Web IDE's source repository is public and its `0.5.0` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
-checkpoint does not authorize or configure an npm publication. Hamilton's
-accepted distribution path is an exact integrity-checked tarball attached to an
-immutable release in Hamilton's private repository.
+checkpoint does not configure an npm publication. The distribution path is an
+exact integrity-checked tarball attached to an immutable release in the owner's
+private `ths-ide` release repository. This release targets the CS106B composition.
 
 ## Source checkpoint complete
 
 - The manifest records the public GitHub source, issue tracker, homepage,
   semantic version, and MIT source license without changing the export map or
   React peer ranges.
-- The runtime engine pin moves from the upstream `debugger-sh@0.3.15` registry
-  release to one exact immutable public fork release asset. That asset is
+- The runtime engine pin advances from the previous WebIDE fork to the
+  `0.3.15-webide.0.5.0.1` immutable public fork release asset. That asset is
   neither an upstream registry release nor an npm publication of this project;
   `release/engine-fork-input.json` is the committed exact fork input record
   (fork source commit, build toolchain, GitHub release asset identity, and the
@@ -43,7 +43,8 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.4.0-source-r4` tag object peeled to that exact commit. The initial
+`web-ide-v0.5.0-source` tag object peeled to that exact commit. The previous
+`web-ide-v0.4.0-source-r4` release identity remains unchanged. The initial
 `web-ide-v0.4.0-source` checkpoint is retained after its native browser gate
 exposed a macOS test-launch issue. The subsequent
 `web-ide-v0.4.0-source-r2` checkpoint is retained after the Karel Prepare gate
@@ -52,8 +53,8 @@ The current candidate preserves those callbacks for each workspace. The
 `web-ide-v0.4.0-source-r3` checkpoint is retained after its OPFS browser test
 removed the last editor model during a pending lazy worker download. The test
 now waits for that download before its hierarchy replacement. The immutable
-`web-ide-v0.3.1-source` tag remains the previous release's source identity, and
-`web-ide-v0.3.0-source` remains the preceding release identity. The earlier
+`web-ide-v0.3.1-source` and `web-ide-v0.3.0-source` tags remain earlier release
+identities. The earlier
 shared `v0.2.0`, `web-ide-v0.2.0-source`,
 `web-ide-v0.2.0-source-r2`, and `web-ide-v0.2.0-source-r3` tags are abandoned
 prepublication source checkpoints. The first failed before retained gate
@@ -103,17 +104,18 @@ digests, exact annotated tag object and peeled commit, locally generated source
 archive, npm SHA-512 integrity, full tar inventory, toolchain/platform, scrubbed
 build environment and argv, runtime/debugger identities, candidate SHA-256,
 and copied machine-receipted validation-log digests. It records only intended
-Hamilton release names before publication; it has no post-publication ID and no
-Karel-manifest dependency. The Karel compatibility log can therefore finalize
-Web evidence before Karel binds the resulting Web manifest.
+release names before publication; it has no post-publication ID or downstream
+manifest dependency.
 
-Because the fork engine pin changes the candidate bytes, this release uses the
-forward compatibility evidence identities `hamilton.python/4` and
-`hamilton.python-karel/8` instead of rebinding the historical
-`hamilton.python/2` and `hamilton.python-karel/4` names, which stay bound to
-their own earlier bytes. The paired Karel package must declare the same exact
-pair, and Hamilton's existing shared `hamilton.python/3` and
-`hamilton.python-karel/6`/`/7` identities are unchanged.
+This release uses the forward composition identity `cs106b.source/2` and the
+manifest kind `web-ide-capability-package-artifact`. Historical Hamilton and
+Karel identities, including the 0.4.0 pair `hamilton.python/4` and
+`hamilton.python-karel/8`, remain bound to their earlier bytes. The four local
+Web IDE gates retain package, browser, consumer, and dependency-audit checks;
+the exact CS106B companion and course-host browser proof must additionally bind
+the released candidate digest before downstream deployment. No new Hamilton or
+Karel compatibility claim is made, so their external companion gate is outside
+this release profile.
 
 The repository does not claim npm availability, Rust, bundled Karel behavior,
 offline operation, collaboration transport, presence, or graphics output.
@@ -150,7 +152,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.4.0-source-r4` tag at that commit, and use an
+and push the annotated `web-ide-v0.5.0-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while
@@ -176,8 +178,7 @@ WEB_IDE_RELEASE_GATE_LOG=/absolute/external/logs/validate-production.log \
 ```
 
 The other local gate IDs are `consumer-exact-candidate`, `audit-production`,
-and `audit-full`. The paired Karel gate emits its one log with the reviewed
-`karel:release-compatibility-gate@2` receipt contract. Each receipt is the final
+and `audit-full`. Each receipt is the final
 log line, has production mode `release-gate`, and binds the exact gate
 ID/command, Web source commit, candidate SHA-256, reviewed emitter identity,
 and exit code zero. The local emitter uses distinct empty, disposable npm
@@ -199,7 +200,7 @@ The canonical receipt remains byte-for-byte unchanged as the final line.
 Residual local path forms, secret-like text found after terminal-control
 decoding, or receipt drift remove the owned partial capture and fail the gate;
 the retained bytes are never token-masked.
-Record exactly one normalized UTF-8 log for each of the five gates in
+Record exactly one normalized UTF-8 log for each of the four gates in
 `release/validation-summary.template.json`, fill its absolute regular-file path,
 size, SHA-256, the exact source commit, and candidate SHA-256, then finalize:
 
@@ -240,7 +241,8 @@ existing optional Tailwind WASI build chain is also constrained to its bundled
 newer unbundled version during `npm ci`; the exact integrity-locked root record
 is build-only and is not a Web IDE runtime dependency.
 
-The remaining publication gate is the full `validate:production` run, exact
-candidate consumer and audit logs, paired Karel compatibility log, immutable
-private release upload/download receipts, and Hamilton's pinned installation
-proof. See [Testing](testing.md) for the behavior and evidence matrix.
+Publication requires the full `validate:production` run, exact candidate
+consumer and audit logs, and immutable private release upload/download
+receipts. CS106B consumption additionally requires its companion and course-host
+proof against those exact bytes. See [Testing](testing.md) for the behavior and
+evidence matrix.

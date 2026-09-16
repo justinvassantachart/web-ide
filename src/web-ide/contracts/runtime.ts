@@ -98,6 +98,12 @@ export interface RuntimeExecutionPlan {
   cppBuildPlan?: CppBuildPlanV1
   /** Binary inputs stay separate from editor/persistence text files. */
   binaryFiles?: Readonly<Record<string, Uint8Array>>
+  /** Optional precompiled C++ inputs; paths use the same scopes as files. */
+  cppArtifacts?: {
+    readonly sources?: readonly string[]
+    readonly archives?: readonly string[]
+    readonly precompiledHeader?: string
+  }
 }
 
 export interface RuntimeHostRequestV1 {

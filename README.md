@@ -4,13 +4,16 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This public source repository is preparing the MIT-licensed `0.4.0` source
+This public source repository is preparing the MIT-licensed `0.5.0` source
 candidate. The package remains `private: true` and is not published to npm.
-Hamilton distribution is limited to exact integrity-checked tarballs from
-immutable releases in Hamilton's private repository. Deterministic P2.5
+Distribution uses exact integrity-checked tarballs from immutable releases in
+the owner's private release repository. Deterministic P2.5
 candidate, SBOM, license, runtime-receipt, source-archive, and strict-manifest
 tooling is implemented; the package is not released until the final tagged
-candidate, paired Karel gate, immutable release, and download receipts pass.
+candidate, immutable release, and download receipts pass. The `cs106b.source/2`
+release profile adds optional C++ precompiled headers and support archives;
+its downstream CS106B browser proof is retained separately. It does not claim
+a new Hamilton or Karel compatible release set.
 The current
 built-in browser runtime providers support
 C/C++ and Python execution and source-level debugging. Rust is not claimed as

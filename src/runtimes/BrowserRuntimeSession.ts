@@ -63,6 +63,10 @@ interface HostDeviceRegistration {
 }
 
 type HostDeviceCapableEngine = EngineType & { hostDevice?: RuntimeHostDeviceOpener };
+type ArtifactEngine = EngineType & {
+    binaryFiles: Record<string, Uint8Array>;
+    cppArtifacts?: { sources?: string[]; archives?: string[]; precompiledHeader?: string };
+};
 
 interface DebugConfigurationState {
     session: number;
@@ -280,6 +284,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private readonly workspacePathByRuntimePath = new Map<string, string>();
     private readonly userRuntimePaths = new Set<string>();
     private runtimeFileTree: DirNode = emptyDirectory();
+    private runtimeBinaryFiles: Record<string, Uint8Array> = {};
+    private runtimeCppArtifacts?: ArtifactEngine['cppArtifacts'];
     private inputBuf = '';
     private currentIsDebug = false;
     private activeThreadId = 1;
@@ -474,6 +480,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         mode,
         entrypoint,
         streamInterceptor,
+        binaryFiles = {},
+        cppArtifacts,
     }: RuntimeExecutionPlan): Promise<RuntimePreparationResult> {
         if (this.disposed) {
             throw new Error('Cannot prepare a disposed runtime session');
@@ -487,6 +495,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
 
         let nextFileMap: Record<string, string>;
         let nextRuntimeFileTree: DirNode;
+        const nextBinaryFiles: Record<string, Uint8Array> = Object.create(null);
+        let nextCppArtifacts: ArtifactEngine['cppArtifacts'];
         const nextRuntimePathByWorkspacePath = new Map<string, string>();
         const nextWorkspacePathByRuntimePath = new Map<string, string>();
         const nextUserRuntimePaths = new Set<string>();
@@ -524,6 +534,29 @@ export class BrowserRuntimeSession implements RuntimeSession {
             }
 
             nextRuntimeFileTree = buildRuntimeFileTree(nextFileMap);
+            if ((cppArtifacts || Object.keys(binaryFiles).length) && this.profile.engineLanguage !== 'c') {
+                throw new TypeError('Binary build inputs require C/C++');
+            }
+            const artifactPath = (path: string) => `/${runtimeRelativeFilePath(path)}`;
+            for (const [path, bytes] of Object.entries(binaryFiles)) {
+                const relative = runtimeRelativeFilePath(path);
+                if (!(bytes instanceof Uint8Array)) throw new TypeError(`Binary input must be bytes: ${path}`);
+                if (Object.hasOwn(nextFileMap, relative) || Object.hasOwn(nextBinaryFiles, `/${relative}`)) {
+                    throw new TypeError(`Binary input collides with an execution file: ${path}`);
+                }
+                nextBinaryFiles[`/${relative}`] = bytes.slice();
+            }
+            buildRuntimeFileTree({ ...nextFileMap, ...Object.fromEntries(
+                Object.keys(nextBinaryFiles).map(path => [path.slice(1), '']),
+            ) });
+            if (cppArtifacts) {
+                nextCppArtifacts = {
+                    sources: cppArtifacts.sources?.map(artifactPath),
+                    archives: cppArtifacts.archives?.map(artifactPath),
+                    precompiledHeader: cppArtifacts.precompiledHeader === undefined
+                        ? undefined : artifactPath(cppArtifacts.precompiledHeader),
+                };
+            }
         } catch (error) {
             return {
                 success: false,
@@ -549,6 +582,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.userRuntimePaths.clear();
         for (const runtimePath of nextUserRuntimePaths) this.userRuntimePaths.add(runtimePath);
         this.runtimeFileTree = nextRuntimeFileTree;
+        this.runtimeBinaryFiles = nextBinaryFiles;
+        this.runtimeCppArtifacts = nextCppArtifacts;
         return { success: true, errors: [] };
     }
 
@@ -957,6 +992,13 @@ export class BrowserRuntimeSession implements RuntimeSession {
 
             try {
                 engine.fs = this.runtimeFileTree;
+                if ('binaryFiles' in engine) {
+                    const artifacts = engine as ArtifactEngine;
+                    artifacts.binaryFiles = this.runtimeBinaryFiles;
+                    artifacts.cppArtifacts = this.runtimeCppArtifacts;
+                } else if (this.runtimeCppArtifacts || Object.keys(this.runtimeBinaryFiles).length) {
+                    throw new Error('This debugger-sh build does not support precompiled C++ inputs');
+                }
                 engine.debugger.enabled = isDebug;
                 this.currentIsDebug = isDebug;
                 this.running = true;

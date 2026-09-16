@@ -10,7 +10,7 @@ SBOM.
 Notable retained dependencies and source provenance include:
 
 - Debugger.sh — MIT; dynamically loads its language toolchain assets. Web IDE
-  0.4.0 pins one exact immutable public fork release asset instead of the
+  0.5.0 pins one exact immutable public fork release asset instead of the
   upstream npm release; `release/engine-fork-input.json` records that exact fork
   input, including the engine WebAssembly the fork embeds in its module rather
   than downloading. The package keeps its top-level MIT license and still does

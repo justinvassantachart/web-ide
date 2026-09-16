@@ -56,8 +56,7 @@ const expectedValidationLogKinds = VALIDATION_GATES
   .sort()
 
 const expectedCapabilityReleaseIds = Object.freeze([
-  'hamilton.python-karel/8',
-  'hamilton.python/4',
+  'cs106b.source/2',
 ])
 
 function validateDigest(value, location) {
@@ -222,7 +221,7 @@ export function validateArtifactManifest(manifest, configuration, forkInput) {
   )
   if (
     manifest.schemaVersion !== 2
-    || manifest.manifestKind !== 'hamilton-capability-package-artifact'
+    || manifest.manifestKind !== 'web-ide-capability-package-artifact'
     || canonicalJSONString(manifest.capabilityReleaseIds)
       !== canonicalJSONString(expectedCapabilityReleaseIds)
     || !manifest.capabilityReleaseIds.includes(configuration.capabilityReleaseId)
@@ -328,8 +327,8 @@ export function validateArtifactManifest(manifest, configuration, forkInput) {
   assertExactKeys(manifest.validation, ['candidateSha256', 'gateCount', 'logCount'], [], 'artifact manifest validation')
   if (
     manifest.validation.candidateSha256 !== artifact.sha256
-    || manifest.validation.gateCount !== 5
-    || manifest.validation.logCount !== 5
+    || manifest.validation.gateCount !== VALIDATION_GATES.length
+    || manifest.validation.logCount !== VALIDATION_GATES.length
   ) throw new TypeError('Artifact manifest validation identity is incomplete')
   if (
     !Array.isArray(manifest.evidence)
@@ -380,7 +379,7 @@ export async function createArtifactManifest({
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
     'candidate-state': 'candidate-state.json',
-    'cyclonedx-sbom': 'web-ide-0.4.0.cdx.json',
+    'cyclonedx-sbom': 'web-ide-0.5.0.cdx.json',
     'deterministic-builds': 'deterministic-builds.json',
     'license-inventory': 'third-party-licenses.json',
     'package-inspection': 'package-inspection.json',
@@ -422,7 +421,7 @@ export async function createArtifactManifest({
   ) throw new TypeError('Package inspection/validation identity does not match the exact candidate bytes')
   const draft = {
     schemaVersion: 2,
-    manifestKind: 'hamilton-capability-package-artifact',
+    manifestKind: 'web-ide-capability-package-artifact',
     capabilityReleaseIds: expectedCapabilityReleaseIds,
     packageRole: configuration.packageRole,
     package: {

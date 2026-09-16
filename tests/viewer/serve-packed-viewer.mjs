@@ -34,7 +34,7 @@ try {
         await cp(path.join(repository, 'tests/consumer', name), path.join(consumer, name))
     }
     for (const name of ['index.html', 'main.tsx']) await cp(path.join(import.meta.dirname, name), path.join(consumer, name))
-    await withVerifiedPackedCandidate({ candidatePath: path.join(root, 'web-ide-0.4.0.tgz'), consumerRoot: consumer }, async () => {
+    await withVerifiedPackedCandidate({ candidatePath: path.join(root, 'web-ide-0.5.0.tgz'), consumerRoot: consumer }, async () => {
         run(['ci', '--ignore-scripts', '--no-fund', '--no-audit'])
         run(['exec', 'vite', '--', 'build'])
         server = spawn(process.execPath, [path.join(consumer, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', '4196', '--strictPort'],

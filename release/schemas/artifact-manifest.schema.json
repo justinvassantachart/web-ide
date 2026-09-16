@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.4.0-source-r4/release/schemas/artifact-manifest.schema.json",
-  "title": "Web IDE Hamilton artifact manifest",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.5.0-source/release/schemas/artifact-manifest.schema.json",
+  "title": "Web IDE CS106B artifact manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -24,7 +24,7 @@
       "const": 2
     },
     "manifestKind": {
-      "const": "hamilton-capability-package-artifact"
+      "const": "web-ide-capability-package-artifact"
     },
     "manifestId": {
       "type": "string",
@@ -32,8 +32,7 @@
     },
     "capabilityReleaseIds": {
       "const": [
-        "hamilton.python-karel/8",
-        "hamilton.python/4"
+        "cs106b.source/2"
       ]
     },
     "packageRole": {
@@ -57,7 +56,7 @@
           "const": "web-ide"
         },
         "version": {
-          "const": "0.4.0"
+          "const": "0.5.0"
         },
         "private": {
           "const": true
@@ -72,7 +71,7 @@
         },
         "dependencies": {
           "const": {
-            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz"
           }
         },
         "peerDependencies": {
@@ -161,7 +160,7 @@
           ],
           "properties": {
             "name": {
-              "const": "web-ide-v0.4.0-source-r4"
+              "const": "web-ide-v0.5.0-source"
             },
             "objectId": {
               "type": "string",
@@ -252,7 +251,7 @@
               "const": "source-archive"
             },
             "fileName": {
-              "const": "web-ide-0.4.0-source.tar.gz"
+              "const": "web-ide-0.5.0-source.tar.gz"
             },
             "size": {
               "type": "integer",
@@ -537,10 +536,10 @@
           "const": "justinvassantachart/ths-ide"
         },
         "intendedTag": {
-          "const": "web-ide-v0.4.0"
+          "const": "web-ide-v0.5.0"
         },
         "intendedAssetFilename": {
-          "const": "web-ide-0.4.0.tgz"
+          "const": "web-ide-0.5.0.tgz"
         },
         "artifact": {
           "type": "object",
@@ -558,7 +557,7 @@
               "const": "package-tarball"
             },
             "fileName": {
-              "const": "web-ide-0.4.0.tgz"
+              "const": "web-ide-0.5.0.tgz"
             },
             "size": {
               "type": "integer",
@@ -738,7 +737,7 @@
               "const": "debugger-sh"
             },
             "version": {
-              "const": "0.3.15-webide.0.4.0.1"
+              "const": "0.3.15-webide.0.5.0.1"
             },
             "registryPublished": {
               "const": false
@@ -843,13 +842,13 @@
                   "const": "justinvassantachart/engine"
                 },
                 "tag": {
-                  "const": "debugger-sh-v0.3.15-webide.0.4.0.1"
+                  "const": "debugger-sh-v0.3.15-webide.0.5.0.1"
                 },
                 "assetFilename": {
-                  "const": "debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+                  "const": "debugger-sh-0.3.15-webide.0.5.0.1.tgz"
                 },
                 "url": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz"
                 },
                 "size": {
                   "type": "integer",
@@ -875,10 +874,10 @@
               ],
               "properties": {
                 "version": {
-                  "const": "0.3.15-webide.0.4.0.1"
+                  "const": "0.3.15-webide.0.5.0.1"
                 },
                 "resolved": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz"
                 },
                 "integrity": {
                   "type": "string",
@@ -948,17 +947,17 @@
           "pattern": "^[a-f0-9]{64}$"
         },
         "gateCount": {
-          "const": 5
+          "const": 4
         },
         "logCount": {
-          "const": 5
+          "const": 4
         }
       }
     },
     "evidence": {
       "type": "array",
-      "minItems": 15,
-      "maxItems": 15,
+      "minItems": 14,
+      "maxItems": 14,
       "items": {
         "oneOf": [
           {
@@ -1027,7 +1026,7 @@
                 "const": "cyclonedx-sbom"
               },
               "fileName": {
-                "const": "web-ide-0.4.0.cdx.json"
+                "const": "web-ide-0.5.0.cdx.json"
               },
               "size": {
                 "type": "integer",
@@ -1233,7 +1232,7 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "pattern": "^validation-log:(?:validate-production|consumer-exact-candidate|audit-production|audit-full|karel-compatibility):[0-4]$"
+                "pattern": "^validation-log:(?:validate-production|consumer-exact-candidate|audit-production|audit-full):[0-3]$"
               },
               "fileName": {
                 "type": "string",
@@ -1457,21 +1456,6 @@
             "properties": {
               "kind": {
                 "const": "validation-log:audit-full:0"
-              }
-            }
-          },
-          "minContains": 1,
-          "maxContains": 1
-        },
-        {
-          "contains": {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "const": "validation-log:karel-compatibility:0"
               }
             }
           },

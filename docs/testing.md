@@ -41,8 +41,9 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.4.0-source-r4` tag, or a toolchain mismatch. The immutable
-`web-ide-v0.3.1-source` tag remains the previous release's source identity, and
+`web-ide-v0.5.0-source` tag, or a toolchain mismatch. The immutable
+`web-ide-v0.4.0-source-r4` tag remains the previous release's source identity;
+`web-ide-v0.3.1-source` remains an earlier release identity, and
 `web-ide-v0.3.0-source` remains the preceding release identity. The earlier
 `v0.2.0`, `web-ide-v0.2.0-source`, `web-ide-v0.2.0-source-r2`, and
 `web-ide-v0.2.0-source-r3` tags are retained
@@ -54,7 +55,7 @@ accepted candidate or release identity. Use
 `release:preflight` before the real source tag; its result is explicitly
 nonfinal and cannot be passed to
 `release:finalize`. See [Publishing readiness](publishing-readiness.md) for the
-exact five normalized-log gates and release sequencing.
+exact four normalized-log gates and release sequencing.
 
 `release:gate` runs npm with two distinct empty temporary user/global npmrc
 files and isolated home, temporary, cache, prefix, and XDG directories. It
@@ -89,7 +90,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.4.0.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.5.0.tgz \
   npm run test:consumer
 ```
 
@@ -253,8 +254,8 @@ Every implementation handoff should state:
 
 Passing `npm run validate:production` is the local production gate. Publishing
 or consuming a release still requires P2.5's complete bundled-license inventory,
-production SBOM, two-build deterministic artifact proof, exact Web IDE/Karel
-candidate compatibility, immutable release receipts, and Hamilton host checks
+production SBOM, two-build deterministic artifact proof, immutable release
+receipts, and exact CS106B companion/course-host candidate checks
 in [Publishing readiness](publishing-readiness.md).
 
 For dependency changes, record both `npm audit --omit=dev` and the full
@@ -268,18 +269,17 @@ the exact direct browser shims that replaced the former whole-stdlib polyfill
 plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
-The built-in browser providers are certified against exactly one pinned engine
-build. The retained certification evidence covers `debugger-sh@0.3.15`, and
-Web IDE 0.4.0 repins that dependency to the exact immutable
-`debugger-sh@0.3.15-webide.0.4.0.1` fork release asset recorded in
+The built-in browser providers target exactly one pinned engine build.
+Web IDE 0.5.0 uses the exact immutable
+`debugger-sh@0.3.15-webide.0.5.0.1` fork release asset recorded in
 `release/engine-fork-input.json`. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
-`npm run validate:production`, repeat the browser suite at least three times,
-and then rerun Nova's host regression. That fork matrix has not run yet, so the
-pinned-engine certification for 0.4.0 is not claimed. Do not widen the supported
-version range until the same compatibility matrix has passed for every version
-in the range.
+`npm run validate:production`, and verify the CS106B companion/course-host
+browser journey against the exact released packages. Retain the candidate
+digests with that evidence. This release does not certify a new Nova/Hamilton
+or Karel composition. Do not widen the supported version range without the
+same compatibility proof for every version in the range.
 
 ## Packed external-viewer regression
 

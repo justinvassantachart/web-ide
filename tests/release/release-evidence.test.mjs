@@ -155,7 +155,7 @@ function runtimeLock(overrides = {}) {
 }
 
 const FORK_ENGINE_URL = 'https://github.com/justinvassantachart/engine/releases/download'
-  + '/debugger-sh-v0.3.15-webide.0.4.0.1/debugger-sh-0.3.15-webide.0.4.0.1.tgz'
+  + '/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz'
 const FORK_ENGINE_INTEGRITY = `sha512-${Buffer.alloc(64, 7).toString('base64')}`
 
 function forkInputFixture(overrides = {}) {
@@ -165,7 +165,7 @@ function forkInputFixture(overrides = {}) {
     status: 'final',
     engine: {
       name: 'debugger-sh',
-      version: '0.3.15-webide.0.4.0.1',
+      version: '0.3.15-webide.0.5.0.1',
       registryPublished: false,
       upstream: {
         repository: 'https://github.com/debugger-sh/engine',
@@ -190,8 +190,8 @@ function forkInputFixture(overrides = {}) {
       distribution: {
         mechanism: 'public-github-release-asset',
         repository: 'justinvassantachart/engine',
-        tag: 'debugger-sh-v0.3.15-webide.0.4.0.1',
-        assetFilename: 'debugger-sh-0.3.15-webide.0.4.0.1.tgz',
+        tag: 'debugger-sh-v0.3.15-webide.0.5.0.1',
+        assetFilename: 'debugger-sh-0.3.15-webide.0.5.0.1.tgz',
         url: FORK_ENGINE_URL,
         size: 27818347,
         sha256: 'a'.repeat(64),
@@ -215,7 +215,7 @@ function forkInputFixture(overrides = {}) {
 
 function forkEngineLockNode() {
   return {
-    version: '0.3.15-webide.0.4.0.1',
+    version: '0.3.15-webide.0.5.0.1',
     resolved: FORK_ENGINE_URL,
     integrity: FORK_ENGINE_INTEGRITY,
     license: 'MIT',
@@ -558,7 +558,7 @@ describe('committed exact-candidate consumer fixture', () => {
     const committed = await loadEngineForkInput()
     expect(committed.status).toBe('final')
     expect(committed.engine.distribution.url).toBe(FORK_ENGINE_URL)
-    expect(committed.engine.source.commit).toBe('b7236bda9c8fef31cd771fe770c2145f11ac0682')
+    expect(committed.engine.source.commit).toBe('e2599efdff8c097defc490744a109f22df73ffa5')
     expect(committed.engine.source.acceptedBaseCommit)
       .toBe('58cbc9369e3f7738a6dc9b01082723d144bb9c97')
     const lock = await readJSON(path.join(repositoryRoot, 'tests/consumer/package-lock.json'))
@@ -596,7 +596,7 @@ describe('committed exact-candidate consumer fixture', () => {
     const cases = []
     const registryEngine = structuredClone(lock)
     registryEngine.packages[ENGINE_LOCK_PATH].resolved
-      = 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.4.0.1.tgz'
+      = 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.5.0.1.tgz'
     cases.push([manifest, registryEngine])
     const driftedEngine = structuredClone(lock)
     driftedEngine.packages[ENGINE_LOCK_PATH].integrity = `sha512-${Buffer.alloc(64, 9).toString('base64')}`
@@ -687,7 +687,7 @@ describe('bounded subprocess evidence', () => {
       sourceCommit,
       candidateSha256,
       exitCode: 0,
-      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
     })
     const receiptFooter = validationGateReceiptFooter(receipt)
     const splitRepositoryPath = Buffer.concat([
@@ -697,7 +697,7 @@ describe('bounded subprocess evidence', () => {
     const raw = Buffer.concat([
       splitRepositoryPath,
       Buffer.from([
-        `candidate: ${candidate}/web-ide-0.4.0.tgz`,
+        `candidate: ${candidate}/web-ide-0.5.0.tgz`,
         `home: ${home}/Library/Caches/ms-playwright`,
         `isolated home: ${isolatedHome}/.npmrc`,
         `temporary: ${temporary}/consumer/package.json`,
@@ -718,7 +718,7 @@ describe('bounded subprocess evidence', () => {
     const normalizedBytes = normalizeValidationGateLog(raw, { roots, receiptFooter })
     const normalized = normalizedBytes.toString('utf8')
     expect(normalized).toContain('stack: <repository-root>/src/index.ts:1')
-    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.4.0.tgz')
+    expect(normalized).toContain('candidate: <web-candidate>/web-ide-0.5.0.tgz')
     expect(normalized).toContain('home: <home>/Library/Caches/ms-playwright')
     expect(normalized).toContain('isolated home: <home>/.npmrc')
     expect(normalized).toContain('temporary: <execution-root>/consumer/package.json')
@@ -761,7 +761,7 @@ describe('bounded subprocess evidence', () => {
       sourceCommit,
       candidateSha256,
       exitCode: 0,
-      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
     })
     const receiptFooter = validationGateReceiptFooter(receipt)
     const roots = {
@@ -860,7 +860,7 @@ describe('bounded subprocess evidence', () => {
       sourceCommit,
       candidateSha256,
       exitCode: 0,
-      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
     }))
     const roots = {
       repository: ['/opt/build/web-ide'],
@@ -1449,14 +1449,14 @@ describe('committed fork engine input', () => {
         distribution: {
           ...record.engine.distribution,
           url: 'https://github.com/justinvassantachart/engine/releases/latest/download'
-            + '/debugger-sh-0.3.15-webide.0.4.0.1.tgz',
+            + '/debugger-sh-0.3.15-webide.0.5.0.1.tgz',
         },
       }],
       ['registry URL', {
         ...record.engine,
         distribution: {
           ...record.engine.distribution,
-          url: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.4.0.1.tgz',
+          url: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.5.0.1.tgz',
         },
       }],
       ['remote engine WebAssembly', {
@@ -1535,7 +1535,7 @@ describe('SBOM and license gates', () => {
     ]) }
     const packageManifest = {
       name: 'web-ide',
-      version: '0.4.0',
+      version: '0.5.0',
       license: 'MIT',
       dependencies: { 'debugger-sh': FORK_ENGINE_URL },
       peerDependencies: { react: '^1', 'react-dom': '^1' },
@@ -1546,7 +1546,7 @@ describe('SBOM and license gates', () => {
       packageManifest,
       packageLock,
       candidate: {
-        filename: 'web-ide-0.4.0.tgz',
+        filename: 'web-ide-0.5.0.tgz',
         size: 123,
         sha256: 'a'.repeat(64),
         sha512Integrity: integrity,
@@ -1555,9 +1555,9 @@ describe('SBOM and license gates', () => {
     }
     const result = await generateCycloneDx(sbomInput)
     const engine = result.components.find((component) => component.name === 'debugger-sh')
-    expect(engine.version).toBe('0.3.15-webide.0.4.0.1')
+    expect(engine.version).toBe('0.3.15-webide.0.5.0.1')
     expect(engine.purl).toBe(
-      `pkg:npm/debugger-sh@0.3.15-webide.0.4.0.1?download_url=${encodeURIComponent(FORK_ENGINE_URL)}`,
+      `pkg:npm/debugger-sh@0.3.15-webide.0.5.0.1?download_url=${encodeURIComponent(FORK_ENGINE_URL)}`,
     )
     expect(engine.externalReferences).toEqual([
       { type: 'distribution', url: FORK_ENGINE_URL },
@@ -1614,7 +1614,7 @@ describe('validation summary', () => {
       sourceCommit,
       candidateSha256,
       exitCode: 0,
-      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@3',
+      emitter: 'web-ide:scripts/release/run-validation-gate.mjs@4',
     })
     const log = `gate output\n${validationGateReceiptFooter(receipt)}`
     expect(parseValidationGateReceipt(log, {
@@ -1661,7 +1661,7 @@ describe('validation summary', () => {
     const commit = 'a'.repeat(40)
     const summary = {
       schemaVersion: 1,
-      package: 'web-ide@0.4.0',
+      package: 'web-ide@0.5.0',
       sourceCommit: commit,
       candidateSha256: 'b'.repeat(64),
       gates: [
@@ -1669,7 +1669,6 @@ describe('validation summary', () => {
         ['consumer-exact-candidate', 'WEB_IDE_CANDIDATE_TARBALL=<candidate> npm run test:consumer'],
         ['audit-production', 'npm audit --omit=dev'],
         ['audit-full', 'npm audit'],
-        ['karel-compatibility', 'Karel exact-candidate compatibility gate'],
       ].map(([id, command]) => ({
         id,
         command,
@@ -1688,6 +1687,14 @@ describe('validation summary', () => {
       summary,
       'fixture validation summary',
     )).resolves.toBe(summary)
+    const extraGate = { ...summary, gates: [...summary.gates, summary.gates[0]] }
+    expect(() => validateValidationSummary(extraGate, commit, 'b'.repeat(64)))
+      .toThrow(/incomplete gate set/u)
+    await expect(validateReleaseSchema(
+      'validation-summary-input.schema.json', extraGate, 'fixture validation summary',
+    )).rejects.toThrow(/must NOT have more than 4/u)
+    expect(() => createValidationGateReceipt({ gateId: 'karel-compatibility' }))
+      .toThrow(/Unknown validation gate/u)
     const unknownNestedField = structuredClone(summary)
     unknownNestedField.gates[0].logs[0].unexpected = true
     await expect(validateReleaseSchema(
@@ -1721,8 +1728,8 @@ describe('validation summary', () => {
 
   it('does not allow a nonrelease preflight state into finalization', () => {
     const configuration = {
-      package: 'web-ide@0.4.0',
-      capabilityReleaseId: 'hamilton.python/4',
+      package: 'web-ide@0.5.0',
+      capabilityReleaseId: 'cs106b.source/2',
       packageRole: 'web-ide',
     }
     const source = { commit: 'a'.repeat(40), tree: 'b'.repeat(40) }
@@ -1761,7 +1768,6 @@ describe('artifact manifest', () => {
       ['consumer-exact-candidate', 'WEB_IDE_CANDIDATE_TARBALL=<candidate> npm run test:consumer'],
       ['audit-production', 'npm audit --omit=dev'],
       ['audit-full', 'npm audit'],
-      ['karel-compatibility', 'Karel exact-candidate compatibility gate'],
     ]
     const gates = []
     for (const [id, command] of logDefinitions) {
@@ -1817,19 +1823,19 @@ describe('artifact manifest', () => {
     const jsonEvidence = [
       'bundle-provenance.json',
       'candidate-state.json',
-      'web-ide-0.4.0.cdx.json',
+      'web-ide-0.5.0.cdx.json',
       'runtime-assets-verification.json',
       'runtime-source-provenance.json',
       'third-party-licenses.json',
     ]
     await Promise.all(jsonEvidence.map((name) => writeFile(path.join(directory, name), '{}\n')))
     await Promise.all([
-      writeFile(path.join(directory, 'web-ide-0.4.0.tgz'), candidateBytes),
-      writeFile(path.join(directory, 'web-ide-0.4.0-source.tar.gz'), sourceBytes),
+      writeFile(path.join(directory, 'web-ide-0.5.0.tgz'), candidateBytes),
+      writeFile(path.join(directory, 'web-ide-0.5.0-source.tar.gz'), sourceBytes),
       writeFile(path.join(directory, 'THIRD_PARTY_LICENSES.txt'), 'license evidence\n'),
       writeFile(path.join(directory, 'package-inspection.json'), JSON.stringify({
         tarball: {
-          filename: 'web-ide-0.4.0.tgz',
+          filename: 'web-ide-0.5.0.tgz',
           size: candidateBytes.length,
           sha256: candidateSha256,
           sha512Integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
@@ -1839,24 +1845,24 @@ describe('artifact manifest', () => {
       writeFile(path.join(directory, 'deterministic-builds.json'), JSON.stringify({ buildInputs })),
       writeFile(path.join(directory, 'validation-summary.json'), JSON.stringify({
         schemaVersion: 1,
-        package: 'web-ide@0.4.0',
+        package: 'web-ide@0.5.0',
         sourceCommit,
         candidateSha256,
-        gateCount: 5,
-        logCount: 5,
+        gateCount: 4,
+        logCount: 4,
         gates,
       })),
     ])
     const configuration = {
-      package: 'web-ide@0.4.0',
+      package: 'web-ide@0.5.0',
       sourceRepository: 'https://github.com/justinvassantachart/web-ide.git',
-      sourceTag: 'web-ide-v0.4.0-source-r4',
-      sourceAssetFilename: 'web-ide-0.4.0-source.tar.gz',
-      capabilityReleaseId: 'hamilton.python/4',
+      sourceTag: 'web-ide-v0.5.0-source',
+      sourceAssetFilename: 'web-ide-0.5.0-source.tar.gz',
+      capabilityReleaseId: 'cs106b.source/2',
       packageRole: 'web-ide',
       releaseRepository: 'justinvassantachart/ths-ide',
-      releaseTag: 'web-ide-v0.4.0',
-      releaseAssetFilename: 'web-ide-0.4.0.tgz',
+      releaseTag: 'web-ide-v0.5.0',
+      releaseAssetFilename: 'web-ide-0.5.0.tgz',
       nodeVersion: '24.11.1',
       npmVersion: '11.6.2',
     }
@@ -1886,7 +1892,7 @@ describe('artifact manifest', () => {
         tree: sourceTree,
         commitTimestamp: 1,
         sourceDateEpoch: '1',
-        tag: { name: 'web-ide-v0.4.0-source-r4', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
+        tag: { name: 'web-ide-v0.5.0-source', objectId: 'd'.repeat(40), objectType: 'tag', peeledCommit: sourceCommit },
         remote: configuration.sourceRepository,
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
@@ -1895,8 +1901,7 @@ describe('artifact manifest', () => {
     expect(manifest.manifestId).toMatch(/^urn:sha256:[a-f0-9]{64}$/u)
     expect(manifest.schemaVersion).toBe(2)
     expect(manifest.capabilityReleaseIds).toEqual([
-      'hamilton.python-karel/8',
-      'hamilton.python/4',
+      'cs106b.source/2',
     ])
     expect(manifest).not.toHaveProperty('capabilityReleaseId')
     expect(manifest.distribution.artifact.sha256).toBe(candidateSha256)
@@ -1907,7 +1912,7 @@ describe('artifact manifest', () => {
     expect(manifest.runtime).not.toHaveProperty('debuggerSh')
     expect(manifest.runtime.engine).toMatchObject({
       name: 'debugger-sh',
-      version: '0.3.15-webide.0.4.0.1',
+      version: '0.3.15-webide.0.5.0.1',
       registryPublished: false,
       distribution: { mechanism: 'public-github-release-asset', url: FORK_ENGINE_URL },
       lock: { resolved: FORK_ENGINE_URL, integrity: FORK_ENGINE_INTEGRITY },
@@ -1976,10 +1981,10 @@ describe('artifact manifest', () => {
     )).rejects.toThrow(/additional properties/u)
 
     for (const capabilityReleaseIds of [
-      ['hamilton.python/4', 'hamilton.python-karel/8'],
-      ['hamilton.python-karel/8', 'hamilton.python-karel/8'],
-      ['hamilton.python-karel/8'],
-      ['hamilton.python-karel/4', 'hamilton.python/2'],
+      [],
+      ['cs106b.source/2', 'cs106b.source/2'],
+      ['cs106b.source/1'],
+      ['hamilton.python-karel/8', 'hamilton.python/4'],
     ]) {
       const changedCapabilities = structuredClone(manifest)
       changedCapabilities.capabilityReleaseIds = capabilityReleaseIds
@@ -1993,10 +1998,10 @@ describe('artifact manifest', () => {
     }
 
     const duplicatedGateEvidence = structuredClone(manifest)
-    const karelLog = duplicatedGateEvidence.evidence.find(
-      (item) => item.kind === 'validation-log:karel-compatibility:0',
+    const auditLog = duplicatedGateEvidence.evidence.find(
+      (item) => item.kind === 'validation-log:audit-full:0',
     )
-    karelLog.kind = 'validation-log:validate-production:1'
+    auditLog.kind = 'validation-log:validate-production:1'
     duplicatedGateEvidence.evidence.sort((left, right) => (
       left.kind < right.kind ? -1 : left.kind > right.kind ? 1 : 0
     ))
@@ -2025,8 +2030,8 @@ describe('release source state', () => {
         ref: 'refs/heads/main',
         object: { type: 'commit', sha: commit },
       }],
-      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.4.0-source-r4', {
-        ref: 'refs/tags/web-ide-v0.4.0-source-r4',
+      ['https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.5.0-source', {
+        ref: 'refs/tags/web-ide-v0.5.0-source',
         object: { type: 'tag', sha: tagObjectId },
       }],
       [`https://api.github.com/repos/justinvassantachart/web-ide/git/tags/${tagObjectId}`, {
@@ -2051,16 +2056,16 @@ describe('release source state', () => {
       }
     }
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.4.0-source-r4' },
+      { sourceRepository, sourceTag: 'web-ide-v0.5.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).resolves.toEqual({ branchCommit: commit, tagObjectId, peeledCommit: commit })
     expect(fetched).toEqual([...responses.keys()])
 
-    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.4.0-source-r4')
+    responses.get('https://api.github.com/repos/justinvassantachart/web-ide/git/ref/tags/web-ide-v0.5.0-source')
       .object.type = 'commit'
     await expect(verifyIndependentGitHubSource(
-      { sourceRepository, sourceTag: 'web-ide-v0.4.0-source-r4' },
+      { sourceRepository, sourceTag: 'web-ide-v0.5.0-source' },
       { commit, tagObjectId },
       fakeFetch,
     )).rejects.toThrow(/expected tag ref/u)
@@ -2089,20 +2094,20 @@ describe('release source state', () => {
       '-c', 'user.email=release-fixture@example.invalid',
       'commit', '-m', 'fixture',
     ], { cwd: checkout, env: gitIdentityEnvironment })
-    await run('git', ['tag', '-a', 'web-ide-v0.4.0-source-r4', '-m', 'Web IDE 0.4.0 fixture'], {
+    await run('git', ['tag', '-a', 'web-ide-v0.5.0-source', '-m', 'Web IDE 0.5.0 fixture'], {
       cwd: checkout,
       env: gitIdentityEnvironment,
     })
-    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.4.0-source-r4'], { cwd: checkout })
+    await run('git', ['push', 'origin', 'main', 'refs/tags/web-ide-v0.5.0-source'], { cwd: checkout })
     const configuration = {
       sourceRepository: bare,
-      sourceTag: 'web-ide-v0.4.0-source-r4',
+      sourceTag: 'web-ide-v0.5.0-source',
       nodeVersion: process.versions.node,
       npmVersion: process.env.npm_config_user_agent?.match(/^npm\/([^ ]+)/u)?.[1] ?? '11.6.2',
     }
     const fixtureOptions = { nonreleaseFixtureRemote: bare }
     const source = await verifyReleaseSourceState(configuration, checkout, fixtureOptions)
-    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.4.0-source-r4', objectType: 'tag' } })
+    expect(source).toMatchObject({ branch: 'main', tag: { name: 'web-ide-v0.5.0-source', objectType: 'tag' } })
     const [first, second] = await Promise.all([
       sourceArchiveBytes(configuration, checkout, fixtureOptions),
       sourceArchiveBytes(configuration, checkout, fixtureOptions),

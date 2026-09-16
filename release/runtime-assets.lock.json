@@ -54,7 +54,7 @@
     },
     {
       "id": "debugger-sh.llvm-core.wasm",
-      "version": "debugger-sh-0.3.15-webide.0.4.0.1",
+      "version": "debugger-sh-0.3.15-webide.0.5.0.1",
       "requestedUrl": "https://fabioibanez.github.io/website/llvm.core.wasm",
       "finalUrl": "https://fabioibanez.github.io/website/llvm.core.wasm",
       "size": 75532134,
@@ -74,7 +74,7 @@
     },
     {
       "id": "debugger-sh.llvm-resources.tar.gz",
-      "version": "debugger-sh-0.3.15-webide.0.4.0.1",
+      "version": "debugger-sh-0.3.15-webide.0.5.0.1",
       "requestedUrl": "https://fabioibanez.github.io/website/llvm-resources.tar.gz",
       "finalUrl": "https://fabioibanez.github.io/website/llvm-resources.tar.gz",
       "size": 4243142,
