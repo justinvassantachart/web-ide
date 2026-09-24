@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.5.0-source/release/schemas/artifact-manifest.schema.json",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.6.0-source/release/schemas/artifact-manifest.schema.json",
   "title": "Web IDE CS106B artifact manifest",
   "type": "object",
   "additionalProperties": false,
@@ -56,7 +56,7 @@
           "const": "web-ide"
         },
         "version": {
-          "const": "0.5.0"
+          "const": "0.6.0"
         },
         "private": {
           "const": true
@@ -71,7 +71,7 @@
         },
         "dependencies": {
           "const": {
-            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz"
+            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz"
           }
         },
         "peerDependencies": {
@@ -160,7 +160,7 @@
           ],
           "properties": {
             "name": {
-              "const": "web-ide-v0.5.0-source"
+              "const": "web-ide-v0.6.0-source"
             },
             "objectId": {
               "type": "string",
@@ -251,7 +251,7 @@
               "const": "source-archive"
             },
             "fileName": {
-              "const": "web-ide-0.5.0-source.tar.gz"
+              "const": "web-ide-0.6.0-source.tar.gz"
             },
             "size": {
               "type": "integer",
@@ -527,19 +527,19 @@
       ],
       "properties": {
         "mechanism": {
-          "const": "private-github-release-asset"
+          "const": "public-github-release-asset"
         },
         "npmPublished": {
           "const": false
         },
         "repository": {
-          "const": "justinvassantachart/ths-ide"
+          "const": "justinvassantachart/web-ide"
         },
         "intendedTag": {
-          "const": "web-ide-v0.5.0"
+          "const": "web-ide-v0.6.0"
         },
         "intendedAssetFilename": {
-          "const": "web-ide-0.5.0.tgz"
+          "const": "web-ide-0.6.0.tgz"
         },
         "artifact": {
           "type": "object",
@@ -557,7 +557,7 @@
               "const": "package-tarball"
             },
             "fileName": {
-              "const": "web-ide-0.5.0.tgz"
+              "const": "web-ide-0.6.0.tgz"
             },
             "size": {
               "type": "integer",
@@ -737,7 +737,7 @@
               "const": "debugger-sh"
             },
             "version": {
-              "const": "0.3.15-webide.0.5.0.1"
+              "const": "0.3.15-webide.0.5.0.2"
             },
             "registryPublished": {
               "const": false
@@ -762,7 +762,7 @@
                   "pattern": "^[a-f0-9]{40}$"
                 },
                 "acceptedBaseCommit": {
-                  "const": "58cbc9369e3f7738a6dc9b01082723d144bb9c97"
+                  "const": "e2599efdff8c097defc490744a109f22df73ffa5"
                 },
                 "upstreamRepository": {
                   "const": "https://github.com/debugger-sh/engine"
@@ -842,13 +842,13 @@
                   "const": "justinvassantachart/engine"
                 },
                 "tag": {
-                  "const": "debugger-sh-v0.3.15-webide.0.5.0.1"
+                  "const": "debugger-sh-v0.3.15-webide.0.5.0.2"
                 },
                 "assetFilename": {
-                  "const": "debugger-sh-0.3.15-webide.0.5.0.1.tgz"
+                  "const": "debugger-sh-0.3.15-webide.0.5.0.2.tgz"
                 },
                 "url": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz"
                 },
                 "size": {
                   "type": "integer",
@@ -874,10 +874,10 @@
               ],
               "properties": {
                 "version": {
-                  "const": "0.3.15-webide.0.5.0.1"
+                  "const": "0.3.15-webide.0.5.0.2"
                 },
                 "resolved": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz"
                 },
                 "integrity": {
                   "type": "string",
@@ -1026,7 +1026,7 @@
                 "const": "cyclonedx-sbom"
               },
               "fileName": {
-                "const": "web-ide-0.5.0.cdx.json"
+                "const": "web-ide-0.6.0.cdx.json"
               },
               "size": {
                 "type": "integer",

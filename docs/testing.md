@@ -41,8 +41,9 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.5.0-source` tag, or a toolchain mismatch. The immutable
-`web-ide-v0.4.0-source-r4` tag remains the previous release's source identity;
+`web-ide-v0.6.0-source` tag, or a toolchain mismatch. The immutable
+`web-ide-v0.5.0-source` tag remains the previous release's source identity;
+`web-ide-v0.4.0-source-r4` remains an earlier release identity;
 `web-ide-v0.3.1-source` remains an earlier release identity, and
 `web-ide-v0.3.0-source` remains the preceding release identity. The earlier
 `v0.2.0`, `web-ide-v0.2.0-source`, `web-ide-v0.2.0-source-r2`, and
@@ -90,7 +91,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.5.0.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.6.0.tgz \
   npm run test:consumer
 ```
 
@@ -213,6 +214,14 @@ initially hidden panels before a
 usable workbench appears, supports keyboard tab navigation, resets on remount,
 and keeps simultaneous layout controllers independent.
 
+`tests/browser/terminal-panel.spec.ts` verifies center-column placement,
+resizing, hide/reopen, maximize/restore, focus, scoped shortcuts and output
+retention through sidebar and theme changes. Its light/dark screenshots are
+review artifacts. `tests/browser/terminal-io.spec.ts` exercises real keyboard
+input, Backspace, sequential prompts, input-dependent results, stderr and
+repeated runs for Python `input()` and C++ `getline`/`cin`. These assertions
+must use the actual runtime; terminal input echo alone is not input proof.
+
 `tests/contracts/run-pipeline-execution.test.ts` also creates two controllers
 for one runtime, defers preparation through one, and stops through the other. It
 proves the mount-owned coordinator drains cancellation cleanup without allowing
@@ -270,15 +279,16 @@ plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
 The built-in browser providers target exactly one pinned engine build.
-Web IDE 0.5.0 uses the exact immutable
-`debugger-sh@0.3.15-webide.0.5.0.1` fork release asset recorded in
+Web IDE 0.6.0 selects the exact immutable
+`debugger-sh@0.3.15-webide.0.5.0.2` fork release asset recorded in
 `release/engine-fork-input.json`. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
 `npm run validate:production`, and verify the CS106B companion/course-host
 browser journey against the exact released packages. Retain the candidate
-digests with that evidence. This release does not certify a new Nova/Hamilton
-or Karel composition. Do not widen the supported version range without the
+digests with that evidence. Hamilton and Karel adoption requires its own exact
+consumer compatibility evidence; the public package gates do not certify that
+composition. Do not widen the supported version range without the
 same compatibility proof for every version in the range.
 
 ## Packed external-viewer regression

@@ -50,42 +50,26 @@ Those four releases stay reachable at
 Hamilton application additionally pins `web-ide` 0.3.1 from that repository by
 design, so those URLs must not be retired.
 
-## Release configuration is still pinned to the old channel — on purpose
+## Current release configuration
 
-`release/release-input.json` (`releaseRepository`),
-`release/schemas/artifact-manifest.schema.json` and
-`scripts/release/artifact-manifest.mjs` (`mechanism:
-'private-github-release-asset'`) all still name the `ths-ide` channel.
+The next release is Web IDE `0.6.0`. Its version-specific configuration,
+manifest schema, evidence tools and fixtures name the public canonical
+`justinvassantachart/web-ide` channel with mechanism
+`public-github-release-asset`, source tag `web-ide-v0.6.0-source`, release tag
+`web-ide-v0.6.0`, and asset `web-ide-0.6.0.tgz`.
 
-**Do not "fix" them in isolation.** Those values are pinned per release
-version — the schema hard-codes `intendedTag: "web-ide-v0.5.0"` and
-`fileName: "web-ide-0.5.0.tgz"` — and they correctly describe the 0.5.0
-artifact **as it was actually published**. Changing them without cutting a new
-version would make this repository's own tooling reject the 0.5.0
-`artifact-manifest.json` it already published.
+The minor version records the terminal's new bottom panel beneath the editor
+and the corresponding initial-layout contract. The exact engine successor
+`debugger-sh@0.3.15-webide.0.5.0.2` contains the separately reviewed five-line
+empty-stdin-read correction in [engine PR 1](https://github.com/justinvassantachart/engine/pull/1).
+It retains the preceding engine source apart from that correction, regression
+coverage and release metadata. Existing published release assets, source tags and manifests
+remain immutable. The `0.5.0` source tag retains tooling for validating its
+original release identity and channel.
 
-### Checklist for the next release
-
-Update these together, as part of the version bump, so the next release
-publishes to this repository:
-
-1. `release/release-input.json` — set `releaseRepository` to
-   `justinvassantachart/web-ide` along with the new `package`, `releaseTag`,
-   `sourceTag` and asset filenames.
-2. `release/schemas/artifact-manifest.schema.json` — update the
-   `distribution.repository`, `intendedTag` and `intendedAssetFilename` consts,
-   and the `mechanism` const if the channel is public.
-3. `scripts/release/artifact-manifest.mjs` — the `mechanism` literal appears
-   twice (generator and validator); both must change together if the channel
-   becomes public. Consider `public-github-release-asset`.
-4. `tests/release/release-evidence.test.mjs` — update the `releaseRepository`
-   fixture.
-5. `docs/publishing-readiness.md` — it currently states the distribution path
-   is "an immutable release in the owner's private `ths-ide` release
-   repository". Note that `docs/` **is** packaged, so editing it changes the
-   package bytes and therefore belongs to a version bump, never to a
-   standalone edit.
-
-Then run the normal four local gates and the finalizer described in
-`docs/publishing-readiness.md`. Nothing in this migration bypassed or re-ran
-any release gate.
+This configuration is preparation, not evidence of publication. Complete the
+four local gates and finalizer in
+[Publishing readiness](docs/publishing-readiness.md), then verify the immutable
+release downloads and each consuming application's exact package composition
+before recording `0.6.0` as a canonical published release above. The npm
+manifest remains `private: true`; no npm publication is configured.

@@ -40,11 +40,11 @@ test('preserves default panel selection and 27/70 proportions', async ({ page })
 
   const variables = page.getByRole('tab', { name: 'Variables', exact: true })
   await expect(variables).toHaveAttribute('aria-selected', 'true')
-  const tabpanel = page.getByRole('tabpanel')
+  const tabpanel = page.getByRole('tabpanel', { name: 'Variables', exact: true })
   await expect(tabpanel).toHaveAttribute('aria-labelledby', await variables.getAttribute('id') ?? '')
   await expect(variables).toHaveAttribute('aria-controls', await tabpanel.getAttribute('id') ?? '')
   await expectPercent(page.locator('[data-web-ide-region="panel-column"]'), 'width', 27)
-  await expectPercent(page.locator('[data-web-ide-region="panel-content"]'), 'height', 70)
+  await expectPercent(page.locator('[data-web-ide-region="editor-content"]'), 'height', 70)
 
   expectCleanBrowser(diagnostics)
 })
@@ -63,7 +63,7 @@ test('applies requested ratios and shows the exact initial panel without a click
   await expect(activities.nth(1)).toHaveAccessibleName('Explorer')
   await expect(page.getByRole('heading', { name: 'Host instructions' })).toBeVisible()
   await expectPercent(page.locator('[data-web-ide-region="panel-column"]'), 'width', 50)
-  await expectPercent(page.locator('[data-web-ide-region="panel-content"]'), 'height', 85)
+  await expectPercent(page.locator('[data-web-ide-region="editor-content"]'), 'height', 85)
 
   await canvas.focus()
   await page.keyboard.press('ArrowRight')

@@ -6,7 +6,7 @@ import { GlobalHotkeys } from '@/components/layout/GlobalHotkeys'
 import { HostEventBridge } from '@/components/layout/HostEventBridge'
 import { ActivityBar } from '@/components/sidebar/ActivityBar'
 import { SidebarPanel } from '@/components/sidebar/SidebarPanel'
-import { Editor } from '@/components/editor/Editor'
+import { EditorTerminalPanel } from '@/components/layout/EditorTerminalPanel'
 import { RightPanel } from '@/components/layout/RightPanel'
 import {
   ResizableHandle,
@@ -58,7 +58,6 @@ export function WorkbenchLayout() {
         <div className="flex-1 min-h-0 flex">
           {chromeSidebar && <ActivityBar />}
           <ResizablePanelGroup
-            key={sidebarVisible ? 'with-sidebar' : 'no-sidebar'}
             orientation="horizontal"
             className="flex-1 min-h-0"
           >
@@ -78,17 +77,19 @@ export function WorkbenchLayout() {
             )}
 
             <ResizablePanel
+              key="editor"
               id="editor"
               defaultSize={`${editorColumnPercent}`}
               minSize="25"
               data-web-ide-region="editor-column"
             >
-              <Editor />
+              <EditorTerminalPanel />
             </ResizablePanel>
 
-            <ResizableHandle withHandle />
+            <ResizableHandle key="right-separator" withHandle />
 
             <ResizablePanel
+              key="right"
               id="right"
               defaultSize={`${initialLayout.panelColumnPercent}`}
               minSize="15"

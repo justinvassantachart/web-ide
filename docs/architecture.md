@@ -44,8 +44,12 @@ exact candidate/final artifact directory. Replacement compares the prior
 directory's complete inventory around backup and retains the prior directory
 at a named recovery path if publication cannot complete;
 finalization independently rebuilds and reparses the candidate before closure.
-The package remains private and is not published to npm; Hamilton consumes only
-the independently verified immutable private-release tarball.
+The npm package remains private and is not published to npm. New general
+releases use independently verified immutable assets in the public Web IDE
+repository; Hamilton retains separately reviewed maintenance artifacts based on
+its older runtime. The current exact engine dependency contains a five-line
+empty-stdin-read correction on the preceding C++ engine baseline. Its source,
+build and embedded Wasm identities are bound by `release/engine-fork-input.json`.
 
 ## Stable contracts
 
@@ -156,8 +160,14 @@ than presenting impossible debugging affordances.
 `WebIDEConfiguration.initialLayout` is the narrow host-owned initial
 presentation boundary. Its exact contributed activity and panel IDs are
 validated before a
-usable workbench commit, and its bounded panel-column and panel-content
-percentages feed the existing resizable groups. A small controller owns panel
+usable workbench commit. Its bounded panel-column percentage sizes the full-height
+right contribution column; the retained `panelContentPercent` field now sizes
+the editor above the terminal in the center column. The terminal has one
+mount-owned xterm instance, resize observer, and runtime subscription set.
+Local hide/maximize/restore state and sidebar changes preserve that instance,
+its output, and the editor; unmount cancels pending resize work and disposes
+subscriptions. Ctrl+backquote targets only the focused workbench. Terminal
+colors follow the existing shared theme policy without adding a public API. A small controller owns panel
 selection per mounted `WebIDE`; commands, tests, activities, the public
 instance snapshot, and accessible tabs use that controller instead of the
 execution store. The controller has no storage, synchronization, theme, or
