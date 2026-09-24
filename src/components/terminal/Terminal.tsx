@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useEngine } from '@/engine/engine-context'
@@ -8,9 +8,12 @@ import { normalizeTerminalNewlines } from './normalize-terminal-text'
 import '@xterm/xterm/css/xterm.css'
 
 const DARK_THEME: ITheme = {
-    background: '#0a0a0a',
-    foreground: '#d4d4d4',
-    cursor: '#5BC2EE',
+    background: '#181818',
+    foreground: '#cccccc',
+    cursor: '#cccccc',
+    cursorAccent: '#181818',
+    selectionBackground: '#264f78',
+    selectionInactiveBackground: '#264f7880',
     black: '#000',
     brightBlack: '#666',
     red: '#cd3131',
@@ -29,12 +32,14 @@ const DARK_THEME: ITheme = {
     brightWhite: '#fff',
 }
 
-// VS Code Light Modern terminal palette — matches the editor light theme so
-// the terminal panel doesn't look like a hole punched into the IDE.
+// VS Code's default Light Modern panel and standard ANSI palette.
 const LIGHT_THEME: ITheme = {
-    background: '#ffffff',
+    background: '#f8f8f8',
     foreground: '#3b3b3b',
     cursor: '#005fb8',
+    cursorAccent: '#f8f8f8',
+    selectionBackground: '#add6ff',
+    selectionInactiveBackground: '#e5ebf1',
     black: '#000000',
     brightBlack: '#666666',
     red: '#cd3131',
@@ -55,94 +60,94 @@ const LIGHT_THEME: ITheme = {
 
 const themeFor = (t: Theme): ITheme => (t === 'light' ? LIGHT_THEME : DARK_THEME)
 
-export function Terminal() {
+export interface TerminalHandle {
+    clear(): void
+    focus(): void
+}
+
+export const Terminal = forwardRef<TerminalHandle>(function Terminal(_props, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const engine = useEngine()
     const theme = useThemeStore((s) => s.theme)
     const configuration = useWebIDEConfiguration()
     const termRef = useRef<XTerm | null>(null)
 
+    useImperativeHandle(ref, () => ({
+        clear: () => termRef.current?.clear(),
+        focus: () => termRef.current?.focus(),
+    }), [])
+
     useEffect(() => {
-        if (!containerRef.current) return
+        const container = containerRef.current
+        if (!container) return
         let disposed = false
-        let cleanup = () => {}
-
-        // xterm measures the cell width at construction time. If JetBrains Mono
-        // (a Google web font) hasn't loaded yet, it measures against the fallback
-        // and characters render at the wrong stride once the real font arrives —
-        // that's the "squished glyphs" / "missing spaces" symptom. Force-load the
-        // font before opening the terminal.
-        const fontsReady =
-            typeof document !== 'undefined' && 'fonts' in document
-                ? document.fonts.load('13px "JetBrains Mono"').catch(() => undefined)
-                : Promise.resolve()
-
-        void fontsReady.then(() => {
-            if (disposed || !containerRef.current) return
-
-            const term = new XTerm({
-                fontFamily:
-                    '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                fontSize: 13,
-                lineHeight: 1.3,
-                cursorBlink: true,
-                cursorStyle: 'bar',
-                theme: themeFor(useThemeStore.getState().theme),
-            })
-            termRef.current = term
-            const fit = new FitAddon()
-            term.loadAddon(fit)
-            term.open(containerRef.current)
-            fit.fit()
-
-            term.writeln(`\x1b[1;36m${configuration.terminalName ?? 'Web IDE Terminal'}\x1b[0m\r\n\x1b[90mReady\x1b[0m\r\n`)
-
-            const ro = new ResizeObserver(() => {
-                requestAnimationFrame(() => fit.fit())
-            })
-            ro.observe(containerRef.current)
-
-            const onDataDisposable = term.onData((data) => {
-                engine.writeStdin?.(data)
-            })
-
-            const unsubOut = engine.events.stdout.subscribe((text) => term.write(normalizeTerminalNewlines(text)))
-            const unsubErr = engine.events.stderr.subscribe((text) => term.write(`\x1b[1;31m${normalizeTerminalNewlines(text)}\x1b[0m`))
-            const unsubClr = engine.events.terminalClear.subscribe(() => term.clear())
-            const unsubExt = engine.events.exit.subscribe((code) =>
-                term.writeln(`\r\n\x1b[90m  Program exited with code ${code ?? 0}  \x1b[0m\r\n`),
-            )
-
-            cleanup = () => {
-                unsubOut(); unsubErr(); unsubClr(); unsubExt()
-                onDataDisposable.dispose()
-                ro.disconnect()
-                term.dispose()
-                if (termRef.current === term) termRef.current = null
-            }
+        let frame: number | undefined
+        const platform = navigator.platform
+        const isMac = /Mac/i.test(platform)
+        const isWindows = /Win/i.test(platform)
+        // Match VS Code's platform defaults without a remote font-loading race.
+        const term = new XTerm({
+            fontFamily: isMac ? 'Menlo, Monaco, "Courier New", monospace'
+                : isWindows ? 'Consolas, "Courier New", monospace'
+                    : '"Droid Sans Mono", monospace',
+            fontSize: isMac ? 12 : 14,
+            lineHeight: 1,
+            minimumContrastRatio: 4.5,
+            cursorBlink: false,
+            cursorStyle: 'block',
+            screenReaderMode: true,
+            theme: themeFor(useThemeStore.getState().theme),
         })
+        termRef.current = term
+        const fit = new FitAddon()
+        term.loadAddon(fit)
+        term.open(container)
+        term.textarea?.setAttribute('aria-label', 'Terminal input')
+        term.attachCustomKeyEventHandler((event) => !(event.ctrlKey
+            && !event.metaKey && !event.altKey && !event.shiftKey
+            && (event.code === 'Backquote' || event.key === '`')))
+
+        const scheduleFit = () => {
+            if (disposed || frame !== undefined) return
+            frame = requestAnimationFrame(() => {
+                frame = undefined
+                if (!disposed && container.clientWidth > 0 && container.clientHeight > 0) fit.fit()
+            })
+        }
+        scheduleFit()
+        const resizeObserver = new ResizeObserver(scheduleFit)
+        resizeObserver.observe(container)
+
+        term.writeln(`\x1b[1;36m${configuration.terminalName ?? 'Web IDE Terminal'}\x1b[0m\r\n\x1b[90mReady\x1b[0m\r\n`)
+        const onDataDisposable = term.onData((data) => engine.writeStdin?.(data))
+        const unsubOut = engine.events.stdout.subscribe((text) => term.write(normalizeTerminalNewlines(text)))
+        const unsubErr = engine.events.stderr.subscribe((text) => term.write(`\x1b[1;31m${normalizeTerminalNewlines(text)}\x1b[0m`))
+        const unsubClr = engine.events.terminalClear.subscribe(() => term.clear())
+        const unsubExt = engine.events.exit.subscribe((code) =>
+            term.writeln(`\r\n\x1b[90m  Program exited with code ${code ?? 0}  \x1b[0m\r\n`),
+        )
 
         return () => {
             disposed = true
-            cleanup()
+            resizeObserver.disconnect()
+            if (frame !== undefined) cancelAnimationFrame(frame)
+            unsubOut(); unsubErr(); unsubClr(); unsubExt()
+            onDataDisposable.dispose()
+            term.dispose()
+            if (termRef.current === term) termRef.current = null
         }
     }, [configuration.terminalName, engine])
 
-    // Repaint xterm's palette whenever the IDE theme flips. The terminal is
-    // constructed asynchronously (after the font loads), so termRef may be
-    // null on the first run for a given theme — that's fine, construction
-    // already reads the current theme via useThemeStore.getState().
     useEffect(() => {
         const term = termRef.current
-        if (!term) return
-        term.options.theme = themeFor(theme)
+        if (term) term.options.theme = themeFor(theme)
     }, [theme])
 
     return (
         <div
             ref={containerRef}
             className="w-full h-full"
-            style={{ background: theme === 'light' ? '#ffffff' : '#0a0a0a' }}
+            style={{ background: themeFor(theme).background }}
         />
     )
-}
+})

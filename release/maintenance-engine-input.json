@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "debugger-sh",
+  "version": "0.3.15-webide.legacy.1",
+  "sourceRepository": "https://github.com/justinvassantachart/engine",
+  "baselineCommit": "cc250508fabb5b091075e073ceb2e14899fd8423",
+  "sourceCommit": "4ec4418c12becb41e18fa0582768a98b8172c005",
+  "registryPublished": false,
+  "candidate": {
+    "size": 27661232,
+    "sha256": "7f19bc96444067b5eaa3724854937f5225f1f7aceb11eccff58385ac48ad185d",
+    "sha512Integrity": "sha512-GI2D8USmJKtgvqUlXKo6jG1Oz5phnCUd9xijV0MXJQAJ9Zu+fWIL3zAV0NXES0dRH/L6rq+7BfgVp7YrbQIRdw==",
+    "fileName": "debugger-sh-0.3.15-webide.legacy.1.tgz"
+  },
+  "wasm": {
+    "size": 8852136,
+    "sha256": "c65fab5c255d513c917b6c0e8e5e2fd883a589d7cc58c20b14eddbd66198b139"
+  },
+  "module": {
+    "size": 23679086,
+    "sha256": "b8bc980790d7ff66d1ff3d61a38ac98d5bfc23a712dfc61f8f2aee9c87c64e7c"
+  },
+  "build": {
+    "command": "npm run build",
+    "embeddedWasm": true,
+    "node": "v24.11.1",
+    "npm": "11.6.2",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "wasmPack": "wasm-pack 0.14.0"
+  },
+  "distribution": {
+    "mechanism": "public-github-release-asset",
+    "repository": "justinvassantachart/engine",
+    "tag": "debugger-sh-v0.3.15-webide.legacy.1",
+    "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.legacy.1/debugger-sh-0.3.15-webide.legacy.1.tgz",
+    "immutable": true,
+    "releaseUrl": "https://github.com/justinvassantachart/engine/releases/tag/debugger-sh-v0.3.15-webide.legacy.1"
+  }
+}

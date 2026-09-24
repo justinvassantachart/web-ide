@@ -4,14 +4,24 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This public source repository is preparing the MIT-licensed `0.4.0` source
-candidate. The package remains `private: true` and is not published to npm.
-Hamilton distribution is limited to exact integrity-checked tarballs from
-immutable releases in Hamilton's private repository. Deterministic P2.5
-candidate, SBOM, license, runtime-receipt, source-archive, and strict-manifest
-tooling is implemented; the package is not released until the final tagged
-candidate, paired Karel gate, immutable release, and download receipts pass.
-The current
+This branch prepares the MIT-licensed `0.4.1` terminal-presentation maintenance
+artifact from exact shared-workspace source commit
+`859c2c34f93e4b3a23ed34a3afdbff5d69898a4b`. It preserves that baseline's
+runtime, workspace synchronization, and persistence code. Its original
+`debugger-sh@0.3.15` is replaced only by the exact
+`0.3.15-webide.legacy.1` fork authorized separately in Hamilton ADR 0033.
+That fork adds one empty-stdin-read guard to the original engine baseline; its
+immutable release, source, package and Wasm identities are recorded in
+`release/maintenance-engine-input.json`.
+The package remains `private: true` and is not published to npm. Hamilton's
+ADR 0032 selects a separately identified, hash-verified repository-retained
+artifact after source-delta review and consumer validation; acceptance of that
+decision does not itself certify or publish the artifact.
+
+The retained release scripts/configuration describe the historical `0.4.0`
+release process. They do not generate a `0.4.1` release or maintenance receipt.
+The maintenance artifact requires its own exact source, patch, package hash,
+license, dependency, and browser evidence retained by its consumer. The current
 built-in browser runtime providers support
 C/C++ and Python execution and source-level debugging. Rust is not claimed as
 supported here. The provider-neutral session contract does not expose the
@@ -179,13 +189,24 @@ sidebar on the first render, before later user selection takes over.
 `selectedPanelId` must exactly name an installed panel that is visible for the
 selected runtime. Unknown activities or unknown/initially unavailable panels
 reject the configuration; Web IDE does not silently choose another surface.
-The panel column accepts 15–57 percent so the existing editor/sidebar minimums remain
-possible, and panel content accepts 25–90 percent so both it and the terminal
-retain their existing minimums. Omitted fields preserve the established
-persisted sidebar choice, first visible panel, and 27/70 proportions. These are
-per-mount initial values only: later activity/tab selection and resizing remain
-local UI state; sidebar choices retain their established best-effort
+The contributed-panel column accepts 15–57 percent and occupies the full
+height to the right of the editor. The terminal sits below the editor in the
+center column. The legacy `panelContentPercent` field now sets the editor's
+initial share of that center column (25–90 percent); its remaining height is
+the terminal. Omitted fields preserve the persisted sidebar choice, first
+visible contribution, 27 percent right-column width, and a 70/30 editor/terminal
+split. These are per-mount initial values only: later tab selection and resizing
+remain local UI state; sidebar choices retain their established best-effort
 persistence.
+
+The single terminal uses VS Code's default Modern light/dark panel colors,
+platform monospace font, and Codicons. Its separator supports pointer and
+keyboard resizing. Header actions clear output, maximize/restore the panel,
+and hide it. The visible Terminal button or Ctrl+backquote reopens it; the
+shortcut applies only to the focused workbench. Hiding, maximizing, changing
+the theme, and toggling the sidebar retain the mounted terminal and its output.
+This is the active program's stdin/stdout terminal, not an operating-system
+shell or a collection of terminal sessions.
 
 With the currently validated Python backend, breakpoint edits made while the
 program is freely running are queued and applied at the next pause before it

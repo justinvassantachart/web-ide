@@ -8,7 +8,10 @@ export interface WebIDEInitialLayout {
   selectedPanelId?: string
   /** Initial width of the contributed-panel column, as a percentage. */
   panelColumnPercent?: number
-  /** Initial height of panel content above the terminal, as a percentage. */
+  /**
+   * Initial editor height above the bottom terminal, as a percentage (25–90).
+   * Retains the legacy name formerly used for right-column content height.
+   */
   panelContentPercent?: number
 }
 

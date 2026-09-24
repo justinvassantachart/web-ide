@@ -9,7 +9,14 @@ import {
 } from './release-utils.mjs'
 
 const CANDIDATE_REFERENCE = 'file:web-ide.tgz'
-const NORMALIZED_LOCK_SHA256 = 'fcb17101e404e366b2072d453369f235add72430b921fe553b7a0dc0c96792c6'
+const ENGINE_FORK = {
+  "version": "0.3.15-webide.legacy.1",
+  "resolved": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.legacy.1/debugger-sh-0.3.15-webide.legacy.1.tgz",
+  "integrity": "sha512-GI2D8USmJKtgvqUlXKo6jG1Oz5phnCUd9xijV0MXJQAJ9Zu+fWIL3zAV0NXES0dRH/L6rq+7BfgVp7YrbQIRdw==",
+  "license": "MIT"
+}
+
+const NORMALIZED_LOCK_SHA256 = 'baae8d1b3b61deeeff6da563fc672ea887fd55dc605d2a5293cb303035bfb1f7'
 const CANDIDATE_INTEGRITY_PLACEHOLDER = '<candidate-sha512-integrity>'
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u
 const PACKAGE_PATH_PATTERN = /^node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+(?:\/node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)*$/u
@@ -62,12 +69,12 @@ const EXPECTED_MANIFEST = {
 }
 
 const EXPECTED_CANDIDATE = {
-  version: '0.4.0',
+  version: '0.4.1',
   resolved: CANDIDATE_REFERENCE,
   integrity: CANDIDATE_INTEGRITY_PLACEHOLDER,
   license: 'MIT',
   workspaces: ['examples/basic', 'examples/plugin-demo'],
-  dependencies: { 'debugger-sh': '0.3.15' },
+  dependencies: { 'debugger-sh': ENGINE_FORK.resolved },
   engines: { node: '^20.19.0 || >=22.12.0' },
   peerDependencies: {
     react: '^18.3.0 || ^19.0.0',
@@ -245,7 +252,13 @@ export function validateConsumerFixtureValues(manifest, lock, candidateIntegrity
     for (const key of Object.keys(node)) {
       if (!ORDINARY_PACKAGE_KEYS.includes(key)) throw new TypeError(`${packagePath} has unknown field ${key}`)
     }
-    assertRegistryPackage(packagePath, node)
+    if (packagePath === 'node_modules/debugger-sh') {
+      if (canonicalJSONString(node) !== canonicalJSONString(ENGINE_FORK)) {
+        throw new TypeError('Packed consumer engine fork identity differs from the exact reviewed artifact')
+      }
+    } else {
+      assertRegistryPackage(packagePath, node)
+    }
   }
 
   const normalizedLock = structuredClone(lock)
