@@ -1,0 +1,125 @@
+/* VS Code's default Modern panel colors; the terminal owns these local tokens. */
+.web-ide-editor-terminal {
+    --terminal-background: #181818;
+    --terminal-foreground: #cccccc;
+    --terminal-border: #2b2b2b;
+    --terminal-active-border: #0078d4;
+    --terminal-hover: #ffffff1a;
+    position: relative;
+    height: 100%;
+    min-height: 0;
+}
+
+[data-theme="light"] .web-ide-editor-terminal {
+    --terminal-background: #f8f8f8;
+    --terminal-foreground: #3b3b3b;
+    --terminal-border: #e5e5e5;
+    --terminal-active-border: #005fb8;
+    --terminal-hover: #0000000d;
+}
+
+.web-ide-terminal-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--terminal-background);
+    color: var(--terminal-foreground);
+    font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+}
+
+.web-ide-terminal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 35px;
+    min-height: 35px;
+    padding: 0 8px 0 12px;
+}
+
+.web-ide-terminal-tabs { display: flex; height: 100%; min-width: 0; }
+.web-ide-terminal-tab {
+    position: relative;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    height: 100%;
+    padding: 0 8px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+.web-ide-terminal-tab::after {
+    content: "";
+    position: absolute;
+    height: 1px;
+    bottom: 4px;
+    left: 6px;
+    right: 6px;
+    background: var(--terminal-active-border);
+}
+.web-ide-terminal-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.web-ide-terminal-actions button {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+}
+.web-ide-terminal-actions button:hover,
+.web-ide-terminal-reopen:hover { background: var(--terminal-hover); }
+.web-ide-terminal-actions button:focus-visible,
+.web-ide-terminal-tab:focus-visible,
+.web-ide-terminal-reopen:focus-visible {
+    outline: 1px solid var(--terminal-active-border);
+    outline-offset: -1px;
+}
+.web-ide-terminal-body { flex: 1; min-height: 0; padding: 0 0 0 20px; }
+.web-ide-terminal-body > div { position: relative; }
+/* VS Code bottom-aligns the fitted row grid; spare pixels stay above it. */
+.web-ide-terminal-body .xterm { position: absolute; bottom: 0; left: 0; right: 0; }
+.web-ide-terminal-separator[data-slot="resizable-handle"] {
+    height: 1px;
+    width: 100%;
+    flex-shrink: 0;
+    background: var(--terminal-border);
+}
+.web-ide-terminal-separator[data-slot="resizable-handle"]::after {
+    inset: -2px 0;
+    width: 100%;
+    height: 5px;
+    transform: none;
+    z-index: 10;
+}
+.web-ide-terminal-separator:hover::after,
+.web-ide-terminal-separator:focus-visible::after { background: var(--terminal-active-border); }
+.web-ide-editor-terminal:not([data-terminal-state="normal"]) .web-ide-terminal-separator {
+    visibility: hidden;
+    height: 0;
+}
+.web-ide-terminal-reopen {
+    position: absolute;
+    right: 12px;
+    bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 7px;
+    color: var(--terminal-foreground);
+    background: var(--terminal-background);
+    border: 1px solid var(--terminal-border);
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    z-index: 5;
+}

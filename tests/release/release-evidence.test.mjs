@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import * as releaseUtils from '../../scripts/release/release-utils.mjs'
 
 import {
   createArtifactManifest,
@@ -477,6 +479,16 @@ describe('committed exact-candidate consumer fixture', () => {
     expect(() => validateConsumerFixtureValues(manifest, lock, candidateIntegrity)).not.toThrow()
 
     const cases = []
+    for (const [field, value] of [
+      ['version', '0.3.15'],
+      ['resolved', 'https://example.invalid/debugger-sh.tgz'],
+      ['integrity', `sha512-${Buffer.alloc(64).toString('base64')}`],
+      ['license', 'Apache-2.0'],
+    ]) {
+      const changedEngine = structuredClone(lock)
+      changedEngine.packages['node_modules/debugger-sh'][field] = value
+      cases.push([manifest, changedEngine])
+    }
     const addedDependencyManifest = structuredClone(manifest)
     const addedDependencyLock = structuredClone(lock)
     addedDependencyManifest.dependencies['extra-package'] = '1.0.0'
@@ -1613,7 +1625,11 @@ describe('artifact manifest', () => {
       npmVersion: '11.6.2',
     }
     const packageManifest = await readJSON(path.join(repositoryRoot, 'package.json'))
-    const manifest = await createArtifactManifest({
+    // This fixture exercises the retained 0.3.1 release profile, not the
+    // separately reviewed terminal-only maintenance artifact.
+    packageManifest.version = '0.3.1'
+    packageManifest.dependencies = { 'debugger-sh': '0.3.15' }
+    const input = {
       outputDirectory: directory,
       configuration,
       packageManifest,
@@ -1628,7 +1644,30 @@ describe('artifact manifest', () => {
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
       },
+    }
+    // The historical generator must not certify the maintenance fork as the
+    // original registry engine. Exercise that failure before using a synthetic
+    // historical filesystem read for the retained schema/mutation checks.
+    await expect(createArtifactManifest(input)).rejects.toThrow(/debugger-sh identity is invalid/u)
+    const originalReadJSON = readJSON
+    const historicalRead = vi.spyOn(releaseUtils, 'readJSON').mockImplementation(async (file) => {
+      const value = await originalReadJSON(file)
+      if (file === path.join(repositoryRoot, 'package-lock.json')) {
+        value.packages['node_modules/debugger-sh'] = {
+          version: '0.3.15',
+          resolved: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15.tgz',
+          integrity: 'sha512-Sx4B8RPU5t5Pj50vFs7ngLvOr1YLwF9xsqdF/p2vbLRA38gv8iJ06EmPmuVfXoFFyI0fo+7kVe6tQRYwTC8lNA==',
+          license: 'MIT',
+        }
+      }
+      return value
     })
+    let manifest
+    try {
+      manifest = await createArtifactManifest(input)
+    } finally {
+      historicalRead.mockRestore()
+    }
     expect(manifest.manifestId).toMatch(/^urn:sha256:[a-f0-9]{64}$/u)
     expect(manifest.schemaVersion).toBe(2)
     expect(manifest.capabilityReleaseIds).toEqual([

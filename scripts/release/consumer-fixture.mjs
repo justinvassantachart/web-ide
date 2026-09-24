@@ -9,7 +9,7 @@ import {
 } from './release-utils.mjs'
 
 const CANDIDATE_REFERENCE = 'file:web-ide.tgz'
-const NORMALIZED_LOCK_SHA256 = '2c1058ee6ca7bebff2a509f2fb9419af19ec2211d6ff85b0e9dbe8c38c3a3c70'
+const NORMALIZED_LOCK_SHA256 = '42440b27428334c1b159e583072a9525e2f772ccde8abd568fda67fa2001a131'
 const CANDIDATE_INTEGRITY_PLACEHOLDER = '<candidate-sha512-integrity>'
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u
 const PACKAGE_PATH_PATTERN = /^node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+(?:\/node_modules\/(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+)*$/u
@@ -61,13 +61,20 @@ const EXPECTED_MANIFEST = {
   },
 }
 
+const EXPECTED_ENGINE = {
+  'version': '0.3.15-webide.legacy.1',
+  'resolved': 'https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.legacy.1/debugger-sh-0.3.15-webide.legacy.1.tgz',
+  'integrity': 'sha512-GI2D8USmJKtgvqUlXKo6jG1Oz5phnCUd9xijV0MXJQAJ9Zu+fWIL3zAV0NXES0dRH/L6rq+7BfgVp7YrbQIRdw==',
+  'license': 'MIT'
+}
+
 const EXPECTED_CANDIDATE = {
-  version: '0.3.1',
+  version: '0.3.2',
   resolved: CANDIDATE_REFERENCE,
   integrity: CANDIDATE_INTEGRITY_PLACEHOLDER,
   license: 'MIT',
   workspaces: ['examples/basic', 'examples/plugin-demo'],
-  dependencies: { 'debugger-sh': '0.3.15' },
+  dependencies: { 'debugger-sh': 'https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.legacy.1/debugger-sh-0.3.15-webide.legacy.1.tgz' },
   engines: { node: '^20.19.0 || >=22.12.0' },
   peerDependencies: {
     react: '^18.3.0 || ^19.0.0',
@@ -245,7 +252,13 @@ export function validateConsumerFixtureValues(manifest, lock, candidateIntegrity
     for (const key of Object.keys(node)) {
       if (!ORDINARY_PACKAGE_KEYS.includes(key)) throw new TypeError(`${packagePath} has unknown field ${key}`)
     }
-    assertRegistryPackage(packagePath, node)
+    if (packagePath === 'node_modules/debugger-sh') {
+      if (canonicalJSONString(node) !== canonicalJSONString(EXPECTED_ENGINE)) {
+        throw new TypeError('Packed consumer engine differs from the reviewed exact legacy fork')
+      }
+    } else {
+      assertRegistryPackage(packagePath, node)
+    }
   }
 
   const normalizedLock = structuredClone(lock)
