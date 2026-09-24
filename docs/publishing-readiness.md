@@ -1,5 +1,20 @@
 # Publishing readiness
 
+The `0.3.2` terminal maintenance branch uses the separately reviewed,
+exact hash-bound repository artifact route selected by Hamilton ADR 0032.
+The following release tooling and receipts remain the historical `0.3.1`
+profile; they do not certify this maintenance artifact. Its exact source delta,
+package integrity, licenses, dependency review, and consumer/browser evidence
+must accompany the new artifact. Hamilton ADR 0033 selects the separately
+released minimal stdin fix, recorded in `release/maintenance-engine-input.json`.
+The new fork embeds its engine Wasm; the historical runtime lock below remains
+unchanged and its old CDN engine entry is excluded from the maintenance license
+inventory. The external maintenance evidence includes the fork identity, the
+filtered current runtime inventory, and independently generated license text.
+The historical release generator intentionally rejects this maintenance input.
+
+## Historical 0.3.1 release profile
+
 Web IDE's source repository is public and its `0.3.1` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
 checkpoint does not authorize or configure an npm publication. Hamilton's

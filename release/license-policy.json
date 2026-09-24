@@ -31,7 +31,9 @@
       "sourcePaths": [
         "src/components/explorer/explorer.css",
         "src/components/sidebar/sidebar.css",
-        "src/index.css"
+        "src/index.css",
+        "src/components/layout/terminal-panel.css",
+        "src/components/terminal/Terminal.tsx"
       ],
       "licenseTextPaths": [
         "release/licenses/VSCode-0725862-LICENSE.txt"

@@ -1,4 +1,4 @@
-WEB IDE 0.3.1 THIRD-PARTY LICENSE EVIDENCE
+WEB IDE 0.3.2 THIRD-PARTY LICENSE EVIDENCE
 
 Generated deterministically from the exact Rollup bundle provenance, package lock,
 runtime-asset lock, and reviewed source-attribution policy.
@@ -271,7 +271,7 @@ License: ISC
 Inclusion: bundled-dev-classified
 License text: node_modules/d3-zoom/LICENSE (normalized SHA-256 e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee)
 
-npm-package: debugger-sh@0.3.15
+npm-package: debugger-sh@0.3.15-webide.legacy.1
 License: MIT
 Inclusion: runtime-external
 License text: node_modules/debugger-sh/LICENSE (normalized SHA-256 50a084c6aa646e467099a582fd903d6fc9bb3a2df8a69155f57acce3e73a31ae)
@@ -418,11 +418,6 @@ License: (Apache-2.0 WITH LLVM-exception) AND MIT
 Inclusion: runtime-asset
 License text: release/licenses/LLVM-21.1.0-LICENSE.txt (normalized SHA-256 3340babe8ac7bc6ae294d93aa01c310a250d43d5b760e5c12954882d4e5c83c7)
 License text: release/licenses/clangd-in-browser-MIT.txt (normalized SHA-256 a4f047823c62afe16b45bb5ed4f7b4715d8f952e51d68a06ac3657e4cb1227a2)
-
-runtime-asset: debugger-sh.engine-bg.wasm@0.3.15
-License: MIT
-Inclusion: runtime-asset
-License text: node_modules/debugger-sh/LICENSE (normalized SHA-256 50a084c6aa646e467099a582fd903d6fc9bb3a2df8a69155f57acce3e73a31ae)
 
 runtime-asset: debugger-sh.llvm-core.wasm@debugger-sh-0.3.15
 License: (Apache-2.0 WITH LLVM-exception) AND Apache-2.0

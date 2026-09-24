@@ -1,6 +1,6 @@
 {
   "name": "web-ide",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Embeddable browser IDE workbench with open host, runtime, and plugin contracts.",
   "type": "module",
@@ -89,7 +89,7 @@
     "react-dom": "^18.3.0 || ^19.0.0"
   },
   "dependencies": {
-    "debugger-sh": "0.3.15"
+    "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.legacy.1/debugger-sh-0.3.15-webide.legacy.1.tgz"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
