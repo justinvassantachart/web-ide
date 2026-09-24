@@ -14,7 +14,27 @@ only `dist`, `docs`, `README.md`, `LICENSE.md`, `THIRD_PARTY_LICENSES.txt` and
 
 | Version | Canonical release | Package download |
 | --- | --- | --- |
+| 0.6.0 | [`web-ide-v0.6.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.6.0) | [`web-ide-0.6.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/web-ide-0.6.0.tgz) |
 | 0.5.0 | [`web-ide-v0.5.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.5.0) | `https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.5.0/web-ide-0.5.0.tgz` |
+
+`web-ide-0.6.0.tgz` — 603,744 bytes, SHA-256
+`a9e154d154f7903a0b1a13d89d92c3f38d1407dc9c1597baf48b7cad85671653`, SHA-512
+integrity
+`sha512-NZyMBiJgo0sJIP3VcDIAciEb+sM9UzoBqkc2RXOSWu27GyHappd/PXIso21Zpk8a+l7aacV6Qt6GO+G1aYd5ew==`.
+Built from source commit `b030dade955b21873f83cea3ce82d5006ce7c265`, annotated
+source tag [`web-ide-v0.6.0-source`](https://github.com/justinvassantachart/web-ide/tree/web-ide-v0.6.0-source).
+
+The four source-bound gates passed: `npm run validate:production`, the packed
+consumer check against the exact candidate, `npm audit --omit=dev`, and
+`npm audit`. The finalizer independently reproduced the source archive, package,
+bundle provenance and license evidence. All 18 published assets were downloaded
+again and matched the finalized bytes; GitHub reports the release immutable,
+and `gh release verify` passed its release attestation. The
+[published artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/artifact-manifest.json)
+and [validation summary](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/validation-summary.json)
+record the exact source, inventory and gate receipts. Public evidence contains
+no private companion gate output; consuming applications retain their separate
+composition evidence.
 
 `web-ide-0.5.0.tgz` — 600,749 bytes, SHA-256
 `dffa2c1293d2014832f855fcb3d183f865ea1ea74c58fc6666026a92a04ff84d`, SHA-512
@@ -52,7 +72,7 @@ design, so those URLs must not be retired.
 
 ## Current release configuration
 
-The next release is Web IDE `0.6.0`. Its version-specific configuration,
+Web IDE `0.6.0` is published and verified. Its version-specific configuration,
 manifest schema, evidence tools and fixtures name the public canonical
 `justinvassantachart/web-ide` channel with mechanism
 `public-github-release-asset`, source tag `web-ide-v0.6.0-source`, release tag
@@ -67,9 +87,8 @@ coverage and release metadata. Existing published release assets, source tags an
 remain immutable. The `0.5.0` source tag retains tooling for validating its
 original release identity and channel.
 
-This configuration is preparation, not evidence of publication. Complete the
-four local gates and finalizer in
-[Publishing readiness](docs/publishing-readiness.md), then verify the immutable
-release downloads and each consuming application's exact package composition
-before recording `0.6.0` as a canonical published release above. The npm
-manifest remains `private: true`; no npm publication is configured.
+The four local gates, finalizer and immutable download verification in
+[Publishing readiness](docs/publishing-readiness.md) are complete for the
+published `0.6.0` artifact above. Each consuming application must still verify
+its own exact package composition. The npm manifest remains `private: true`;
+no npm publication is configured.
