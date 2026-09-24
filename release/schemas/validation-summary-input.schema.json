@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.5.0-source/release/schemas/validation-summary-input.schema.json",
-  "title": "Web IDE 0.5.0 validation summary input",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.6.0-source/release/schemas/validation-summary-input.schema.json",
+  "title": "Web IDE 0.6.0 validation summary input",
   "required": [
     "schemaVersion",
     "package",
@@ -16,7 +16,7 @@
       "const": 1
     },
     "package": {
-      "const": "web-ide@0.5.0"
+      "const": "web-ide@0.6.0"
     },
     "sourceCommit": {
       "type": "string",

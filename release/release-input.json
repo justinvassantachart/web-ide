@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "package": "web-ide@0.5.0",
+  "package": "web-ide@0.6.0",
   "sourceRepository": "https://github.com/justinvassantachart/web-ide.git",
-  "sourceTag": "web-ide-v0.5.0-source",
-  "sourceAssetFilename": "web-ide-0.5.0-source.tar.gz",
+  "sourceTag": "web-ide-v0.6.0-source",
+  "sourceAssetFilename": "web-ide-0.6.0-source.tar.gz",
   "capabilityReleaseId": "cs106b.source/2",
   "packageRole": "web-ide",
-  "releaseRepository": "justinvassantachart/ths-ide",
-  "releaseTag": "web-ide-v0.5.0",
-  "releaseAssetFilename": "web-ide-0.5.0.tgz",
+  "releaseRepository": "justinvassantachart/web-ide",
+  "releaseTag": "web-ide-v0.6.0",
+  "releaseAssetFilename": "web-ide-0.6.0.tgz",
   "nodeVersion": "24.11.1",
   "npmVersion": "11.6.2"
 }

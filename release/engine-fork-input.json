@@ -4,7 +4,7 @@
   "status": "final",
   "engine": {
     "name": "debugger-sh",
-    "version": "0.3.15-webide.0.5.0.1",
+    "version": "0.3.15-webide.0.5.0.2",
     "registryPublished": false,
     "upstream": {
       "repository": "https://github.com/debugger-sh/engine",
@@ -13,8 +13,8 @@
     },
     "source": {
       "repository": "https://github.com/justinvassantachart/engine",
-      "acceptedBaseCommit": "58cbc9369e3f7738a6dc9b01082723d144bb9c97",
-      "commit": "e2599efdff8c097defc490744a109f22df73ffa5"
+      "acceptedBaseCommit": "e2599efdff8c097defc490744a109f22df73ffa5",
+      "commit": "b1e7be1166c0c38b8f08142f7260bd5bbae9adbc"
     },
     "build": {
       "kind": "embedded-wasm-library-build",
@@ -29,25 +29,25 @@
     "distribution": {
       "mechanism": "public-github-release-asset",
       "repository": "justinvassantachart/engine",
-      "tag": "debugger-sh-v0.3.15-webide.0.5.0.1",
-      "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.1/debugger-sh-0.3.15-webide.0.5.0.1.tgz",
-      "assetFilename": "debugger-sh-0.3.15-webide.0.5.0.1.tgz",
-      "size": 27888464,
-      "sha256": "2cd53b709f7cf3142e5e75816c9dd0812f2cf9952764fdf5619a52be141574fb",
-      "sha512Integrity": "sha512-lJWbcxSOpzUb+n7aKNwmAqRIwuKb5td4tlfuV4fH8XRkvNIfzk9VOtMgD4PhCuuTq8xng6MkmFYUeCFwDNSNvw=="
+      "tag": "debugger-sh-v0.3.15-webide.0.5.0.2",
+      "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz",
+      "assetFilename": "debugger-sh-0.3.15-webide.0.5.0.2.tgz",
+      "size": 27891719,
+      "sha256": "13018a2037905f1667565a2d7ee143c088731601b4f9737398e9e79bb593d6fa",
+      "sha512Integrity": "sha512-LPwqP8nEj1HdxMBdE/3ZnTuVdA2RN+Gz7cPVYuFYzjwYn6oxlBf5lWIJ1zO7YyaH4o3v2rMo5Ys//po6MP6WGQ=="
     },
     "embeddedWasm": {
       "wasmPath": "dist/engine_bg.wasm",
       "wasmLoadedAtRuntime": false,
       "modulePath": "dist/debugger-sh.js",
       "remotelyFetched": false,
-      "wasmSize": 8900419,
-      "wasmSha256": "eb7c41ea79b1111a31044e819d070d6789ecd6e6767618179c9c0de5b1d4d8fd",
-      "moduleSize": 23813526,
-      "moduleSha256": "a4ee4e2a10df3ad2d8412e1f1547bf6abd31f8578480ae4c7c418e7efe2f88a8"
+      "wasmSize": 8900693,
+      "wasmSha256": "8c03ae6850adc5e46a1279da9a87be25f45c6c52dc46e6c92ffb5a438c2c8ece",
+      "moduleSize": 23814254,
+      "moduleSha256": "7d754356bcdb52bcbe85cfa2e6a4293ec4b45bb3751fbf51d5bbe57f389a6038"
     }
   },
   "consumerGraph": {
-    "normalizedLockSha256": "320e8680ce78ba1ea11466e3c67271a38283f5ac88af6bb19942b9419f546759"
+    "normalizedLockSha256": "2bff6a620bf15fcd7ab4f9d7e12671fc1d32ce32a375416bcb9e86a989448a00"
   }
 }

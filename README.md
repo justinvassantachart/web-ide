@@ -4,18 +4,21 @@ Web IDE is an embeddable browser workbench extracted from Nova. It provides a
 Monaco editor, virtual workspace, terminal, debugging UI, contribution
 registries, typed runtime events, host persistence, and plugin lifecycle APIs.
 
-This public source repository is preparing the MIT-licensed `0.5.0` source
+This public source repository is preparing the MIT-licensed `0.6.0` source
 candidate. The package remains `private: true` and is not published to npm.
 Distribution uses exact integrity-checked tarballs from immutable releases in
-the owner's private release repository. Deterministic P2.5
+the public `justinvassantachart/web-ide` release repository. Deterministic
 candidate, SBOM, license, runtime-receipt, source-archive, and strict-manifest
 tooling is implemented; the package is not released until the final tagged
-candidate, immutable release, and download receipts pass. The `cs106b.source/2`
-release profile adds optional C++ precompiled headers and support archives;
-its downstream CS106B browser proof is retained separately. It does not claim
-a new Hamilton or Karel compatible release set.
-The current
-built-in browser runtime providers support
+candidate, immutable release, and download receipts pass. This candidate moves
+the terminal beneath the editor and adds VS Code Modern panel presentation and
+controls. It retains the `cs106b.source/2` precompiled C++ profile; downstream
+CS106B browser proof is retained separately. The exact engine successor includes
+the separately reviewed empty-stdin-read fix needed for Python `input()`;
+its original source baseline and immutable artifact are bound in
+`release/engine-fork-input.json`. Hamilton's presentation backports retain their
+older engine baseline with that same correction and have separate artifacts and
+compatibility evidence. The current built-in browser runtime providers support
 C/C++ and Python execution and source-level debugging. Rust is not claimed as
 supported here. The provider-neutral session contract does not expose the
 underlying engine package.
@@ -182,13 +185,24 @@ sidebar on the first render, before later user selection takes over.
 `selectedPanelId` must exactly name an installed panel that is visible for the
 selected runtime. Unknown activities or unknown/initially unavailable panels
 reject the configuration; Web IDE does not silently choose another surface.
-The panel column accepts 15–57 percent so the existing editor/sidebar minimums remain
-possible, and panel content accepts 25–90 percent so both it and the terminal
-retain their existing minimums. Omitted fields preserve the established
-persisted sidebar choice, first visible panel, and 27/70 proportions. These are
-per-mount initial values only: later activity/tab selection and resizing remain
-local UI state; sidebar choices retain their established best-effort
+The contributed-panel column accepts 15–57 percent and occupies the full
+height to the right of the editor. The terminal sits below the editor in the
+center column. The legacy `panelContentPercent` field now sets the editor's
+initial share of that center column (25–90 percent); its remaining height is
+the terminal. Omitted fields preserve the persisted sidebar choice, first
+visible contribution, 27 percent right-column width, and a 70/30 editor/terminal
+split. These are per-mount initial values only: later tab selection and resizing
+remain local UI state; sidebar choices retain their established best-effort
 persistence.
+
+The single terminal uses VS Code's default Modern light/dark panel colors,
+platform monospace font, and Codicons. Its separator supports pointer and
+keyboard resizing. Header actions clear output, maximize/restore the panel,
+and hide it. The visible Terminal button or Ctrl+backquote reopens it; the
+shortcut applies only to the focused workbench. Hiding, maximizing, changing
+the theme, and toggling the sidebar retain the mounted terminal and its output.
+This is the active program's stdin/stdout terminal, not an operating-system
+shell or a collection of terminal sessions.
 
 With the currently validated Python backend, breakpoint edits made while the
 program is freely running are queued and applied at the next pause before it

@@ -298,7 +298,7 @@ export function validateArtifactManifest(manifest, configuration, forkInput) {
     'artifact manifest distribution',
   )
   if (
-    manifest.distribution.mechanism !== 'private-github-release-asset'
+    manifest.distribution.mechanism !== 'public-github-release-asset'
     || manifest.distribution.npmPublished !== false
     || manifest.distribution.repository !== configuration.releaseRepository
     || manifest.distribution.intendedTag !== configuration.releaseTag
@@ -379,7 +379,7 @@ export async function createArtifactManifest({
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
     'candidate-state': 'candidate-state.json',
-    'cyclonedx-sbom': 'web-ide-0.5.0.cdx.json',
+    'cyclonedx-sbom': 'web-ide-0.6.0.cdx.json',
     'deterministic-builds': 'deterministic-builds.json',
     'license-inventory': 'third-party-licenses.json',
     'package-inspection': 'package-inspection.json',
@@ -455,7 +455,7 @@ export async function createArtifactManifest({
     },
     buildInputs: determinism.buildInputs,
     distribution: {
-      mechanism: 'private-github-release-asset',
+      mechanism: 'public-github-release-asset',
       npmPublished: false,
       repository: configuration.releaseRepository,
       intendedTag: configuration.releaseTag,
