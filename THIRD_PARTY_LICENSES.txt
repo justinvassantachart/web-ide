@@ -1,4 +1,4 @@
-WEB IDE 0.5.0 THIRD-PARTY LICENSE EVIDENCE
+WEB IDE 0.6.0 THIRD-PARTY LICENSE EVIDENCE
 
 Generated deterministically from the exact Rollup bundle provenance, package lock,
 runtime-asset lock, and reviewed source-attribution policy.
@@ -271,7 +271,7 @@ License: ISC
 Inclusion: bundled-dev-classified
 License text: node_modules/d3-zoom/LICENSE (normalized SHA-256 e008c5e25a6be382593089c29bfabbc553c6378eee02895aec46ce396cc404ee)
 
-npm-package: debugger-sh@0.3.15-webide.0.5.0.1
+npm-package: debugger-sh@0.3.15-webide.0.5.0.2
 License: MIT
 Inclusion: runtime-external
 License text: node_modules/debugger-sh/LICENSE (normalized SHA-256 50a084c6aa646e467099a582fd903d6fc9bb3a2df8a69155f57acce3e73a31ae)
@@ -419,13 +419,13 @@ Inclusion: runtime-asset
 License text: release/licenses/LLVM-21.1.0-LICENSE.txt (normalized SHA-256 3340babe8ac7bc6ae294d93aa01c310a250d43d5b760e5c12954882d4e5c83c7)
 License text: release/licenses/clangd-in-browser-MIT.txt (normalized SHA-256 a4f047823c62afe16b45bb5ed4f7b4715d8f952e51d68a06ac3657e4cb1227a2)
 
-runtime-asset: debugger-sh.llvm-core.wasm@debugger-sh-0.3.15-webide.0.5.0.1
+runtime-asset: debugger-sh.llvm-core.wasm@debugger-sh-0.3.15-webide.0.5.0.2
 License: (Apache-2.0 WITH LLVM-exception) AND Apache-2.0
 Inclusion: runtime-asset
 License text: release/licenses/YoWASP-Clang-ab5516-LICENSE.txt (normalized SHA-256 65c6633c2c9effa87f95bfe794d5da07bd3faab2814e4a0a15883e28ec4e543f)
 License text: release/licenses/YoWASP-LLVM-9560ae0-LICENSE.txt (normalized SHA-256 3340babe8ac7bc6ae294d93aa01c310a250d43d5b760e5c12954882d4e5c83c7)
 
-runtime-asset: debugger-sh.llvm-resources.tar.gz@debugger-sh-0.3.15-webide.0.5.0.1
+runtime-asset: debugger-sh.llvm-resources.tar.gz@debugger-sh-0.3.15-webide.0.5.0.2
 License: (Apache-2.0 WITH LLVM-exception) AND Apache-2.0 AND MIT AND BSD-2-Clause AND BSD-3-Clause AND CC0-1.0 AND NCSA
 Inclusion: runtime-asset
 License text: release/licenses/YoWASP-Clang-ab5516-LICENSE.txt (normalized SHA-256 65c6633c2c9effa87f95bfe794d5da07bd3faab2814e4a0a15883e28ec4e543f)
