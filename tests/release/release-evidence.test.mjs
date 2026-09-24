@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as releaseUtils from '../../scripts/release/release-utils.mjs'
 
 import {
   createArtifactManifest,
@@ -509,6 +510,16 @@ describe('committed exact-candidate consumer fixture', () => {
     const missingIntegrity = structuredClone(lock)
     delete missingIntegrity.packages['node_modules/react'].integrity
     cases.push([manifest, missingIntegrity])
+
+    for (const [field, value] of [
+      ['version', '0.3.15'],
+      ['resolved', 'https://example.invalid/engine.tgz'],
+      ['integrity', `sha512-${Buffer.alloc(64).toString('base64')}`],
+    ]) {
+      const changedEngine = structuredClone(lock)
+      changedEngine.packages['node_modules/debugger-sh'][field] = value
+      cases.push([manifest, changedEngine])
+    }
 
     for (const [candidateManifest, candidateLock] of cases) {
       expect(() => validateConsumerFixtureValues(
@@ -1620,8 +1631,14 @@ describe('artifact manifest', () => {
       nodeVersion: '24.11.1',
       npmVersion: '11.6.2',
     }
-    const packageManifest = await readJSON(path.join(repositoryRoot, 'package.json'))
-    const manifest = await createArtifactManifest({
+    // Retain the historical 0.4.0 release-profile fixture while this branch
+    // independently prepares the 0.4.1 repository-retained maintenance artifact.
+    const packageManifest = {
+      ...await readJSON(path.join(repositoryRoot, 'package.json')),
+      version: '0.4.0',
+      dependencies: { 'debugger-sh': '0.3.15' },
+    }
+    const inputs = {
       outputDirectory: directory,
       configuration,
       packageManifest,
@@ -1636,7 +1653,28 @@ describe('artifact manifest', () => {
         nodeVersion: configuration.nodeVersion,
         npmVersion: configuration.npmVersion,
       },
-    })
+    }
+    // The maintenance engine must not pass the retained historical release profile.
+    await expect(createArtifactManifest(inputs)).rejects.toThrow()
+    const originalReadJSON = releaseUtils.readJSON
+    const historicalLock = await originalReadJSON(path.join(repositoryRoot, 'package-lock.json'))
+    historicalLock.packages['node_modules/debugger-sh'] = {
+      version: '0.3.15',
+      resolved: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15.tgz',
+      integrity: 'sha512-Sx4B8RPU5t5Pj50vFs7ngLvOr1YLwF9xsqdF/p2vbLRA38gv8iJ06EmPmuVfXoFFyI0fo+7kVe6tQRYwTC8lNA==',
+      license: 'MIT',
+    }
+    const reader = vi.spyOn(releaseUtils, 'readJSON').mockImplementation((file) => (
+      file === path.join(repositoryRoot, 'package-lock.json')
+        ? Promise.resolve(historicalLock)
+        : originalReadJSON(file)
+    ))
+    let manifest
+    try {
+      manifest = await createArtifactManifest(inputs)
+    } finally {
+      reader.mockRestore()
+    }
     expect(manifest.manifestId).toMatch(/^urn:sha256:[a-f0-9]{64}$/u)
     expect(manifest.schemaVersion).toBe(2)
     expect(manifest.capabilityReleaseIds).toEqual([

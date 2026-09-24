@@ -44,8 +44,17 @@ exact candidate/final artifact directory. Replacement compares the prior
 directory's complete inventory around backup and retains the prior directory
 at a named recovery path if publication cannot complete;
 finalization independently rebuilds and reparses the candidate before closure.
-The package remains private and is not published to npm; Hamilton consumes only
-the independently verified immutable private-release tarball.
+The package remains private and is not published to npm. That retained release
+tooling describes the historical `0.4.0` distribution; this `0.4.1` presentation
+maintenance branch instead prepares one separately verified repository-retained
+artifact under Hamilton ADR 0032. Its exact source delta, dependency identity,
+package hashes, and consumer evidence are recorded separately. Historical
+release manifests and tooling are unchanged. Hamilton ADR 0033 separately
+selects the exact `debugger-sh@0.3.15-webide.legacy.1` immutable fork artifact
+for one empty-stdin-read correction, recorded in
+`release/maintenance-engine-input.json`. The public runtime adapter and
+workspace/persistence source remain unchanged; the dependency embeds its
+engine Wasm while retaining the existing remote language assets.
 
 ## Stable contracts
 
@@ -156,8 +165,14 @@ than presenting impossible debugging affordances.
 `WebIDEConfiguration.initialLayout` is the narrow host-owned initial
 presentation boundary. Its exact contributed activity and panel IDs are
 validated before a
-usable workbench commit, and its bounded panel-column and panel-content
-percentages feed the existing resizable groups. A small controller owns panel
+usable workbench commit. Its bounded panel-column percentage sizes the full-height
+right contribution column; the retained `panelContentPercent` field now sizes
+the editor above the terminal in the center column. The terminal has one
+mount-owned xterm instance, resize observer, and runtime subscription set.
+Local hide/maximize/restore state and sidebar changes preserve that instance,
+its output, and the editor; unmount cancels pending resize work and disposes
+subscriptions. Ctrl+backquote targets only the focused workbench. Terminal
+colors follow the existing shared theme policy without adding a public API. A small controller owns panel
 selection per mounted `WebIDE`; commands, tests, activities, the public
 instance snapshot, and accessible tabs use that controller instead of the
 execution store. The controller has no storage, synchronization, theme, or

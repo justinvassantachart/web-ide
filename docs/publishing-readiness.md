@@ -1,5 +1,19 @@
 # Publishing readiness
 
+The `0.4.1` terminal maintenance branch uses the separately reviewed,
+exact hash-bound repository artifact route selected by Hamilton ADR 0032.
+The following release tooling and receipts remain the historical `0.4.0`
+profile; they do not certify this maintenance artifact. Its exact source delta,
+package integrity, licenses, dependency review, and consumer/browser evidence
+must accompany the new artifact. Hamilton ADR 0033 separately authorizes only
+the exact empty-stdin-read correction in `debugger-sh@0.3.15-webide.legacy.1`;
+`release/maintenance-engine-input.json` binds its immutable public fork release.
+The historical remote-engine record is excluded from maintenance license
+generation because this fork embeds its corrected engine Wasm. The other
+historical remote runtime records are retained unchanged.
+
+## Historical 0.4.0 release profile
+
 Web IDE's source repository is public and its `0.4.0` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
 checkpoint does not authorize or configure an npm publication. Hamilton's
