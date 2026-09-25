@@ -1,27 +1,41 @@
-# Web IDE
+# web-ide
 
-Web IDE is an embeddable browser workbench extracted from Nova. It provides a
-Monaco editor, virtual workspace, terminal, debugging UI, contribution
-registries, typed runtime events, host persistence, and plugin lifecycle APIs.
+web-ide is a browser IDE component for React applications. It provides a Monaco
+editor, virtual workspace, terminal, debugger, typed runtime events, workspace
+saving, and plugin APIs. The built-in runtime providers support C++ and Python.
 
-This public source repository is preparing the MIT-licensed `0.6.0` source
-candidate. The package remains `private: true` and is not published to npm.
-Distribution uses exact integrity-checked tarballs from immutable releases in
-the public `justinvassantachart/web-ide` release repository. Deterministic
-candidate, SBOM, license, runtime-receipt, source-archive, and strict-manifest
-tooling is implemented; the package is not released until the final tagged
-candidate, immutable release, and download receipts pass. This candidate moves
-the terminal beneath the editor and adds VS Code Modern panel presentation and
-controls. It retains the `cs106b.source/2` precompiled C++ profile; downstream
-CS106B browser proof is retained separately. The exact engine successor includes
-the separately reviewed empty-stdin-read fix needed for Python `input()`;
-its original source baseline and immutable artifact are bound in
-`release/engine-fork-input.json`. Hamilton's presentation backports retain their
-older engine baseline with that same correction and have separate artifacts and
-compatibility evidence. The current built-in browser runtime providers support
-C/C++ and Python execution and source-level debugging. Rust is not claimed as
-supported here. The provider-neutral session contract does not expose the
-underlying engine package.
+[Try the current demo](https://deploy-preview-16--nova-ide.netlify.app) · [Guides](docs/README.md) ·
+[Import IDE component](docs/import-ide-component.md) ·
+[Releases](https://github.com/justinvassantachart/web-ide/releases)
+
+## Guides
+
+- [Teaching with web-ide](docs/teaching.md): hosted lessons, debugging activities,
+  and classroom assignments.
+- [Import IDE component](docs/import-ide-component.md): install the released
+  package and connect it to your React application.
+- [Self-hosting](docs/self-hosting.md): run and deploy the standalone example.
+
+The current demo link opens a deploy preview. The existing
+[hosted website](https://webide.org) adds lessons and classroom accounts. This
+repository contains the reusable IDE component and runnable examples; it does
+not contain those application services.
+
+## Package distribution
+
+The MIT-licensed component is available in the
+[0.6.0 release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.6.0).
+The package remains `private: true` and is not published to the npm registry.
+Use the exact release tarball and checksum in the
+[import guide](docs/import-ide-component.md). Release assets include the source,
+dependency inventory, and validation records; newer source commits do not alter
+those published bytes.
+
+Version 0.6.0 places the terminal beneath the editor and adds panel controls.
+The built-in providers support C/C++ and Python execution and source-level
+debugging. The public provider/session API is independent of its underlying
+engine. See [Publishing readiness](docs/publishing-readiness.md) for the release
+process and [Testing](docs/testing.md) for developer validation requirements.
 
 ## Quick start
 
@@ -164,7 +178,7 @@ syntax support without requiring a separate language-tooling backend.
 
 ## Initial workbench layout
 
-An embedding host may provide only the initial presentation it needs without
+An application importing the component may provide its initial presentation without
 importing workbench state:
 
 ```tsx
