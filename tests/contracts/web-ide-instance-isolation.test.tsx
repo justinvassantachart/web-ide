@@ -655,7 +655,7 @@ describe('same-realm WebIDE instance isolation', () => {
       first.filesStore.getState().toggleDir('/workspace')
       first.executionStore.getState().setIsRunning(true)
       first.compilerStore.getState().setCacheState('error')
-      first.testStore.getState().processEvent({ type: 'run-start', total: 1 })
+      first.testStore.setState({ isTesting: true, totalCount: 1 })
       first.workspace.writeLocal('/workspace/main.cpp', 'first changed\n')
     })
 
@@ -813,7 +813,7 @@ describe('same-realm WebIDE instance isolation', () => {
     ])
 
     const discoveredBeforeEdit = testing.discover.mock.calls.length
-    const stopsBeforeEdit = harness.runtimeSessions[0]!.stop.mock.calls.length
+    const stopsBeforeEdit = vi.mocked(harness.runtimeSessions[0]!.stop).mock.calls.length
     await act(async () => {
       await instanceRef.current!.workspace.apply({
         version: 1,
@@ -828,6 +828,10 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(harness.runtimeSessions[0]!.stop).toHaveBeenCalledTimes(stopsBeforeEdit)
     expect(mountedContainer.textContent).toMatch(/stale results/i)
     expect(mountedContainer.textContent).toContain('1 passed')
+    expect(mountedContainer.querySelector<HTMLInputElement>('[aria-label="Select mounted beta"]')?.checked).toBe(false)
+    await act(async () => { instanceRef.current!.reset(); await Promise.resolve() })
+    expect(mountedContainer.textContent).not.toContain('1 passed')
+    expect(instanceRef.current!.snapshot().tests).toEqual([])
   })
 
   it('seeds a replacement persistence adapter and isolates a pending old-adapter failure', async () => {

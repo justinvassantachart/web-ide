@@ -4,6 +4,7 @@ import type {
   RuntimeCapabilities,
   RuntimeExecutionMode,
   RuntimeSession,
+  RuntimeOutcome,
 } from './runtime'
 import type { RuntimeExecutionPlan } from './runtime'
 import type { IDESourcePresentationOwner } from './source-presentation'
@@ -34,12 +35,14 @@ export interface IDEExecutionController {
   stop(): void | Promise<void>
   restart(mode: RuntimeExecutionMode): Promise<void>
   /** Additive bridge for provider-prepared plans such as Testing V2. */
-  executePrepared?(request: IDEPreparedExecutionRequest): Promise<void>
+  executePrepared?(request: IDEPreparedExecutionRequest): Promise<RuntimeOutcome | { type: 'build_failed'; message: string } | { type: 'busy' } | void>
 }
 
 export interface IDEPreparedExecutionRequest {
   readonly plan: RuntimeExecutionPlan
   readonly workflow?: 'default' | 'test'
+  /** Files already include the frozen execution-only resource snapshot. */
+  readonly resourcesResolved?: boolean
 }
 
 export interface IDECommandContext {

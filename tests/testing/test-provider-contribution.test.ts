@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { IDEPluginManager } from '../../src/web-ide/core/plugin-manager'
-import type { TestProvider } from '../../src/web-ide/contracts/testing'
+import { cppTestProvider } from '../../src/cpp/testing/provider'
+import type { TestProviderV2 } from '../../src/web-ide/contracts/testing'
 
-function testProvider(id: string): TestProvider {
+function testProvider(id: string): TestProviderV2 {
   return {
+    ...cppTestProvider,
     id,
     label: id,
     languageIds: ['example'],
-    prepare: ({ files, mode }) => ({ execution: { files, mode } }),
   }
 }
 

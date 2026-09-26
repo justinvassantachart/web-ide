@@ -480,6 +480,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         mode,
         entrypoint,
         streamInterceptor,
+        sourceAliases = {},
         binaryFiles = {},
         cppArtifacts,
     }: RuntimeExecutionPlan): Promise<RuntimePreparationResult> {
@@ -511,6 +512,21 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 if (canonicalPath.startsWith('/workspace/')) {
                     nextUserRuntimePaths.add(relativePath);
                 }
+            }
+
+            const aliasedTargets = new Set<string>();
+            for (const [staged, original] of Object.entries(sourceAliases)) {
+                const stagedPath = canonicalBreakpointPath(staged);
+                const originalPath = canonicalBreakpointPath(original);
+                if (stagedPath !== staged || originalPath !== original || stagedPath === originalPath
+                    || !Object.hasOwn(normalizedFiles, stagedPath) || aliasedTargets.has(originalPath)) {
+                    throw new TypeError('Invalid or ambiguous runtime source alias');
+                }
+                aliasedTargets.add(originalPath);
+                const relative = runtimeRelativeFilePath(stagedPath);
+                nextRuntimePathByWorkspacePath.set(originalPath, `/${relative}`);
+                nextWorkspacePathByRuntimePath.set(relative, originalPath);
+                nextUserRuntimePaths.add(relative);
             }
 
             const canonicalEntrypoint = entrypoint === undefined

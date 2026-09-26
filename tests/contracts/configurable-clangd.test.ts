@@ -182,7 +182,7 @@ describe('configurable clangd provider', () => {
         initialFiles: { '/workspace/main.cpp': 'int main() {}\n' },
         ephemeral: true,
       })
-      const supplementalFiles = { '/workspace/nova_test.h': 'provider fallback\n' }
+      const supplementalFiles = { '/workspace/webide_test.h': 'provider fallback\n' }
       const configuration: ClangdProviderConfiguration = {
         providerId: 'synthetic.clangd',
         compileFlags: [],
@@ -205,12 +205,12 @@ describe('configurable clangd provider', () => {
       })
       await vi.runAllTimersAsync()
       expect(writeFiles).toHaveBeenCalledWith(expect.objectContaining({
-        '/workspace/nova_test.h': 'provider fallback\n',
+        '/workspace/webide_test.h': 'provider fallback\n',
       }))
       writeFiles.mockClear()
 
       if (origin === 'local') {
-        instance.workspace.createFileLocal('/workspace/nova_test.h', 'workspace authority\n')
+        instance.workspace.createFileLocal('/workspace/webide_test.h', 'workspace authority\n')
         await vi.runAllTimersAsync()
       } else {
         await instance.workspace.applyExternal({
@@ -221,16 +221,16 @@ describe('configurable clangd provider', () => {
           origin: { kind: 'external-authority', source: 'remote-clangd' },
           operations: [{
             op: 'create',
-            path: '/workspace/nova_test.h',
+            path: '/workspace/webide_test.h',
             text: 'workspace authority\n',
           }],
         })
       }
 
       expect(writeFiles).toHaveBeenLastCalledWith({
-        '/workspace/nova_test.h': 'workspace authority\n',
+        '/workspace/webide_test.h': 'workspace authority\n',
       })
-      expect(deleteFile).not.toHaveBeenCalledWith('/workspace/nova_test.h')
+      expect(deleteFile).not.toHaveBeenCalledWith('/workspace/webide_test.h')
       synchronization.dispose()
       instance.workspace.dispose()
     },
@@ -259,7 +259,7 @@ describe('configurable clangd provider', () => {
         if (providerFails) throw new Error('provider refresh failed')
         return {
           '/workspace/main.cpp': 'int main() {}\n',
-          '/workspace/nova_test.h': 'provider fallback\n',
+          '/workspace/webide_test.h': 'provider fallback\n',
         }
       },
       debounceMs: 0,
@@ -277,12 +277,12 @@ describe('configurable clangd provider', () => {
       origin: { kind: 'external-authority', source: 'remote-clangd' },
       operations: [{
         op: 'create',
-        path: '/workspace/nova_test.h',
+        path: '/workspace/webide_test.h',
         text: 'workspace authority\n',
       }],
     })
     expect(writeFiles).toHaveBeenLastCalledWith({
-      '/workspace/nova_test.h': 'workspace authority\n',
+      '/workspace/webide_test.h': 'workspace authority\n',
     })
 
     await instance.workspace.applyExternal({
@@ -291,9 +291,9 @@ describe('configurable clangd provider', () => {
       transactionId: 'external-provider-error-delete',
       expectedRevision: instance.workspace.revision,
       origin: { kind: 'external-authority', source: 'remote-clangd' },
-      operations: [{ op: 'delete', path: '/workspace/nova_test.h' }],
+      operations: [{ op: 'delete', path: '/workspace/webide_test.h' }],
     })
-    expect(deleteFile).toHaveBeenCalledWith('/workspace/nova_test.h')
+    expect(deleteFile).toHaveBeenCalledWith('/workspace/webide_test.h')
     expect(onReadError).toHaveBeenCalledTimes(2)
     synchronization.dispose()
     instance.workspace.dispose()

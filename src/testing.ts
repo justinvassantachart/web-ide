@@ -16,7 +16,6 @@ export type {
   TestingV2State,
 } from './testing/testing-controller-v2'
 export type {
-  TestCatalogDecoderV2,
   TestCatalogV2,
   TestDecoderFrameV2,
   TestDescriptorV2,
@@ -28,3 +27,5 @@ export type {
   TestRunRequestV2,
   TestSelectionV2,
 } from './web-ide/contracts/testing'
+
+export { CPP_TEST_SUPPORT_FILES, CPP_TEST_RESERVED_PATHS, CPP_TEST_HEADER_PATH, CPP_TEST_IMPL_PATH, CPP_TEST_RUNNER_PATH, CPP_TEST_RUNNER_SOURCE, CPP_TEST_CONFIG_PATH, validateCppTestSupportFiles, prepareCppTestingSupport } from './cpp/testing/provider'

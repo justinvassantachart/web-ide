@@ -1,403 +1,100 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Codicon } from '@/components/ui/codicon'
+import { Fragment, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-    useWorkbenchExecutionStore,
-    useWorkbenchTestStore,
-} from '@/web-ide/react/workbench-instance-context'
-import type {
-    TestAssertion,
-    TestDiagnostic,
-    TestLocation,
-    TestReportEventV2,
-} from '@/web-ide/contracts/testing'
+import { Codicon } from '@/components/ui/codicon'
+import { useWorkbenchExecutionStore, useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
+import type { TestReportEventPayloadV2 } from '@/web-ide/contracts/testing'
 import type { IDEPanelServices } from '@/web-ide/contracts/contributions'
-import type { TestCase } from './test-store'
 import { useSelectedTestProvider } from './use-test-provider'
-import { isTestProviderV2 } from './test-execution'
-import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
+import { useTestingSnapshot } from './use-testing-snapshot'
+import { ExecutedSourceDialog, type ExecutedSource } from './ExecutedSourceDialog'
+
+const terminalTypes = new Set(['test_passed', 'test_failed', 'test_errored', 'test_skipped'])
 
 export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
-    const tests = useWorkbenchTestStore((s) => s.tests)
-    const isTesting = useWorkbenchTestStore((s) => s.isTesting)
-    const totalCount = useWorkbenchTestStore((s) => s.totalCount)
-    const completedCount = useWorkbenchTestStore((s) => s.completedCount)
-    const isCompiling = useWorkbenchExecutionStore((s) => s.isCompiling)
-    const provider = useSelectedTestProvider()
-
-    if (provider && isTestProviderV2(provider)) {
-        return <TestsPanelV2 source={source} />
+  const instance = useWorkbenchInstance()
+  const provider = useSelectedTestProvider()
+  const { controller, snapshot } = useTestingSnapshot()
+  const [executedSource, setExecutedSource] = useState<ExecutedSource>()
+  const isCompiling = useWorkbenchExecutionStore(state => state.isCompiling)
+  const isRunning = useWorkbenchExecutionStore(state => state.isRunning)
+  const [selection, setSelection] = useState<readonly string[]>()
+  useEffect(() => { if (controller?.snapshot().state === 'idle') void controller.discover() }, [controller])
+  const fileGroup = (test: typeof snapshot.tests[number]) => test.location?.path ?? test.group ?? 'Runtime discovered'
+  const displayedTests = [...snapshot.tests, ...(snapshot.liveTests ?? []).filter(test => !snapshot.tests.some(existing => existing.id === test.id))].sort((a, b) => fileGroup(a).localeCompare(fileGroup(b)))
+  const ids = (snapshot.stale && snapshot.liveTests ? snapshot.liveTests : displayedTests).map(test => test.id)
+  const selected = selection ? selection.filter(id => ids.includes(id)) : ids
+  const active = snapshot.state === 'running'
+  const busy = active || snapshot.state === 'discovering' || isCompiling || isRunning
+  const results = new Map<string, TestReportEventPayloadV2>()
+  let terminated: Extract<TestReportEventPayloadV2, { type: 'run_terminated' }> | undefined
+  let finished: Extract<TestReportEventPayloadV2, { type: 'run_finished' }> | undefined
+  for (const { event } of snapshot.events) {
+    if ('testId' in event && event.testId && (event.type === 'test_started' || terminalTypes.has(event.type))) results.set(event.testId, event)
+    if (event.type === 'run_terminated') terminated = event
+    if (event.type === 'run_finished') finished = event
+  }
+  const count = (type: string) => [...results.values()].filter(event => event.type === type).length
+  const passed = count('test_passed'), failed = count('test_failed'), errored = count('test_errored'), skipped = count('test_skipped')
+  const completed = passed + failed + errored + skipped
+  const run = (mode: 'run' | 'debug', all = false) => void controller?.run({ mode, selection: all ? { kind: 'all' } : { kind: 'tests', testIds: selected } }).catch(() => undefined)
+  const reveal = (path?: string, line?: number, column?: number, error = false) => {
+    if (!path || !line) return
+    const original = snapshot.sourceFiles?.[path]
+    if (original !== undefined && original !== instance.workspace.snapshot()[path]) {
+      source.replaceDecorations([])
+      setExecutedSource({ path, line, text: original })
+      return
     }
-    const help = provider && !isTestProviderV2(provider) ? provider.help : undefined
-
-    if (tests.length === 0 && !isTesting && !isCompiling) {
-        return (
-            <aside className="flex flex-col items-center justify-center h-full min-h-0 bg-background text-muted-foreground text-xs font-mono gap-3 p-6 text-center">
-                <Codicon name="beaker" size={28} className="opacity-60" />
-                <div>
-                    Click <span className="text-primary">Tests</span> in the toolbar to run your tests
-                </div>
-                <div className="opacity-80 leading-relaxed">
-                    {help ? (
-                        <>
-                            {help.message}{' '}
-                            {help.examples?.map((example, index) => (
-                                <span key={`${example.code}:${index}`}>
-                                    {example.prefix && <>{example.prefix}{' '}</>}
-                                    <code className="text-foreground/80">{example.code}</code>{' '}
-                                </span>
-                            ))}
-                        </>
-                    ) : 'Add tests supported by the selected language provider.'}
-                </div>
-            </aside>
-        )
-    }
-
-    const passed = tests.filter((t) => t.status === 'pass').length
-    const failed = tests.filter((t) => t.status === 'fail' || t.status === 'error').length
-    const skipped = tests.filter((t) => t.status === 'skip').length
-    const running = tests.filter((t) => t.status === 'running').length
-
-    return (
-        <aside className="flex flex-col h-full min-h-0 bg-background text-foreground">
-            <div className="nova-panel-header">
-                <span className="nova-panel-label">Tests</span>
-                <div className="flex items-center gap-3 text-[10px] font-mono">
-                    {isCompiling ? (
-                        <span className="text-primary flex items-center gap-1">
-                            <Codicon name="loading" size={10} spin /> compiling
-                        </span>
-                    ) : (
-                        <>
-                            <span className="text-muted-foreground">
-                                {completedCount}/{totalCount || tests.length}
-                            </span>
-                            {passed > 0 && <span className="text-emerald-500">{passed} passed</span>}
-                            {failed > 0 && <span className="text-red-500">{failed} failed</span>}
-                            {skipped > 0 && <span className="text-amber-500">{skipped} skipped</span>}
-                            {running > 0 && (
-                                <span className="text-primary flex items-center gap-1">
-                                    <Codicon name="loading" size={10} spin /> {running}
-                                </span>
-                            )}
-                        </>
-                    )}
-                </div>
+    try { if (error) source.replaceDecorations([{ path, line, ...(column ? { column } : {}), kind: 'error' }]); source.reveal({ path, line, ...(column ? { column } : {}) }) } catch { /* Invalid/stale locations are inert. */ }
+  }
+  return <aside aria-label="Tests" className="flex flex-col h-full min-h-0 bg-background text-foreground">
+    <div className="nova-panel-header flex-wrap gap-1">
+      <span className="nova-panel-label mr-auto">Tests</span>
+      <Button size="sm" variant="ghost" disabled={!controller || busy} onClick={() => void controller?.discover()}>Refresh</Button>
+      <Button size="sm" variant="ghost" disabled={!controller || busy} onClick={() => run('run', true)}>Run All</Button>
+      <Button size="sm" variant="ghost" disabled={!controller || busy || !selected.length} onClick={() => run('run')}>Run Selected</Button>
+      <Button size="sm" variant="ghost" disabled={!controller || busy || !selected.length} onClick={() => run('debug')}>Debug Selected</Button>
+      <Button size="sm" variant="ghost" disabled={!active} onClick={() => void controller?.stop()}>Stop</Button>
+    </div>
+    <div role="status" className="px-3 py-2 text-xs font-mono space-y-1">
+      {snapshot.stale && <div className="text-amber-500">Stale results — source changed after this run started. Locations refer to the executed source.</div>}
+      {active && <div><Codicon name="loading" size={12} spin /> {isCompiling ? 'Preparing tests…' : 'Running tests…'}</div>}
+      {snapshot.state === 'discovering' && <div>Discovering tests…</div>}
+      {snapshot.events.length > 0 && <div>{passed} passed · {failed} failed · {errored} errored · {skipped} skipped · {completed} completed{finished?.durationMs !== undefined ? ` · ${Math.round(finished.durationMs)}ms` : ''}</div>}
+      {finished && !completed && <div>No tests ran.</div>}
+      {terminated && <div className="text-red-400">Run {terminated.reason.replaceAll('_', ' ')}{terminated.message ? `: ${terminated.message}` : ''}</div>}
+      {snapshot.error && <div role="alert" className="text-red-400">{snapshot.error}</div>}
+    </div>
+    <div className="flex-1 min-h-0 overflow-y-auto py-1">
+      {!snapshot.tests.length && !busy && <div className="px-3 py-3 text-xs text-muted-foreground">{controller ? 'No tests discovered.' : 'Loading test support…'} {provider?.help?.message}{provider?.help?.examples?.map((example, index) => <pre key={index} className="mt-2 whitespace-pre-wrap">{example.code}</pre>)}</div>}
+      {displayedTests.map((test, index) => {
+        const event = results.get(test.id)
+        const terminal = event && terminalTypes.has(event.type) ? event as Extract<TestReportEventPayloadV2, { type: 'test_passed' | 'test_failed' | 'test_skipped' | 'test_errored' }> : undefined
+        const failedRow = event?.type === 'test_failed' || event?.type === 'test_errored'
+        const interrupted = event?.type === 'test_started' && !!terminated
+        const location = terminal?.path ? { path: terminal.path, line: terminal.line, column: terminal.column } : test.location
+        const checked = selected.includes(test.id)
+        return <Fragment key={test.id}>
+          {(index === 0 || fileGroup(displayedTests[index - 1]) !== fileGroup(test)) && <h3 className="px-3 py-2 text-xs font-semibold break-all bg-muted/40">{fileGroup(test)}</h3>}
+          <div className={`border-l-2 ${failedRow || interrupted ? 'border-red-500' : event?.type === 'test_passed' ? 'border-emerald-500' : 'border-transparent'}`}>
+          <div className="flex items-start gap-2 px-3 py-2 text-xs font-mono">
+            <input aria-label={`Select ${test.name}`} type="checkbox" checked={checked} disabled={busy || !ids.includes(test.id)} onChange={() => setSelection(checked ? selected.filter(id => id !== test.id) : [...selected, test.id])} />
+            <Codicon name={failedRow || interrupted ? 'error' : event?.type === 'test_passed' ? 'check' : event?.type === 'test_skipped' ? 'circle-slash' : event?.type === 'test_started' ? 'loading' : 'circle-large-outline'} size={12} spin={event?.type === 'test_started' && !terminated} />
+            <div className="min-w-0 flex-1">
+              <button type="button" className="text-left break-words hover:underline" onClick={() => reveal(test.location?.path, test.location?.line, test.location?.column)}>{test.name}</button>
+              <div className="text-[10px] text-muted-foreground break-all"><span className="inline-block rounded border border-border px-1 capitalize">{test.origin}</span>{!ids.includes(test.id) && <span className="ml-1 text-amber-500">Previous run</span>} · {test.group ?? test.location?.path ?? 'runtime discovered'}{terminal?.durationMs !== undefined ? ` · ${Math.round(terminal.durationMs)}ms` : ''}{interrupted ? ' · interrupted' : !event && snapshot.events.length ? ' · not run' : ''}</div>
             </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto py-1">
-                {tests.length === 0 ? (
-                    <div className="px-3 py-3 text-[11px] font-mono text-muted-foreground italic">
-                        {isCompiling ? 'Compiling tests…' : 'Waiting for results…'}
-                    </div>
-                ) : (
-                    tests.map((t, i) => <TestRow key={i} test={t} source={source} />)
-                )}
-            </div>
-        </aside>
-    )
-}
-
-function TestsPanelV2({ source }: Pick<IDEPanelServices, 'source'>) {
-    const instance = useWorkbenchInstance()
-    const controller = useSyncExternalStore(
-        instance.testingV2.subscribe,
-        instance.testingV2.snapshot,
-        instance.testingV2.snapshot,
-    )
-    const snapshot = useSyncExternalStore(
-        controller?.subscribe ?? noSubscribe,
-        controller?.snapshot ?? emptyTestingV2Snapshot,
-        controller?.snapshot ?? emptyTestingV2Snapshot,
-    )
-    const [selectionState, setSelectionState] = useState<{
-        catalogDigest: string | undefined
-        testIds: readonly string[]
-    }>({ catalogDigest: undefined, testIds: [] })
-
-    useEffect(() => {
-        if (controller?.snapshot().state === 'idle') {
-            void controller.discover().catch(() => undefined)
-        }
-    }, [controller, snapshot.state])
-
-    const available = new Set(snapshot.tests.map(({ id }) => id))
-    const selected = selectionState.catalogDigest === snapshot.catalogDigest
-        ? selectionState.testIds.filter((id) => available.has(id))
-        : snapshot.tests.map(({ id }) => id)
-
-    const run = (mode: 'run' | 'debug', all = false) => {
-        if (!controller) return
-        const selection = all
-            ? { kind: 'all' as const }
-            : { kind: 'tests' as const, testIds: selected }
-        void controller.run({ mode, selection }).catch(() => undefined)
-    }
-    const terminalByTest = testingV2TerminalStates(snapshot.events)
-    const busy = snapshot.state === 'discovering' || snapshot.state === 'running'
-
-    return (
-        <aside className="flex flex-col h-full min-h-0 bg-background text-foreground">
-            <div className="nova-panel-header gap-2">
-                <span className="nova-panel-label mr-auto">Tests</span>
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={!controller || busy}
-                    onClick={() => void controller?.discover().catch(() => undefined)}
-                >
-                    Refresh
-                </Button>
-                <Button size="sm" variant="ghost" disabled={!controller || busy} onClick={() => run('run', true)}>
-                    Run All
-                </Button>
-                <Button size="sm" variant="ghost" disabled={!controller || busy || selected.length === 0} onClick={() => run('run')}>
-                    Run Selected
-                </Button>
-                <Button size="sm" variant="ghost" disabled={!controller || busy || selected.length === 0} onClick={() => run('debug')}>
-                    Debug Selected
-                </Button>
-                <Button size="sm" variant="ghost" disabled={!controller || snapshot.state !== 'running'} onClick={() => void controller?.stop()}>
-                    Stop
-                </Button>
-            </div>
-            {busy && (
-                <div className="px-3 py-2 text-[11px] font-mono text-primary flex items-center gap-1">
-                    <Codicon name="loading" size={10} spin /> {snapshot.state}
-                </div>
-            )}
-            {snapshot.error && (
-                <div role="alert" className="px-3 py-2 text-[11px] font-mono text-red-400">
-                    {snapshot.error}
-                </div>
-            )}
-            <div className="flex-1 min-h-0 overflow-y-auto py-1">
-                {snapshot.tests.length === 0 && !busy ? (
-                    <div className="px-3 py-3 text-[11px] font-mono text-muted-foreground italic">
-                        {controller ? 'No tests discovered.' : 'Loading test support…'}
-                    </div>
-                ) : snapshot.tests.map((test) => {
-                    const checked = selected.includes(test.id)
-                    const state = terminalByTest.get(test.id)
-                    return (
-                        <div key={test.id} className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono">
-                            <input
-                                aria-label={`Select ${test.name}`}
-                                type="checkbox"
-                                checked={checked}
-                                disabled={busy}
-                                onChange={() => setSelectionState({
-                                    catalogDigest: snapshot.catalogDigest,
-                                    testIds: checked
-                                        ? selected.filter((id) => id !== test.id)
-                                        : [...selected, test.id],
-                                })}
-                            />
-                            <TestingV2StatusIcon state={state} />
-                            <button
-                                type="button"
-                                className="truncate text-left hover:underline"
-                                onClick={() => test.location && openLocation({
-                                    file: test.location.path,
-                                    line: test.location.line,
-                                    column: test.location.column,
-                                }, source)}
-                            >
-                                {test.name}
-                            </button>
-                        </div>
-                    )
-                })}
-            </div>
-        </aside>
-    )
-}
-
-const EMPTY_TESTING_V2_SNAPSHOT = Object.freeze({
-    state: 'idle' as const,
-    tests: Object.freeze([]),
-    events: Object.freeze([]),
-})
-const noSubscribe = () => () => undefined
-const emptyTestingV2Snapshot = () => EMPTY_TESTING_V2_SNAPSHOT
-
-function testingV2TerminalStates(events: readonly TestReportEventV2[]) {
-    const states = new Map<string, TestReportEventV2['event']['type']>()
-    for (const { event } of events) {
-        if ('testId' in event && event.testId) states.set(event.testId, event.type)
-    }
-    return states
-}
-
-function TestingV2StatusIcon({ state }: { state: TestReportEventV2['event']['type'] | undefined }) {
-    if (state === 'test_passed') return <Codicon name="check" size={12} className="text-emerald-500" />
-    if (state === 'test_failed' || state === 'test_errored') return <Codicon name="error" size={12} className="text-red-500" />
-    if (state === 'test_skipped') return <Codicon name="circle-slash" size={12} className="text-amber-500" />
-    if (state === 'test_started') return <Codicon name="loading" size={12} spin className="text-primary" />
-    return <Codicon name="circle-large-outline" size={12} className="text-muted-foreground" />
-}
-
-function TestRow({
-    test,
-    source,
-}: {
-    test: TestCase
-    source: IDEPanelServices['source']
-}) {
-    const failedAsserts = test.assertions.filter((assertion) => assertion.status === 'fail')
-    const showDetails = (test.status === 'fail' || test.status === 'error')
-        && (failedAsserts.length > 0 || test.diagnostics.length > 0)
-
-    const borderColor =
-        test.status === 'pass' ? 'border-emerald-500/60'
-        : test.status === 'fail' || test.status === 'error' ? 'border-red-500/70'
-        : test.status === 'skip' ? 'border-amber-500/60'
-        : 'border-primary/50'
-
-    return (
-        <div className={`border-l-2 ${borderColor}`}>
-            <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono">
-                <StatusIcon status={test.status} />
-                <span className="truncate">{test.name}</span>
-                {test.durationMs !== undefined && (
-                    <span className="ml-auto text-[10px] text-muted-foreground">
-                        {Math.round(test.durationMs)}ms
-                    </span>
-                )}
-            </div>
-
-            {showDetails && (
-                <div className="pl-7 pr-3 pb-2 space-y-2">
-                    {failedAsserts.map((a, i) => (
-                        <AssertRow key={i} assert={a} source={source} />
-                    ))}
-                    {test.diagnostics.map((diagnostic, i) => (
-                        <DiagnosticRow key={i} diagnostic={diagnostic} source={source} />
-                    ))}
-                </div>
-            )}
-        </div>
-    )
-}
-
-function StatusIcon({ status }: { status: TestCase['status'] }) {
-    if (status === 'pass') {
-        return <Codicon name="check" size={12} className="text-emerald-500 shrink-0" />
-    }
-    if (status === 'fail') {
-        return <Codicon name="error" size={12} className="text-red-500 shrink-0" />
-    }
-    if (status === 'error') {
-        return <Codicon name="warning" size={12} className="text-red-500 shrink-0" />
-    }
-    if (status === 'skip') {
-        return <Codicon name="circle-slash" size={12} className="text-amber-500 shrink-0" />
-    }
-    return <Codicon name="loading" size={12} spin className="text-primary shrink-0" />
-}
-
-function openLocation(
-    location: TestLocation | undefined,
-    source: IDEPanelServices['source'],
-) {
-    const line = location?.line
-    if (!location || line === undefined) return
-    try {
-        // __FILE__ from the compiler omits the /workspace/ prefix since
-        // compile() strips it before mounting. Build the candidate inside the
-        // rejection boundary because test protocol strings are untrusted.
-        const candidate = location.file.startsWith('/workspace/')
-            ? location.file
-            : `/workspace/${location.file.replace(/^\/+/, '')}`
-        source.replaceDecorations([{
-            path: candidate,
-            line,
-            ...(location.column === undefined ? {} : { column: location.column }),
-            kind: 'error',
-        }])
-        source.reveal({
-            path: candidate,
-            line,
-            ...(location.column === undefined ? {} : { column: location.column }),
-        })
-    } catch {
-        // Invalid paths/positions remain visible in the diagnostic text but
-        // never escape the source boundary or trigger a filesystem lookup.
-    }
-}
-
-function LocationButton({
-    location,
-    source,
-}: {
-    location: TestLocation | undefined
-    source: IDEPanelServices['source']
-}) {
-    if (!location?.line) return null
-    return (
-        <button
-            type="button"
-            onClick={() => openLocation(location, source)}
-            className="mt-1 text-[10px] text-muted-foreground/70 hover:text-foreground hover:underline"
-        >
-            {location.file.split('/').pop()}:{location.line}
-        </button>
-    )
-}
-
-function AssertRow({
-    assert: assertion,
-    source,
-}: {
-    assert: TestAssertion
-    source: IDEPanelServices['source']
-}) {
-    const actual = assertion.actual
-    const expected = assertion.expected
-
-    return (
-        <div className="text-[11px] font-mono border-l-2 border-red-500/30 pl-2">
-            <div className="text-red-400">
-                {assertion.message ?? 'Assertion failed'}
-            </div>
-            {actual && (
-                <div className="mt-1 flex gap-1">
-                    <span className="text-muted-foreground/70 shrink-0">actual</span>
-                    <span className="text-foreground/60 truncate">{actual.expression}</span>
-                    <span className="text-muted-foreground/70">=</span>
-                    <span className="text-red-400 truncate">{actual.value}</span>
-                </div>
-            )}
-            {expected && (
-                <div className="flex gap-1">
-                    <span className="text-muted-foreground/70 shrink-0">expected</span>
-                    <span className="text-foreground/60 truncate">{expected.expression}</span>
-                    <span className="text-muted-foreground/70">=</span>
-                    <span className="text-emerald-400 truncate">{expected.value}</span>
-                </div>
-            )}
-            <LocationButton location={assertion.location} source={source} />
-        </div>
-    )
-}
-
-function DiagnosticRow({
-    diagnostic,
-    source,
-}: {
-    diagnostic: TestDiagnostic
-    source: IDEPanelServices['source']
-}) {
-    return (
-        <div className="text-[11px] font-mono border-l-2 border-red-500/30 pl-2">
-            <div className="text-red-400 whitespace-pre-wrap">{diagnostic.message}</div>
-            {diagnostic.details && (
-                <pre className="mt-1 whitespace-pre-wrap text-muted-foreground/80">
-                    {diagnostic.details}
-                </pre>
-            )}
-            <LocationButton location={diagnostic.location} source={source} />
-        </div>
-    )
+          </div>
+          {(failedRow || event?.type === 'test_skipped') && terminal && <div className="pl-9 pr-3 pb-3 space-y-1 text-xs font-mono">
+            <div className="whitespace-pre-wrap text-red-400">{terminal.message}</div>
+            {terminal.actual && <div className="whitespace-pre-wrap break-words">actual {terminal.actual.expression} = {terminal.actual.value}</div>}
+            {terminal.expected && <div className="whitespace-pre-wrap break-words">expected {terminal.expected.expression} = {terminal.expected.value}</div>}
+            {terminal.details && <pre className="whitespace-pre-wrap break-words text-muted-foreground">{terminal.details}</pre>}
+            {location?.line && <button type="button" className="hover:underline text-muted-foreground" onClick={() => reveal(location.path, location.line, location.column, failedRow)}>{location.path.split('/').pop()}:{location.line}</button>}
+          </div>}
+        </div></Fragment>
+      })}
+    </div>
+    <ExecutedSourceDialog source={executedSource} close={() => setExecutedSource(undefined)} />
+  </aside>
 }

@@ -1,253 +1,137 @@
 import { describe, expect, it } from 'vitest'
-import {
-  cppTestProvider,
-  createNovaCppOutputParser,
-  NOVA_TEST_HEADER_PATH,
-  NOVA_TEST_IMPL_PATH,
-  NOVA_TEST_MARKER,
-  NOVA_TEST_RUNNER_PATH,
-} from '../../src/cpp/testing/provider'
-import type { TestEvent } from '../../src/web-ide/contracts/testing'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { cppTestProvider, CPP_TEST_HEADER_PATH, CPP_TEST_IMPL_PATH, CPP_TEST_RUNNER_PATH, prepareCppTestingSupport, validateCppTestSupportFiles } from '../../src/cpp/testing/provider'
+import { workspaceDigestV1 } from '../../src/web-ide/public/canonical-contract'
+import type { TestReportEventPayloadV2 } from '../../src/web-ide/contracts/testing'
 
-describe('C++ test execution provider', () => {
-  it('exposes only editor declarations for provider-neutral language tooling', () => {
-    expect(cppTestProvider.editorSupportFiles).toEqual({
-      [NOVA_TEST_HEADER_PATH]: expect.stringContaining('#define STUDENT_TEST'),
-    })
-    expect(cppTestProvider.editorSupportFiles).not.toHaveProperty(
-      NOVA_TEST_IMPL_PATH,
-    )
+async function native(files: Record<string,string>, select?: number[]) {
+  const catalog = await cppTestProvider.discover({ files, workspaceDigest: await workspaceDigestV1(Object.fromEntries(Object.entries(files).filter(([path]) => path.startsWith('/workspace/')))) })
+  const prepared = await cppTestProvider.prepareRun({ apiVersion: 2, kind: 'run_request', mode: 'run', workspaceDigest: catalog.workspaceDigest, catalogDigest: catalog.catalogDigest, selection: select ? { kind: 'tests', testIds: select.map(i => catalog.tests[i].id) } : { kind: 'all' } }, { files, runId: 'a'.repeat(32) })
+  const dir = mkdtempSync(join(tmpdir(), 'webide-cpp-tests-'))
+  try {
+    for (const [path, source] of Object.entries(prepared.execution.files)) { const target = join(dir, path.replace(/^\/(workspace|sysroot)\//, '')); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, source) }
+    const sources = Object.keys(prepared.execution.files).filter(path => path.endsWith('.cpp')).map(path => join(dir, path.replace(/^\/(workspace|sysroot)\//, '')))
+    execFileSync('clang++', ['-std=c++17', '-I', dir, ...sources, '-o', join(dir, 'tests')], { encoding: 'utf8' })
+    const process = spawnSync(join(dir, 'tests'), { encoding: 'utf8', timeout: 10_000 })
+    const frame = prepared.decoder.push('stdout', process.stdout)
+    return { catalog, prepared, events: [...frame.messages, ...prepared.decoder.finish().messages].map(message => message.event), output: frame.output, status: process.status }
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+const file = (source: string) => ({ '/workspace/main.cpp': `#include "webide_test.h"\n${source}` })
+describe('C++ testing V2', () => {
+  it('discovers comments/raw strings/multiline/same-line tests without executing', async () => {
+    const source = '// STUDENT_TEST("fake") {}\nconst char* text = R"x(PROVIDED_TEST("fake"))x";\nSTUDENT_TEST(\n "real"\n) {} PROVIDED_TEST(R"(raw name)") {} STUDENT_TEST("last") {}'
+    const catalog = await cppTestProvider.discover({ files: file(source), workspaceDigest: 'a'.repeat(64) })
+    expect(catalog.tests.map(test => test.name)).toEqual(['real', 'raw name', 'last'])
+    expect(new Set(catalog.tests.map(test => test.id)).size).toBe(3)
+    expect(catalog.tests[1].origin).toBe('provided')
+    expect(catalog.tests[0].location?.line).toBe(4)
   })
-
-  it('adds compatibility support ephemerally without changing ordinary sources', async () => {
-    const files = {
-      '/workspace/main.cpp': 'int main() { return 0; }',
-      '/workspace/tests.cpp': '#include "nova_test.h"\nSTUDENT_TEST("works") {}',
-    }
-
-    const prepared = await cppTestProvider.prepare({
-      files,
-      mode: 'debug',
-      executeTests: false,
-    })
-
-    expect(prepared.execution).toMatchObject({ mode: 'debug' })
-    expect(prepared.execution.files['/workspace/main.cpp']).toBe(files['/workspace/main.cpp'])
-    expect(prepared.execution.files[NOVA_TEST_HEADER_PATH]).toContain('#define STUDENT_TEST')
-    expect(prepared.execution.files[NOVA_TEST_IMPL_PATH]).toContain('current_failed()')
-    expect(prepared.execution.files).not.toHaveProperty(NOVA_TEST_RUNNER_PATH)
-    expect(prepared.parser).toBeUndefined()
-    expect(files).toEqual({
-      '/workspace/main.cpp': 'int main() { return 0; }',
-      '/workspace/tests.cpp': '#include "nova_test.h"\nSTUDENT_TEST("works") {}',
-    })
+  it('owns support only in execution plans and rejects reserved path collisions/tampering', () => {
+    const files = file('int main() {}')
+    const prepared = prepareCppTestingSupport(files, false)
+    expect(prepared[CPP_TEST_HEADER_PATH]).toContain('namespace webide_test')
+    expect(prepared[CPP_TEST_IMPL_PATH]).toContain('Registrar::Registrar')
+    expect(prepared[CPP_TEST_RUNNER_PATH]).toBeUndefined()
+    expect(files).toEqual(file('int main() {}'))
+    expect(() => prepareCppTestingSupport({ '/sysroot/webide_test.h': 'bad' }, true, 'x')).toThrow('Reserved')
+    expect(() => validateCppTestSupportFiles({ ...prepared, [CPP_TEST_IMPL_PATH]: 'bad' })).toThrow('modified')
+    expect(() => validateCppTestSupportFiles({ [CPP_TEST_HEADER_PATH]: prepared[CPP_TEST_HEADER_PATH] })).toThrow('Missing')
+    validateCppTestSupportFiles(prepareCppTestingSupport(files, true, 'b'.repeat(32)))
   })
-
-  it.each(['run', 'debug'] as const)(
-    'does not compile test support for an ordinary %s',
-    async (mode) => {
-      const files = {
-        '/workspace/main.cpp': '#include <iostream>\nint main() { return 0; }',
-        '/workspace/helper.cpp': 'int helper() { return 1; }',
-        '/workspace/unrelated.cpp': '#include "my_nova_test.h"',
-      }
-
-      const prepared = await cppTestProvider.prepare({
-        files,
-        mode,
-        executeTests: false,
-      })
-
-      expect(prepared.execution.files).toEqual(files)
-      expect(prepared.execution.files).not.toHaveProperty(NOVA_TEST_HEADER_PATH)
-      expect(prepared.execution.files).not.toHaveProperty(NOVA_TEST_IMPL_PATH)
-      expect(prepared.execution.files).not.toHaveProperty(NOVA_TEST_RUNNER_PATH)
-    },
-  )
-
-  it.each([
-    ['path include', '#include "./nova_test.h"'],
-    ['comment-separated include', '#include /* compatibility */ "nova_test.h"'],
-    ['macro include', '#define TEST_HEADER "nova_test.h"\n#include TEST_HEADER'],
-  ])('preserves support for a %s', async (_name, source) => {
-    const prepared = await cppTestProvider.prepare({
-      files: { '/workspace/tests.cpp': source },
-      mode: 'debug',
-      executeTests: false,
-    })
-
-    expect(prepared.execution.files).toHaveProperty(NOVA_TEST_HEADER_PATH)
-    expect(prepared.execution.files).toHaveProperty(NOVA_TEST_IMPL_PATH)
+  it('supports exact/string/tolerant numeric checks and evaluates each operand once', async () => {
+    const result = await native(file(`
+#include <limits>
+#include <stdexcept>
+int main() { throw 3; }
+STUDENT_TEST("values") {
+ int calls = 0; EXPECT_EQUAL(++calls, 1); EXPECT_EQUAL(calls, 1);
+ char a[] = "same", b[] = "same"; EXPECT_EQUAL(a,b);
+ EXPECT_EQUAL(0.1 + 0.2, 0.3); EXPECT_EQUAL(1e8 + .01, 1e8);
+ EXPECT_EQUAL(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
+ EXPECT_ERROR(throw std::runtime_error("yes")); EXPECT_NO_ERROR(int x = 1; (void)x);
+}
+PROVIDED_TEST("provided") { EXPECT(true); }`))
+    expect(result.status).toBe(0)
+    expect(result.events.filter(event => event.type === 'test_passed')).toHaveLength(2)
+    expect(result.events.filter(event => event.type === 'test_discovered')).toHaveLength(2)
   })
-
-  it('owns the hidden-main transform, runner entrypoint, and per-run parser', async () => {
-    const prepared = await cppTestProvider.prepare({
-      files: {
-        '/workspace/main.cpp': 'int main() {\n}',
-        '/workspace/helper.cpp': 'void main() {}',
-        '/workspace/notes.txt': 'int main() stays text',
-      },
-      mode: 'debug',
-      executeTests: true,
-    })
-
-    expect(prepared.execution.mode).toBe('run')
-    expect(prepared.execution.entrypoint).toBe(NOVA_TEST_RUNNER_PATH)
-    expect(prepared.execution.files[NOVA_TEST_RUNNER_PATH]).toContain('::nova_test::run_all()')
-    expect(prepared.execution.files['/workspace/main.cpp']).toBe([
-      '#pragma clang diagnostic push',
-      '#pragma clang diagnostic ignored "-Wreturn-type"',
-      '#line 1',
-      'int nova_hidden_main() {',
-      '}',
-      '#pragma clang diagnostic pop',
-    ].join('\n'))
-    expect(prepared.execution.files['/workspace/helper.cpp']).toContain(
-      'void nova_hidden_main()',
-    )
-    expect(prepared.execution.files['/workspace/notes.txt']).toBe('int main() stays text')
-    expect(prepared.parser).toBeDefined()
-
-    const second = await cppTestProvider.prepare({
-      files: {},
-      mode: 'run',
-      executeTests: true,
-    })
-    expect(second.parser).not.toBe(prepared.parser)
+  it('unwinds first failure, protects assertion exceptions, catches unexpected errors, and continues', async () => {
+    const result = await native(file(`
+#include <stdexcept>
+#include <iostream>
+STUDENT_TEST("fail first") { EXPECT_EQUAL(3,4); std::cout << "SHOULD_NOT_RUN"; }
+STUDENT_TEST("nested") { EXPECT_ERROR(EXPECT(false)); }
+STUDENT_TEST("unexpected") { throw std::runtime_error("boom"); }
+STUDENT_TEST("after") { EXPECT(true); }`))
+    expect(result.status).toBe(1)
+    expect(result.output).not.toContain('SHOULD_NOT_RUN')
+    expect(result.events.filter(event => event.type === 'test_failed')).toHaveLength(2)
+    expect(result.events.filter(event => event.type === 'test_errored')).toHaveLength(1)
+    expect(result.events.filter(event => event.type === 'test_passed')).toHaveLength(1)
+    expect(result.events.find(event => event.type === 'test_failed' && event.actual?.value === '3')).toMatchObject({ path: '/workspace/main.cpp', line: 5, actual: { expression: '3', value: '3' }, expected: { expression: '4', value: '4' } })
   })
-
-  it('renames only C++ main tokens outside comments, literals, and directives', async () => {
-    const source = String.raw`// int main() { return 1; }
-// void main() \
-int main() { still part of the line comment }
-/* void main() { return; } */
-const char* normal = "int main() { not code; }";
-const char* escaped = "escaped quote: \" int main()";
-const char quote = '\'';
-const char* raw = R"tag(
-int main() { return 2; }
-)tag";
-const char* encoded_raw = u8R"x(void main() {})x";
-#define FAKE_MAIN int main()
-int /* comments may separate tokens */ main() {
-  return 0;
-}`
-
-    const prepared = await cppTestProvider.prepare({
-      files: { '/workspace/main.cpp': source },
-      mode: 'run',
-      executeTests: true,
+  it('selects stable same-line tests and replaces provisional inactive tests with runtime discovery', async () => {
+    const files = file('#if 0\nSTUDENT_TEST("inactive") {}\n#endif\nSTUDENT_TEST("first") { EXPECT(false); } STUDENT_TEST("second") { EXPECT(true); }')
+    const result = await native(files, [2])
+    expect(result.catalog.tests).toHaveLength(3)
+    expect(result.events.filter(event => event.type === 'test_discovered')).toHaveLength(2)
+    expect(result.events.filter(event => event.type === 'test_passed')).toHaveLength(1)
+    expect(result.status).toBe(0)
+    const stale = await native(files, [0])
+    expect(stale.events.at(-1)).toMatchObject({ type: 'run_terminated', reason: 'selection_stale' })
+  })
+  it('deduplicates header registrations, reports wrapper macros, and bounds difficult values', async () => {
+    const result = await native({
+      '/workspace/shared.h': '#include "webide_test.h"\nSTUDENT_TEST("header") {}',
+      '/workspace/main.cpp': '#include "shared.h"\n#include <string>\n#define WRAPPED(name) STUDENT_TEST(name)\nWRAPPED("runtime only") { EXPECT_EQUAL(std::string(100000, \'x\'), "y"); }\nint main() {}',
+      '/workspace/other.cpp': '#include "shared.h"',
     })
-    const transformed = prepared.execution.files['/workspace/main.cpp']
-    const bodyStart = transformed.indexOf('#line 1\n') + '#line 1\n'.length
-    const bodyEnd = transformed.lastIndexOf('\n#pragma clang diagnostic pop')
-    const body = transformed.slice(bodyStart, bodyEnd)
-
-    expect(body).toContain('// int main() { return 1; }')
-    expect(body).toContain('int main() { still part of the line comment }')
-    expect(body).toContain('/* void main() { return; } */')
-    expect(body).toContain('"int main() { not code; }"')
-    expect(body).toContain('"escaped quote: \\" int main()"')
-    expect(body).toContain('R"tag(\nint main() { return 2; }\n)tag"')
-    expect(body).toContain('u8R"x(void main() {})x"')
-    expect(body).toContain('#define FAKE_MAIN int main()')
-    expect(body).toContain('int /* comments may separate tokens */ nova_hidden_main()')
-    expect(body.match(/nova_hidden_main/g)).toHaveLength(1)
-
-    const originalMainLine = source
-      .slice(0, source.lastIndexOf('main() {\n  return 0;'))
-      .split('\n').length
-    const transformedMainLine = body
-      .slice(0, body.indexOf('nova_hidden_main'))
-      .split('\n').length
-    expect(transformedMainLine).toBe(originalMainLine)
+    expect(result.catalog.tests).toHaveLength(1)
+    expect(result.events.filter(event => event.type === 'test_discovered')).toHaveLength(2)
+    const failure = result.events.find(event => event.type === 'test_failed') as Extract<TestReportEventPayloadV2,{ type: 'test_passed' | 'test_failed' | 'test_skipped' | 'test_errored' }>
+    expect(failure.actual?.value.length).toBeLessThan(2200)
   })
 })
 
-describe('Nova C++ compatibility protocol translation', () => {
-  it('handles chunk boundaries, preserves user stdout, and emits structured events', () => {
-    const parser = createNovaCppOutputParser()
-    const events: TestEvent[] = []
-    let output = ''
-    const push = (chunk: string) => {
-      const frame = parser.push('stdout', chunk)
-      output += frame.output
-      events.push(...frame.events)
-    }
+it('hides the global entrypoint while preserving class and namespace functions named main', async () => {
+  const result = await native(file('struct Example { int main() { return 7; } };\nnamespace helper { int main() { return 8; } }\nextern "C" { int main() { return 9; } }\nSTUDENT_TEST("member main") { Example e; EXPECT_EQUAL(e.main(), 7); EXPECT_EQUAL(helper::main(), 8); }'))
+  expect(result.status).toBe(0)
+  expect(result.events.some(event => event.type === 'test_passed')).toBe(true)
+})
 
-    push('student output\n###NOVA_TEST###|~|SU')
-    push('ITE_START|~|1\r\n')
-    push('###NOVA_TEST###|~|TEST_START|~|value\\pwith\\nnewline\n')
-    const markerLikeUserOutput =
-      'prefix###NOVA_TEST###|~|ASSERT|~|tests.cpp|~|12|~|FAIL|~|ignored|~|ignored|~|0|~|0'
-    push(`${markerLikeUserOutput}\n`)
-    push(
-      '###NOVA_TEST###|~|ASSERT|~|tests.cpp|~|12|~|FAIL|~|actual\\pvalue|~|expected|~|3|~|4\n',
-    )
-    push('###NOVA_TEST###|~|TEST_END|~|FAIL\n')
-    push('###NOVA_TEST###|~|SUITE_END|~|\n')
-    output += parser.push('stderr', 'runtime stderr').output
 
-    expect(output).toBe(`student output\r\n${markerLikeUserOutput}\r\nruntime stderr`)
-    expect(events).toEqual([
-      { type: 'run-start', total: 1 },
-      {
-        type: 'test-start',
-        testId: 'nova-cpp:1',
-        name: 'value|with\nnewline',
-      },
-      {
-        type: 'test-assertion',
-        testId: 'nova-cpp:1',
-        assertion: {
-          status: 'fail',
-          message: 'EXPECT_EQUALS failed',
-          location: { file: 'tests.cpp', line: 12 },
-          actual: { expression: 'actual|value', value: '3' },
-          expected: { expression: 'expected', value: '4' },
-        },
-      },
-      { type: 'test-end', testId: 'nova-cpp:1', status: 'fail' },
-      { type: 'run-end' },
-    ])
-  })
+it('preserves untouched runtime support bytes while preparing tests', () => {
+  const files = { '/workspace/main.cpp': '#include "webide_test.h"\nSTUDENT_TEST("one") { EXPECT(true); }\nint main() { return 0; }', '/sysroot/vector.h': '// trusted source\ntemplate<class T> class Vector {};\n', '/sysroot/support.cpp': '#include "vector.h"\nvoid support() {}\n' }
+  const prepared = prepareCppTestingSupport(files, true, 'a'.repeat(32))
+  expect(prepared['/sysroot/vector.h']).toBe(files['/sysroot/vector.h'])
+  expect(prepared['/sysroot/support.cpp']).toBe(files['/sysroot/support.cpp'])
+  expect(prepared['/workspace/main.cpp']).toContain('webide_hidden_main')
+})
 
-  it('flushes a trailing non-protocol fragment', () => {
-    const parser = createNovaCppOutputParser()
-    expect(parser.push('stdout', 'partial').output).toBe('')
-    expect(parser.finish()).toEqual({ output: 'partial', events: [] })
-    expect(parser.finish()).toEqual({ output: '', events: [] })
-  })
 
-  it('passes embedded, malformed, and unknown marker-like lines through', () => {
-    const parser = createNovaCppOutputParser()
-    const lines = [
-      `before${NOVA_TEST_MARKER}SUITE_START|~|1`,
-      `${NOVA_TEST_MARKER}SUITE_START|~|not-a-number`,
-      `${NOVA_TEST_MARKER}UNKNOWN|~|value`,
-    ]
+it('handles numeric digit separators and bounds long names while executing in source order', async () => {
+  const name = 'n'.repeat(1500)
+  const result = await native(file(`const int limit = 10'000;\nSTUDENT_TEST("first") { EXPECT_EQUAL(limit, 10000); }\nSTUDENT_TEST("${name}") { EXPECT(true); }\nint main() { return 0; }`))
+  expect(result.status).toBe(0)
+  const discovered = result.events.filter(event => event.type === 'test_discovered')
+  expect(discovered[0].descriptor.name).toBe('first')
+  expect(discovered[1].descriptor.name.length).toBeLessThanOrEqual(1024)
+})
 
-    expect(parser.push('stdout', `${lines.join('\n')}\n`)).toEqual({
-      output: `${lines.join('\r\n')}\r\n`,
-      events: [],
-    })
-  })
+it('does not link a runtime-only assertion helper to an invented workspace file', async () => {
+  const result = await native({ ...file('#include "helper.h"\nSTUDENT_TEST("helper") { checkHelper(); }'), '/sysroot/helper.h': '#line 1 "/helper.h"\n#include "webide_test.h"\ninline void checkHelper() { EXPECT(false); }' })
+  const failed = result.events.find(event => event.type === 'test_failed')
+  expect(failed).not.toHaveProperty('path')
+  expect(failed).toHaveProperty('details', 'Runtime resource /sysroot/helper.h:2')
+})
 
-  it('bounds an oversized unterminated marker-like stdout line', () => {
-    const parser = createNovaCppOutputParser()
-    const oversized = `${NOVA_TEST_MARKER}${'x'.repeat(70_000)}`
 
-    expect(parser.push('stdout', oversized)).toEqual({
-      output: oversized,
-      events: [],
-    })
-    expect(parser.push(
-      'stdout',
-      `\n${NOVA_TEST_MARKER}SUITE_START|~|0\n`,
-    )).toEqual({
-      output: '\r\n',
-      events: [{ type: 'run-start', total: 0 }],
-    })
-    expect(parser.finish()).toEqual({ output: '', events: [] })
-  })
+it('does not reuse another test identity when an edit moves a declaration onto its old line', async () => {
+  const before = await cppTestProvider.discover({ files: file('STUDENT_TEST("first") {}\nSTUDENT_TEST("second") {}'), workspaceDigest: 'a'.repeat(64) })
+  const after = await cppTestProvider.discover({ files: file('// inserted\nSTUDENT_TEST("first") {}\nSTUDENT_TEST("second") {}'), workspaceDigest: 'b'.repeat(64) })
+  expect(after.tests[0].id).not.toBe(before.tests[1].id)
 })

@@ -152,7 +152,7 @@ test('discovers without execution and debugs selected tests through the preserve
   await expect(statusBar).toContainText('Paused at test_helpers.py:8')
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await expect(statusBar).toContainText('Paused at main.py:8')
-  await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'main.py' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText(/__web_ide_user_main__/)).toHaveCount(0)
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await expect(statusBar).toContainText('Ready')
