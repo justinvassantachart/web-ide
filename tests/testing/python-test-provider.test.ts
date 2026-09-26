@@ -37,6 +37,18 @@ async function execute(files: Record<string, string>, ids?: string[]) {
 const endEvents = (events: TestReportEventPayloadV2[]) => events.filter(event => ['test_passed', 'test_failed', 'test_errored', 'test_skipped'].includes(event.type))
 
 describe('Python static catalog and execution plan', () => {
+  it('uses the final module-level class binding without duplicate preview IDs', async () => {
+    const files = { '/workspace/test_shadowed.py': `import unittest
+class T(unittest.TestCase):
+ def test_old(self): pass
+class T(unittest.TestCase):
+ def test_new(self): pass
+` }
+    const tests = await discoverPythonTests(files)
+    expect(tests.map(test => test.name)).toEqual(['test_shadowed.T.test_new'])
+    expect(tests[0]?.location?.line).toBe(5)
+    expect(endEvents((await execute(files, tests.map(test => test.id))).events)).toMatchObject([{ type: 'test_passed' }])
+  })
   it('finds aliased multiline and inherited tests without interpreting strings or nested definitions', async () => {
     const tests = await discoverPythonTests({ '/workspace/test_cases.py': `import unittest as ut
 from unittest import TestCase as TC
@@ -188,8 +200,45 @@ def load_tests(loader, tests, pattern):
       expect(finished).toBeGreaterThan(0)
       expect(result.events.findIndex(item => item.type === 'test_started')).toBeGreaterThan(finished)
       expect(endEvents(result.events).some(item => item.type === 'test_errored')).toBe(true)
-      expect(result.events.at(-1)?.type).toBe('run_finished')
+      expect(result.events.at(-1)?.type).toBe(files['/workspace/main.py'] ? 'run_terminated' : 'run_finished')
     }
+  })
+
+  it('exposes selected module import and main preload tracebacks instead of stale-selection errors', async () => {
+    const base = 'import unittest\nclass T(unittest.TestCase):\n def test_a(self): pass\n'
+    for (const files of [
+      { '/workspace/test_bad.py': base + 'raise ValueError("selected import failed")\n' },
+      { '/workspace/test_bad.py': base + 'not valid python !\n' },
+      { '/workspace/test_bad.py': base, '/workspace/main.py': 'raise ValueError("main preload failed")\n' },
+      { '/workspace/pkg/__init__.py': 'raise ValueError("package import failed")\n', '/workspace/pkg/test_bad.py': base },
+    ] as Record<string, string>[]) {
+      const catalog = await discoverPythonTests(files)
+      expect(catalog).toHaveLength(1)
+      const result = await execute(files, catalog.map(test => test.id))
+      expect(result.events.at(-1)).toMatchObject({ type: 'run_terminated', reason: 'runtime_crash' })
+      expect(result.events.some(event => event.type === 'test_discovered' && event.descriptor.kind === 'fixture')).toBe(true)
+      expect(endEvents(result.events)).toEqual([expect.objectContaining({ type: 'test_errored', details: expect.stringContaining('Traceback') })])
+      expect(result.events.some(event => event.type === 'run_finished')).toBe(false)
+    }
+  })
+
+  it('deduplicates imported base tests while rejecting equal IDs with different case state', async () => {
+    const result = await execute({
+      '/workspace/test_base.py': 'import unittest\nclass Base(unittest.TestCase):\n def test_base(self): print("BASE")\n',
+      '/workspace/test_derived.py': 'from test_base import Base\nclass Derived(Base):\n def test_own(self): pass\n',
+    })
+    expect(endEvents(result.events)).toHaveLength(3)
+    expect(result.output.match(/BASE/g)).toHaveLength(2)
+    expect(result.events.at(-1)?.type).toBe('run_finished')
+    const collision = await execute({ '/workspace/test_custom.py': `import unittest
+class T(unittest.TestCase):
+ def test_case(self): pass
+def load_tests(loader, tests, pattern):
+ a, b = T('test_case'), T('test_case')
+ a.value, b.value = 1, 2
+ return unittest.TestSuite([a, b])
+` })
+    expect(collision.events.at(-1)).toMatchObject({ type: 'run_terminated', reason: 'protocol_violation' })
   })
 
   it('keeps generated FunctionTestCase sources and clips oversized display metadata', async () => {

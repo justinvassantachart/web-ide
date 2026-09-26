@@ -89,11 +89,11 @@ function classPreviews(text: string): ClassPreview[] {
     }
   }
   const byName = new Map(classes.map(cls => [cls.name, cls]))
-  const memo = new Map<string, Map<string, number> | undefined>()
-  const resolve = (cls: ClassPreview, visiting = new Set<string>()): Map<string, number> | undefined => {
-    if (memo.has(cls.name)) return memo.get(cls.name)
-    if (visiting.has(cls.name)) return undefined
-    visiting.add(cls.name)
+  const memo = new Map<ClassPreview, Map<string, number> | undefined>()
+  const resolve = (cls: ClassPreview, visiting = new Set<ClassPreview>()): Map<string, number> | undefined => {
+    if (memo.has(cls)) return memo.get(cls)
+    if (visiting.has(cls)) return undefined
+    visiting.add(cls)
     let valid = cls.bases.some(base => aliases.has(base))
     const methods = new Map<string, number>()
     for (const name of cls.bases) {
@@ -101,12 +101,13 @@ function classPreviews(text: string): ClassPreview[] {
       const inherited = base ? resolve(base, visiting) : undefined
       if (inherited) { valid = true; for (const [method, line] of inherited) if (!methods.has(method)) methods.set(method, line) }
     }
-    visiting.delete(cls.name)
+    visiting.delete(cls)
     for (const [method, line] of cls.methods) methods.set(method, line)
-    memo.set(cls.name, valid ? methods : undefined)
-    return memo.get(cls.name)
+    memo.set(cls, valid ? methods : undefined)
+    return memo.get(cls)
   }
-  return classes.flatMap(cls => {
+  // Module attributes use the last binding, as unittest's runtime loader does.
+  return [...byName.values()].flatMap(cls => {
     const methods = resolve(cls)
     return methods ? [{ ...cls, methods }] : []
   })
@@ -116,11 +117,11 @@ export async function pythonTestKey(path: string, unittestId: string): Promise<s
   return sha256Hex(path + '\n' + unittestId)
 }
 
-export async function discoverPythonTests(filesInput: WorkspaceFiles): Promise<TestDescriptorV2[]> {
+async function discoverPythonEntries(filesInput: WorkspaceFiles): Promise<{ descriptor: TestDescriptorV2; sourcePath: string }[]> {
   const files = normalizeRuntimeFiles(filesInput)
   const sources = sourcesFor(files)
   const runtimeFiles = new Set(Object.keys(files).map(runtimeRelativeFilePath))
-  const tests: TestDescriptorV2[] = []
+  const tests: { descriptor: TestDescriptorV2; sourcePath: string }[] = []
   for (const source of sources) {
     const relative = runtimeRelativeFilePath(source.path)
     const parts = relative.split('/')
@@ -129,15 +130,19 @@ export async function discoverPythonTests(filesInput: WorkspaceFiles): Promise<T
     for (const cls of classPreviews(files[source.path]!)) {
       for (const [method, line] of [...cls.methods].sort(([a], [b]) => a.localeCompare(b))) {
         const rawId = `${source.module}.${cls.name}.${method}`
-        tests.push({
+        tests.push({ sourcePath: source.path, descriptor: {
           id: 'py:' + await pythonTestKey(source.path, rawId), name: [...rawId].slice(0, 1024).join(''), origin: source.origin,
           group: [...relative].slice(0, 512).join(''),
           ...(source.origin === 'student' ? { location: { path: source.path, line } } : {}),
-        })
+        } })
       }
     }
   }
   return tests
+}
+
+export async function discoverPythonTests(files: WorkspaceFiles): Promise<TestDescriptorV2[]> {
+  return (await discoverPythonEntries(files)).map(entry => entry.descriptor)
 }
 
 export const pythonUnittestTestProvider: TestProviderV2 = {
@@ -172,7 +177,10 @@ export const pythonUnittestTestProvider: TestProviderV2 = {
       if (!/^py:[a-f0-9]{64}$/.test(id)) throw new Error('Invalid Python test selection')
       return id.slice(3)
     })
-    const config = new TextEncoder().encode(JSON.stringify({ nonce, sources, selection }))
+    const preview = selection === null ? [] : await discoverPythonEntries(files)
+    const selectionSources = Object.fromEntries(preview.filter(entry => selection?.includes(entry.descriptor.id.slice(3)))
+      .map(entry => [entry.descriptor.id.slice(3), entry.sourcePath]))
+    const config = new TextEncoder().encode(JSON.stringify({ nonce, sources, selection, selectionSources }))
     const hex = Array.from(config, byte => byte.toString(16).padStart(2, '0')).join('')
     preparedFiles[PYTHON_UNITTEST_RUNNER_PATH] = UNITTEST_RUNNER.replace('__WEB_IDE_CONFIG_HEX__', hex)
     return {

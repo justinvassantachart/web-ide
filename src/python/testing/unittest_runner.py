@@ -90,6 +90,8 @@ def descriptor(test, error=None):
     key = hashlib.sha256((path + "\n" + raw_id).encode("utf-8")).hexdigest()
     item = {"key": key, "name": str(test), "origin": source["origin"] if source else "external",
             "group": path.rsplit("/", 1)[-1]}
+    if isinstance(test, unittest.loader._FailedTest):
+        item["kind"] = "fixture"
     if location_source and code:
         item.update(path=location_source["path"], line=code.co_firstlineno)
     elif error:
@@ -129,6 +131,7 @@ class ProtocolResult(unittest.TextTestResult):
             # Module/class setup/teardown failures do not call startTest/stopTest.
             self.had_fixture = True
             item = descriptor(test, error)
+            item["kind"] = "fixture"
             count = self.fixture_count.get(item["key"], 0) + 1
             self.fixture_count[item["key"]] = count
             if count > 1:
@@ -181,16 +184,43 @@ def flatten(suite):
         yield suite
 
 
-def select_suite(suite, selected):
+def select_suite(suite, selected, seen=None):
     # Retain the suite tree and testcase instances: do not re-import via loadTestsFromName.
+    if seen is None:
+        seen = set()
     if isinstance(suite, unittest.TestSuite):
-        children = [select_suite(child, selected) for child in suite]
+        children = [select_suite(child, selected, seen) for child in suite]
         children = [child for child in children if child is not None]
         if not children:
             return None
         suite._tests = children
         return suite
-    return suite if descriptor(suite)["key"] in selected else None
+    key = descriptor(suite)["key"]
+    if key not in selected or key in seen:
+        return None
+    seen.add(key)
+    return suite
+
+
+def import_failure_source(test):
+    if isinstance(test, unittest.loader._FailedTest):
+        return BY_MODULE.get(getattr(test, "_testMethodName", ""))
+    return None
+
+
+def failed_selected_imports(tests, missing):
+    paths = {CONFIG.get("selectionSources", {}).get(key) for key in missing}
+    paths.discard(None)
+    failures = []
+    for test in tests:
+        source = import_failure_source(test)
+        if not source:
+            continue
+        path = source["path"]
+        package = path.rsplit("/", 1)[0] + "/" if path.endswith("/__init__.py") else None
+        if not paths or path in paths or (package and any(value.startswith(package) for value in paths)):
+            failures.append(test)
+    return failures
 
 
 def preload_main():
@@ -216,21 +246,41 @@ def run():
         tests = list(flatten(suite))
         if len(tests) > MAX_TESTS:
             raise RuntimeError("More than 10000 tests were discovered")
+        unique = {}
+        for test in tests:
+            key = descriptor(test)["key"]
+            previous = unique.get(key)
+            if previous is not None:
+                # Importing the same TestCase in another test module makes unittest
+                # load it again. Preserve one exact case, but reject parameterized
+                # cases that expose the same ID with different instance state.
+                if type(previous) is type(test) and previous.__dict__ == test.__dict__:
+                    continue
+                emit({"type": "run_terminated", "reason": "protocol_violation", "message": "Duplicate unittest IDs refer to different test instances"})
+                return 1
+            unique[key] = test
+        tests = list(unique.values())
         items = [descriptor(test) for test in tests]
         keys = [item["key"] for item in items]
-        if len(set(keys)) != len(keys):
-            emit({"type": "run_terminated", "reason": "protocol_violation", "message": "Duplicate unittest IDs are ambiguous"})
-            return 1
         for item in items:
             emit(dict(item, type="test_discovered"))
         emit({"type": "discovery_finished"})
         discovery_complete = True
         if CONFIG["selection"] is not None:
             selected = set(CONFIG["selection"])
-            if not selected or selected - set(keys):
+            missing = selected - set(keys)
+            failed_imports = failed_selected_imports(tests, missing) if missing else []
+            if failed_imports:
+                unittest.TestSuite(failed_imports).run(result)
+                modules = [getattr(test, "_testMethodName", "") for test in failed_imports]
+                emit({"type": "run_terminated", "reason": "runtime_crash", "message": "Cannot load selected test modules: " + ", ".join(modules)})
+                return 1
+            if not selected or missing:
                 emit({"type": "run_terminated", "reason": "selection_stale", "message": "Selected tests were not found in the loaded suite"})
                 return 1
             suite = select_suite(suite, selected)
+        else:
+            suite = select_suite(suite, set(keys))
         if suite is not None:
             suite.run(result)
         if result.had_fixture:
@@ -251,7 +301,7 @@ def run():
             emit({"type": "discovery_finished"})
         holder = unittest.suite._ErrorHolder("discovery (main)")
         result.outcome(holder, "errored", error)
-        emit({"type": "run_finished", "message": "Test discovery failed"})
+        emit({"type": "run_terminated", "reason": "runtime_crash", "message": "Test discovery failed: " + str(error[1])})
         return 1
 
 

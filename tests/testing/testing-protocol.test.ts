@@ -19,6 +19,27 @@ describe('shared bounded test report framing', () => {
     expect(decoder().push('stdout', wire)).toEqual({ output: wire, messages: [] })
     expect(decoder().push('stderr', marker + '{}')).toEqual({ output: marker + '{}', messages: [] })
   })
+  it('consumes only protocol separators while retaining student blank lines across every chunk boundary', () => {
+    const wire = '\n' + marker + '{"type":"run_started"}\n\n\nhello\n\n' + marker + '{"type":"run_finished"}\n\n'
+    for (let split = 0; split <= wire.length; split++) {
+      const parser = decoder()
+      const frames = [parser.push('stdout', wire.slice(0, split)), parser.push('stdout', wire.slice(split)), parser.finish()]
+      expect(frames.map(frame => frame.output).join('')).toBe('\n\nhello\n\n')
+      expect(frames.flatMap(frame => frame.messages)).toHaveLength(2)
+    }
+    const malformed = '\n' + marker + '{bad}\n'
+    const parser = decoder()
+    expect(parser.push('stdout', malformed).output + parser.finish().output).toBe(malformed)
+  })
+  it('streams prompts and disambiguated marker prefixes without waiting for a newline', () => {
+    const parser = decoder()
+    expect(parser.push('stdout', 'Value: ').output).toBe('Value: ')
+    expect(parser.push('stdout', 'still waiting').output).toBe('still waiting')
+    expect(parser.push('stdout', '\n\n' + marker + '{"type":"run_started"}\n').messages).toHaveLength(1)
+    expect(parser.push('stdout', '__WEB').output).toBe('')
+    expect(parser.push('stdout', '_ordinary').output).toBe('__WEB_ordinary')
+    expect(parser.finish().output).toBe('')
+  })
   it('bounds UTF8 bytes for unterminated and complete lines and recovers after them', () => {
     const parser = decoder()
     const oversized = marker + '😀'.repeat(20000)

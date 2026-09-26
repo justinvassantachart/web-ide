@@ -18,7 +18,7 @@ export function createTestReportDecoder({ nonce, runId, toTestId }: TestReportDe
   if (!/^[a-f0-9]{16,128}$/.test(nonce)) throw new TypeError('Invalid test report nonce')
   const marker = `${TEST_REPORT_PREFIX}${nonce}:`
   const ids = new Map<string, string>()
-  let buffer = '', passthrough = false, sequence = 0
+  let buffer = '', pendingEmptyLine = '', passthrough = false, sequence = 0
   const identify = (key: unknown): string => {
     if (typeof key !== 'string' || key.length === 0 || key.length > 4096) throw new TypeError('Invalid test key')
     const id = toTestId(key)
@@ -34,7 +34,7 @@ export function createTestReportDecoder({ nonce, runId, toTestId }: TestReportDe
     if (typeof event.type !== 'string') return undefined
     if (!runTypes.has(event.type) && !terminalTypes.has(event.type) && !['test_discovered', 'test_started', 'output'].includes(event.type)) return undefined
     const allowed = event.type === 'test_discovered'
-      ? ['type', 'key', 'name', 'origin', 'group', 'path', 'line', 'column']
+      ? ['type', 'key', 'name', 'origin', 'kind', 'group', 'path', 'line', 'column']
       : terminalTypes.has(event.type)
         ? ['type', 'key', 'durationMs', 'message', 'details', 'expected', 'actual', 'path', 'line', 'column']
         : event.type === 'test_started'
@@ -60,8 +60,10 @@ export function createTestReportDecoder({ nonce, runId, toTestId }: TestReportDe
       if (typeof event.name !== 'string' || !event.name || [...event.name].length > 1024) throw new TypeError('Invalid test name')
       if (!['student', 'provided', 'external'].includes(String(event.origin))) throw new TypeError('Invalid test origin')
       if (event.group !== undefined && (typeof event.group !== 'string' || [...event.group].length > 512)) throw new TypeError('Invalid test group')
+      if (event.kind !== undefined && event.kind !== 'fixture') throw new TypeError('Invalid test descriptor kind')
       const descriptor: TestDescriptorV2 = {
         id: identify(event.key), name: event.name, origin: event.origin as TestDescriptorV2['origin'],
+        ...(event.kind === 'fixture' ? { kind: 'fixture' as const } : {}),
         ...(event.group !== undefined ? { group: event.group as string } : {}),
         ...(location.path && location.line ? { location: { path: location.path, line: location.line, ...(location.column ? { column: location.column } : {}) } } : {}),
       }
@@ -95,16 +97,26 @@ export function createTestReportDecoder({ nonce, runId, toTestId }: TestReportDe
         const line = buffer.slice(0, newline)
         buffer = buffer.slice(newline + 1)
         if (passthrough) output += line + '\n'
+        else if (line === '' || line === '\r') {
+          output += pendingEmptyLine
+          pendingEmptyLine = line + '\n'
+        }
         else {
           const frame = parseLine(line, true)
-          output += frame.output; messages.push(...frame.messages)
+          // Both runners establish a new line before a report. Consume only that
+          // last empty separator, retaining student blank lines and malformed frames.
+          output += (frame.messages.length ? '' : pendingEmptyLine) + frame.output
+          pendingEmptyLine = ''
+          messages.push(...frame.messages)
         }
         passthrough = false
       }
-      if (encoder.encode(buffer).length > TEST_REPORT_MAX_FRAME_BYTES || passthrough) {
+      if (encoder.encode(buffer).length > TEST_REPORT_MAX_FRAME_BYTES || passthrough ||
+        (buffer !== '\r' && !marker.startsWith(buffer) && !buffer.startsWith(marker))) {
         // Keep a final surrogate half for a Unicode character split across chunks.
         const tail = buffer.length && /[\uD800-\uDBFF]/.test(buffer.at(-1)!) ? 1 : 0
-        output += buffer.slice(0, buffer.length - tail)
+        output += pendingEmptyLine + buffer.slice(0, buffer.length - tail)
+        pendingEmptyLine = ''
         buffer = buffer.slice(buffer.length - tail)
         passthrough = true
       }
@@ -115,7 +127,10 @@ export function createTestReportDecoder({ nonce, runId, toTestId }: TestReportDe
       buffer = ''
       const wasPassthrough = passthrough
       passthrough = false
-      return wasPassthrough ? { output: line, messages: [] } : parseLine(line, false)
+      const frame = wasPassthrough ? { output: line, messages: [] } : parseLine(line, false)
+      const output = (frame.messages.length ? '' : pendingEmptyLine) + frame.output
+      pendingEmptyLine = ''
+      return { output, messages: frame.messages }
     },
   }
 }
