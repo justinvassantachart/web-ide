@@ -76,6 +76,55 @@ test('applies requested ratios and shows the exact initial panel without a click
   expectCleanBrowser(diagnostics)
 })
 
+test('keyboard selection scrolls only the tabs in a narrow panel', async ({ page }) => {
+  const diagnostics = observeBrowserDiagnostics(page)
+  await page.setViewportSize({ width: 960, height: 800 })
+  await page.goto('/?runtime=cpp&tests=framework')
+  await expectReady(page)
+
+  const tabs = page.getByRole('tablist', { name: 'Workbench panels' })
+  await tabs.getByRole('tab', { name: 'Variables', exact: true }).focus()
+  await page.keyboard.press('End')
+  await expect(tabs.getByRole('tab', { name: 'Tests', exact: true })).toBeFocused()
+  const panel = page.getByRole('complementary', { name: 'Tests' })
+  const checkbox = panel.getByRole('checkbox', { name: 'Select numeric provided', exact: true })
+  await expect(checkbox).toBeVisible()
+
+  const positions = await panel.evaluate((element) => {
+    const column = element.closest('[data-web-ide-region="panel-column"]')!
+    const tablist = column.querySelector('[role="tablist"]')!
+    const content = column.querySelector('[data-web-ide-region="panel-content"]')!
+    return {
+      columnLeft: column.getBoundingClientRect().left,
+      contentLeft: content.getBoundingClientRect().left,
+      checkboxLeft: element.querySelector('input')!.getBoundingClientRect().left,
+      columnScroll: column.scrollLeft,
+      contentScroll: content.scrollLeft,
+      tabsScroll: tablist.scrollLeft,
+      tabsOverflow: tablist.scrollWidth - tablist.clientWidth,
+    }
+  })
+  expect(positions.tabsOverflow).toBeGreaterThan(0)
+  expect(positions.tabsScroll).toBeGreaterThan(0)
+  expect(positions.columnScroll).toBe(0)
+  expect(positions.contentScroll).toBe(0)
+  expect(positions.contentLeft).toBeCloseTo(positions.columnLeft, 0)
+  expect(positions.checkboxLeft).toBeGreaterThan(positions.columnLeft)
+
+  await panel.getByRole('button', { name: 'Run All', exact: true }).click()
+  const summary = panel.getByRole('status')
+  await expect(summary).toContainText('2 passed · 1 failed · 1 errored')
+  const leadingTextLeft = await summary.evaluate((element) => {
+    const text = element.firstElementChild!.firstChild!
+    const range = document.createRange()
+    range.setStart(text, 0)
+    range.setEnd(text, 1)
+    return range.getBoundingClientRect().left
+  })
+  expect(leadingTextLeft).toBeGreaterThan(positions.columnLeft)
+  expectCleanBrowser(diagnostics)
+})
+
 test('rejects unknown and currently unavailable initial panels without a usable mount', async ({ page }) => {
   for (const [mode, message] of [
     ['invalid', 'No panel contributed with id "fixture.unknown-panel"'],
