@@ -28,6 +28,8 @@ export interface WebIDEConfiguration {
    * language IDs overlap the selected runtime is selected automatically.
    */
   testProvider?: string
+  /** Whole-suite execution deadline; compilation excluded; Debug has no deadline. */
+  testing?: { readonly timeoutMs?: number }
   /** Host-controlled wordmark. Defaults to `WEB·IDE`; set false to hide it. */
   brand?: string | false
   /** Label printed when a terminal session mounts. Defaults to `Web IDE Terminal`. */

@@ -173,6 +173,30 @@ afterEach(() => {
 })
 
 describe('Python browser debugger contract', () => {
+  it('maps staged test source breakpoints and paused frames back to the original editor file', async () => {
+    const engine = new FakeEngine()
+    const session = createSession(engine)
+    const pauses: DebugPauseState[] = []
+    session.events.debugPaused.subscribe(pause => pauses.push(pause))
+    await session.setBreakpoints('/workspace/main.py', [2])
+    engine.debugger.responder = request => request.command === 'stackTrace'
+      ? { success: true, body: { stackFrames: [{ id: 1, name: 'user_function', line: 2, source: { path: '/staged.py' } }] } }
+      : request.command === 'scopes' ? { success: true, body: { scopes: [] } } : successfulDapResponse(request)
+    const { running } = await startDebug(session, engine, {
+      files: { '/workspace/staged.py': 'def user_function():\n    return 3', '/workspace/runner.py': 'import staged' },
+      entrypoint: '/workspace/runner.py',
+      sourceAliases: { '/workspace/staged.py': '/workspace/main.py' },
+    })
+    engine.debugger.emit('initialized')
+    await vi.waitFor(() => expect(requests(engine, 'configurationDone')).toHaveLength(1))
+    expect(requests(engine, 'setBreakpoints').some(request => (request.arguments.source as { path: string }).path === '/staged.py' && (request.arguments.breakpoints as { line: number }[]).some(point => point.line === 2))).toBe(true)
+    engine.debugger.emit('stopped', { threadId: 1 })
+    await vi.waitFor(() => expect(pauses).toHaveLength(1))
+    expect(pauses[0].file).toBe('/workspace/main.py')
+    expect(pauses[0].callStack[0].file).toBe('/workspace/main.py')
+    engine.complete(); await running
+  })
+
   it('performs the DAP handshake lazily and configures /main.py without breakpoints', async () => {
     const engine = new FakeEngine()
     const session = createSession(engine)

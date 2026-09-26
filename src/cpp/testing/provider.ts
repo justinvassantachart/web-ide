@@ -1,63 +1,11 @@
-import type {
-  TestEvent,
-  TestOutputFrame,
-  TestOutputParser,
-  TestOutputStream,
-  TestProvider,
-} from '@/web-ide/contracts/testing'
+import type { TestDescriptorV2, TestProviderV2 } from '@/web-ide/contracts/testing'
 import type { IDEPlugin } from '@/web-ide/contracts/plugin'
-import { BoundedLineProtocolParser } from '@/testing/bounded-line-protocol-parser'
-import {
-  NOVA_TEST_DELIMITER,
-  NOVA_TEST_HEADER,
-  NOVA_TEST_HEADER_PATH,
-  NOVA_TEST_IMPL,
-  NOVA_TEST_IMPL_PATH,
-  NOVA_TEST_MARKER,
-  NOVA_TEST_RUNNER,
-  NOVA_TEST_RUNNER_PATH,
-} from './resources'
-
-export {
-  NOVA_TEST_DELIMITER,
-  NOVA_TEST_HEADER_PATH,
-  NOVA_TEST_IMPL_PATH,
-  NOVA_TEST_MARKER,
-  NOVA_TEST_RUNNER_PATH,
-} from './resources'
-
-function unescapeField(value: string): string {
-  let output = ''
-  for (let index = 0; index < value.length; index += 1) {
-    const character = value[index]
-    if (character === '\\' && index + 1 < value.length) {
-      const next = value[index + 1]
-      if (next === '\\') {
-        output += '\\'
-        index += 1
-        continue
-      }
-      if (next === 'n') {
-        output += '\n'
-        index += 1
-        continue
-      }
-      if (next === 'r') {
-        output += '\r'
-        index += 1
-        continue
-      }
-      if (next === 'p') {
-        output += '|'
-        index += 1
-        continue
-      }
-    }
-    output += character
-  }
-  return output
-}
-
+import type { WorkspaceFiles } from '@/web-ide/contracts/host'
+import { normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
+import { canonicalStringifyV1, sha256Hex } from '@/web-ide/public/canonical-contract'
+import { createTestReportDecoder } from '@/testing/testing-protocol'
+import { CPP_TEST_SUPPORT_FILES, CPP_TEST_RESERVED_PATHS, CPP_TEST_HEADER_PATH, CPP_TEST_RUNNER_PATH, CPP_TEST_RUNNER_SOURCE, CPP_TEST_CONFIG_PATH, makeCppTestConfig } from './resources'
+export { CPP_TEST_SUPPORT_FILES, CPP_TEST_RESERVED_PATHS, CPP_TEST_HEADER_PATH, CPP_TEST_IMPL_PATH, CPP_TEST_RUNNER_PATH, CPP_TEST_RUNNER_SOURCE, CPP_TEST_CONFIG_PATH, validateCppTestSupportFiles } from './resources'
 interface SourceToken {
   value: string
   start: number
@@ -120,7 +68,7 @@ function isAtLogicalLineStart(source: string, index: number): boolean {
   return /^[\t\v\f ]*$/.test(source.slice(lineStart, index))
 }
 
-function tokenizeCpp(source: string): SourceToken[] {
+export function tokenizeCpp(source: string): SourceToken[] {
   const tokens: SourceToken[] = []
   let index = 0
 
@@ -147,11 +95,25 @@ function tokenizeCpp(source: string): SourceToken[] {
 
     const rawStringEnd = rawStringLiteralEnd(source, index)
     if (rawStringEnd !== undefined) {
+      tokens.push({ value: source.slice(index, rawStringEnd), start: index, end: rawStringEnd })
       index = rawStringEnd
       continue
     }
+    if (/[0-9]/.test(character) || (character === '.' && /[0-9]/.test(source[index + 1] ?? ''))) {
+      const start = index++
+      while (index < source.length) {
+        const next = source[index]
+        if (/[A-Za-z0-9_.]/.test(next) || (next === "'" && /[A-Za-z0-9]/.test(source[index + 1] ?? ''))
+          || ((next === '+' || next === '-') && /[eEpP]/.test(source[index - 1]))) index++
+        else break
+      }
+      tokens.push({ value: source.slice(start, index), start, end: index })
+      continue
+    }
     if (character === '"' || character === "'") {
-      index = quotedLiteralEnd(source, index, character)
+      const end = quotedLiteralEnd(source, index, character)
+      tokens.push({ value: source.slice(index, end), start: index, end })
+      index = end
       continue
     }
 
@@ -172,16 +134,20 @@ function tokenizeCpp(source: string): SourceToken[] {
 
 function hideUserMain(source: string): string {
   const tokens = tokenizeCpp(source)
-  const mainTokens = tokens.filter((token, index) => (
-    token.value === 'main'
-    && (tokens[index - 1]?.value === 'int' || tokens[index - 1]?.value === 'void')
-    && tokens[index + 1]?.value === '('
-  ))
+  const scopes: boolean[] = []
+  const mainTokens: SourceToken[] = []
+  tokens.forEach((token, index) => {
+    if (token.value === '{') scopes.push(tokens[index - 2]?.value === 'extern' && ['"C"', '"C++"'].includes(tokens[index - 1]?.value))
+    else if (token.value === '}') scopes.pop()
+    else if (token.value === 'main' && scopes.every(linkage => linkage)
+      && ['int', 'void', 'auto', 'signed'].includes(tokens[index - 1]?.value)
+      && tokens[index + 1]?.value === '(') mainTokens.push(token)
+  })
   if (mainTokens.length === 0) return source
 
   let renamed = source
   for (const token of mainTokens.reverse()) {
-    renamed = `${renamed.slice(0, token.start)}nova_hidden_main${renamed.slice(token.end)}`
+    renamed = `${renamed.slice(0, token.start)}webide_hidden_main${renamed.slice(token.end)}`
   }
 
   // C++ permits falling off main(), while the renamed ordinary function must
@@ -195,158 +161,112 @@ function hideUserMain(source: string): string {
   ].join('\n')
 }
 
-class NovaCppOutputParser implements TestOutputParser {
-  private nextTestId = 1
-  private currentTestId: string | undefined
-  private readonly lines = new BoundedLineProtocolParser(
-    NOVA_TEST_MARKER,
-    (payload) => {
-      const event = this.parsePayload(payload)
-      return event ? [event] : undefined
-    },
-  )
-
-  push(stream: TestOutputStream, chunk: string): TestOutputFrame {
-    if (stream !== 'stdout') return { output: chunk, events: [] }
-    return this.lines.push(chunk)
-  }
-
-  finish(): TestOutputFrame {
-    return this.lines.finish()
-  }
-
-  private parsePayload(payload: string): TestEvent | undefined {
-    const fields = payload.split(NOVA_TEST_DELIMITER)
-    const kind = fields[0]
-
-    if (kind === 'SUITE_START' && fields.length === 2) {
-      if (!/^\d+$/.test(fields[1] ?? '')) return undefined
-      const total = Number.parseInt(fields[1], 10)
-      if (!Number.isSafeInteger(total)) return undefined
-      this.nextTestId = 1
-      this.currentTestId = undefined
-      return { type: 'run-start', total }
-    }
-
-    if (kind === 'TEST_START' && fields.length === 2) {
-      const testId = `nova-cpp:${this.nextTestId}`
-      this.nextTestId += 1
-      this.currentTestId = testId
-      return {
-        type: 'test-start',
-        testId,
-        name: unescapeField(fields[1] ?? ''),
-      }
-    }
-
-    if (kind === 'ASSERT' && fields.length === 8 && this.currentTestId) {
-      if (fields[3] !== 'PASS' && fields[3] !== 'FAIL') return undefined
-      if (!/^\d+$/.test(fields[2] ?? '')) return undefined
-      const line = Number.parseInt(fields[2] ?? '', 10)
-      if (!Number.isSafeInteger(line) || line <= 0) return undefined
-      return {
-        type: 'test-assertion',
-        testId: this.currentTestId,
-        assertion: {
-          status: fields[3] === 'PASS' ? 'pass' : 'fail',
-          message: fields[3] === 'PASS' ? undefined : 'EXPECT_EQUALS failed',
-          location: {
-            file: fields[1] ?? '',
-            ...(Number.isFinite(line) && line > 0 ? { line } : {}),
-          },
-          actual: {
-            expression: unescapeField(fields[4] ?? ''),
-            value: unescapeField(fields[6] ?? ''),
-          },
-          expected: {
-            expression: unescapeField(fields[5] ?? ''),
-            value: unescapeField(fields[7] ?? ''),
-          },
-        },
-      }
-    }
-
-    if (kind === 'TEST_END' && fields.length === 2 && this.currentTestId) {
-      if (fields[1] !== 'PASS' && fields[1] !== 'FAIL') return undefined
-      const testId = this.currentTestId
-      this.currentTestId = undefined
-      return {
-        type: 'test-end',
-        testId,
-        status: fields[1] === 'PASS' ? 'pass' : 'fail',
-      }
-    }
-
-    if (kind === 'SUITE_END' && fields.length === 2 && fields[1] === '') {
-      this.currentTestId = undefined
-      return { type: 'run-end' }
-    }
-
-    return undefined
-  }
+function testKey(value: string): string {
+  let a = 2166136261, b = 3339675911
+  for (const byte of new TextEncoder().encode(value)) { a = Math.imul(a ^ byte, 16777619) >>> 0; b = Math.imul(b ^ byte, 16777619) >>> 0 }
+  return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0')
 }
-
-export function createNovaCppOutputParser(): TestOutputParser {
-  return new NovaCppOutputParser()
+function literalName(tokens: readonly SourceToken[]): string | undefined {
+  let result = ''
+  for (const token of tokens) {
+    const raw = /^(?:u8|u|U|L)?R"([^ ()\\\t\r\n]{0,16})\(([\s\S]*)\)\1"$/.exec(token.value)
+    if (raw) { result += raw[2]; continue }
+    if (!/^"[\s\S]*"$/.test(token.value)) return undefined
+    try { result += JSON.parse(token.value) as string } catch { return undefined }
+  }
+  return result || undefined
 }
-
-const NOVA_TEST_HEADER_REFERENCE = /(?:^|[\s/<"'])nova_test\.h(?=$|[\s>"'])/m
-
-function usesNovaTestSupport(files: Readonly<Record<string, string>>): boolean {
-  return Object.values(files).some((contents) => (
-    NOVA_TEST_HEADER_REFERENCE.test(contents)
-  ))
+interface CppDeclaration { descriptor: TestDescriptorV2; key: string; edits: { start: number; end: number; text: string }[] }
+function declarations(path: string, source: string): CppDeclaration[] {
+  const tokens = tokenizeCpp(source)
+  const ordinals = new Map<number, number>()
+  const found: CppDeclaration[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    const macro = tokens[i]
+    if (!['STUDENT_TEST', 'PROVIDED_TEST'].includes(macro.value) || tokens[i + 1]?.value !== '(') continue
+    let depth = 1, end = i + 2
+    for (; end < tokens.length; end++) { if (tokens[end].value === '(') depth++; if (tokens[end].value === ')' && --depth === 0) break }
+    if (end >= tokens.length) continue
+    const line = source.slice(0, macro.start).split('\n').length
+    const ordinal = ordinals.get(line) ?? 0; ordinals.set(line, ordinal + 1)
+    const origin = macro.value === 'STUDENT_TEST' ? 'student' : 'provided'
+    const name = literalName(tokens.slice(i + 2, end)) ?? `Test at ${path.split('/').pop()}:${line}`
+    const key = testKey(`${path}\n${line}\n${ordinal}\n${origin}\n${name}`)
+    const descriptor: TestDescriptorV2 = { id: `cpp:${key}`, name: [...name].slice(0, 1024).join(''), origin, group: [...path].slice(-512).join(''), ...(path.startsWith('/workspace/') ? { location: { path, line } } : {}) }
+    found.push({ descriptor, key, edits: [
+      { start: macro.start, end: macro.end, text: 'WEBIDE_TEST_KEY' },
+      { start: tokens[i + 1].end, end: tokens[i + 1].end, text: `"${key}",` },
+      { start: tokens[end].start, end: tokens[end].start, text: `,"${origin}"` },
+    ] })
+    i = end
+  }
+  return found
 }
-
-export const cppTestProvider: TestProvider = {
-  id: 'web-ide.testing.cpp',
-  label: 'C++ Tests',
-  languageIds: ['c', 'cpp'],
-  editorSupportFiles: Object.freeze({
-    [NOVA_TEST_HEADER_PATH]: NOVA_TEST_HEADER,
-  }),
-  help: {
-    message: 'Declare tests with',
-    examples: [
-      { code: 'STUDENT_TEST("name") { ... }' },
-      { prefix: 'and assert with', code: 'EXPECT_EQUALS(actual, expected)' },
-    ],
+function assertAvailable(files: WorkspaceFiles) {
+  for (const path of Object.keys(files)) if (CPP_TEST_RESERVED_PATHS.some(reserved => path.replace(/^\/(workspace|sysroot)\//, '') === reserved.slice('/workspace/'.length))) throw new TypeError(`Reserved testing support path: ${path}`)
+}
+function cppSource(path: string) { return /\.(?:cpp|cc|cxx|c|h|hh|hpp|hxx)$/.test(path) }
+export function prepareCppTestingSupport(files: WorkspaceFiles, executeTests: boolean, runId?: string, selectionKeys?: readonly string[]): WorkspaceFiles {
+  const prepared = normalizeRuntimeFiles(files)
+  assertAvailable(prepared)
+  const needsSupport = executeTests || Object.values(prepared).some(contents => /\bwebide_test\.h\b/.test(contents))
+  if (!needsSupport) return prepared
+  if (executeTests) for (const [path, source] of Object.entries(prepared)) {
+    if (!cppSource(path)) continue
+    const edits = declarations(path, source).flatMap(found => found.edits).sort((a, b) => b.start - a.start)
+    let transformed = source
+    for (const edit of edits) transformed = transformed.slice(0, edit.start) + edit.text + transformed.slice(edit.end)
+    if (/\.(?:cpp|cc|cxx|c)$/.test(path)) transformed = hideUserMain(transformed)
+    // Host-owned runtime resources are verified by exact bytes. Untouched
+    // support sources need no test or debugger transformation.
+    if (transformed === source) continue
+    const compilerPath = path.startsWith('/workspace/') ? path.slice('/workspace'.length) : path
+    prepared[path] = `#line 1 ${JSON.stringify(compilerPath)}\n${transformed}`
+  }
+  Object.assign(prepared, CPP_TEST_SUPPORT_FILES)
+  if (executeTests) {
+    if (!runId) throw new TypeError('A C++ test run requires a run ID')
+    prepared[CPP_TEST_RUNNER_PATH] = CPP_TEST_RUNNER_SOURCE
+    prepared[CPP_TEST_CONFIG_PATH] = makeCppTestConfig(runId, selectionKeys)
+  }
+  return prepared
+}
+export const cppTestProvider: TestProviderV2 = {
+  apiVersion: 2,
+  id: 'web-ide.testing.cpp', label: 'C++ Tests', languageIds: ['cpp'],
+  editorSupportFiles: Object.freeze({ [CPP_TEST_HEADER_PATH]: CPP_TEST_SUPPORT_FILES[CPP_TEST_HEADER_PATH] }),
+  help: { message: 'Include webide_test.h and declare tests with STUDENT_TEST or PROVIDED_TEST.', examples: [{ code: 'EXPECT_EQUAL(actual, expected)' }] },
+  async discover({ files, workspaceDigest }) {
+    const normalized = normalizeRuntimeFiles(files); assertAvailable(normalized)
+    const tests = Object.entries(normalized).sort(([a], [b]) => a < b ? -1 : 1).flatMap(([path, source]) => cppSource(path) ? declarations(path, source).map(found => found.descriptor) : [])
+    if (new Set(tests.map(test => test.id)).size !== tests.length) throw new TypeError('C++ test identity collision')
+    return { apiVersion: 2, kind: 'catalog', workspaceDigest, catalogDigest: await sha256Hex(canonicalStringifyV1({ workspaceDigest, tests })), tests }
   },
-  prepare({ files, mode, executeTests }) {
-    const preparedFiles = Object.fromEntries(
-      Object.entries(files).map(([path, contents]) => [
-        path,
-        executeTests && path.endsWith('.cpp') ? hideUserMain(contents) : contents,
-      ]),
-    )
-
-    // These copies exist only in the execution plan: they never enter the VFS,
-    // OPFS persistence, file explorer, or host workspace snapshot. Ordinary
-    // Run/Debug must not compile the test implementation unless the workspace
-    // references its public header: every extra .cpp file is a complete,
-    // sequential compiler invocation in the browser runtime.
-    if (executeTests || usesNovaTestSupport(preparedFiles)) {
-      preparedFiles[NOVA_TEST_HEADER_PATH] = NOVA_TEST_HEADER
-      preparedFiles[NOVA_TEST_IMPL_PATH] = NOVA_TEST_IMPL
-    }
-
-    if (!executeTests) {
-      return { execution: { files: preparedFiles, mode } }
-    }
-
-    preparedFiles[NOVA_TEST_RUNNER_PATH] = NOVA_TEST_RUNNER
+  prepareExecution: ({ files, mode }) => ({ files: prepareCppTestingSupport(files, false), mode }),
+  async prepareRun(request, { files, runId }) {
+    const selected = request.selection.kind === 'all' ? undefined : request.selection.testIds.map(id => {
+      if (!/^cpp:[a-f0-9]{16}$/.test(id)) throw new TypeError('Invalid selected C++ test ID')
+      return id.slice(4)
+    })
+    const decoder = createTestReportDecoder({ nonce: runId, runId, toTestId: key => `cpp:${key}` })
+    const resourcePaths = new Set(Object.keys(normalizeRuntimeFiles(files)).filter(path => path.startsWith('/sysroot/')).map(path => '/workspace/' + path.slice('/sysroot/'.length)))
+    const hideResourceLocations = (frame: ReturnType<typeof decoder.push>) => ({ ...frame, messages: frame.messages.map(report => {
+      const event = report.event
+      if (event.type === 'test_discovered' && event.descriptor.location && resourcePaths.has(event.descriptor.location.path)) {
+        const { location, ...descriptor } = event.descriptor
+        return { ...report, event: { ...event, descriptor: { ...descriptor, group: '/sysroot/' + location.path.slice('/workspace/'.length) } } }
+      }
+      if ('path' in event && event.path && resourcePaths.has(event.path)) {
+        const { path, line } = event
+        const rest = { ...event }; delete rest.path; delete rest.line; delete rest.column
+        return { ...report, event: { ...rest, ...(['test_failed', 'test_errored'].includes(event.type) ? { details: `Runtime resource /sysroot/${path.slice('/workspace/'.length)}:${line ?? '?'}` } : {}) } }
+      }
+      return report
+    }) })
     return {
-      execution: {
-        files: preparedFiles,
-        mode: 'run',
-        entrypoint: NOVA_TEST_RUNNER_PATH,
-      },
-      parser: createNovaCppOutputParser(),
+      execution: { files: prepareCppTestingSupport(files, true, runId, selected), mode: request.mode, entrypoint: CPP_TEST_RUNNER_PATH },
+      decoder: { push: (stream, chunk) => hideResourceLocations(decoder.push(stream, chunk)), finish: () => hideResourceLocations(decoder.finish()) },
     }
   },
 }
-
-export const cppTestingPlugin: IDEPlugin = {
-  id: 'web-ide.testing.cpp',
-  contributes: { testProviders: [cppTestProvider] },
-}
+export const cppTestingPlugin: IDEPlugin = { id: 'web-ide.testing.cpp', contributes: { testProviders: [cppTestProvider] } }

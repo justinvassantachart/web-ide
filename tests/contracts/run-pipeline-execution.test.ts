@@ -135,7 +135,7 @@ vi.mock('@/web-ide/react/panel-layout-context', () => ({
 }))
 
 import { useRunPipeline } from '../../src/components/layout/use-run-pipeline'
-import type { RuntimeSession } from '../../src/web-ide/contracts/runtime'
+import type { RuntimeOutcome, RuntimeSession } from '../../src/web-ide/contracts/runtime'
 
 function runtime(id: string) {
   return {
@@ -192,6 +192,92 @@ afterEach(() => {
 })
 
 describe('instance-scoped panel execution controller', () => {
+  it.each(['compiling', 'running', 'pending'] as const)('returns busy without touching resources or runtime while %s', async (state) => {
+    const selectedRuntime = runtime('runtime.busy')
+    const selectedHost = host()
+    const coordinator = harness.createCoordinator()
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(selectedHost)
+    harness.coordinators.push(coordinator)
+    const files = vi.fn(() => ({ '/sysroot/support.h': 'support' }))
+    harness.resources.push({ id: 'dynamic', scope: 'execution-only', files })
+    harness.executionState.isCompiling = state === 'compiling'
+    harness.executionState.isRunning = state === 'running'
+    if (state === 'pending') coordinator.setPendingRun(Promise.resolve())
+
+    const outcome = await useRunPipeline().execution.executePrepared?.({
+      plan: { files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' }, workflow: 'test',
+    })
+    expect(outcome).toEqual({ type: 'busy' })
+    expect(files).not.toHaveBeenCalled()
+    expect(selectedRuntime.prepare).not.toHaveBeenCalled()
+    expect(selectedRuntime.start).not.toHaveBeenCalled()
+    expect(selectedHost.events.emit).not.toHaveBeenCalled()
+    expect(harness.testState.reset).not.toHaveBeenCalled()
+  })
+
+  it.each(['diagnostics', 'rejection'] as const)('returns build_failed with %s and never starts the guest', async (failure) => {
+    const selectedRuntime = runtime('runtime.build-failure')
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(host())
+    harness.coordinators.push(harness.createCoordinator())
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    if (failure === 'diagnostics') selectedRuntime.prepare.mockResolvedValueOnce({ success: false, errors: ['missing header', 'invalid expression'] })
+    else selectedRuntime.prepare.mockRejectedValueOnce(new Error('compiler unavailable'))
+
+    const outcome = await useRunPipeline().execution.executePrepared?.({
+      plan: { files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'debug' }, workflow: 'test',
+    })
+    expect(outcome).toEqual({ type: 'build_failed', message: failure === 'diagnostics' ? 'missing header\ninvalid expression' : 'compiler unavailable' })
+    expect(selectedRuntime.start).not.toHaveBeenCalled()
+    expect(harness.executionState.isCompiling).toBe(false)
+    expect(harness.executionState.isRunning).toBe(false)
+  })
+
+  it.each<RuntimeOutcome>([
+    { type: 'completed', exitCode: 3 }, { type: 'stopped' },
+    { type: 'error', error: { type: 'runtime', message: 'unreachable instruction' } },
+  ])('waits for and preserves runtime settlement $type', async (outcome) => {
+    let settle!: (value: RuntimeOutcome) => void
+    const settlement = new Promise<RuntimeOutcome>(resolve => { settle = resolve })
+    const selectedRuntime = Object.assign(runtime('runtime.settlement'), {
+      waitForSettlement: vi.fn(() => settlement),
+    })
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(host())
+    harness.coordinators.push(harness.createCoordinator())
+    const controller = useRunPipeline().execution
+    let resolved = false
+    const running = controller.executePrepared!({ plan: { files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' } })
+      .then(result => { resolved = true; return result })
+    await vi.waitFor(() => expect(selectedRuntime.waitForSettlement).toHaveBeenCalledTimes(1))
+    expect(resolved).toBe(false)
+    settle(outcome)
+    await expect(running).resolves.toEqual(outcome)
+  })
+
+  it.each([false, true])('resolves dynamic resources once, or preserves an already resolved snapshot (%s)', async (resourcesResolved) => {
+    const selectedRuntime = runtime('runtime.resources')
+    harness.engines.push(selectedRuntime)
+    harness.hosts.push(host())
+    harness.coordinators.push(harness.createCoordinator())
+    const resourceFiles = vi.fn(() => ({ '/sysroot/config.h': 'fresh resource bytes' }))
+    harness.resources.push({ id: 'dynamic', scope: 'execution-only', files: resourceFiles })
+    const files: Record<string, string> = { '/workspace/main.cpp': 'int main() {}' }
+    if (resourcesResolved) files['/sysroot/config.h'] = 'frozen resource bytes'
+    const original = { ...files }
+    const outcome = await useRunPipeline().execution.executePrepared?.({
+      plan: { files, mode: 'run' }, workflow: 'test', resourcesResolved,
+    })
+    expect(outcome).toEqual({ type: 'completed', exitCode: 0 })
+    expect(resourceFiles).toHaveBeenCalledTimes(resourcesResolved ? 0 : 1)
+    expect(selectedRuntime.prepare).toHaveBeenCalledExactlyOnceWith({
+      files: { '/workspace/main.cpp': 'int main() {}', '/sysroot/config.h': resourcesResolved ? 'frozen resource bytes' : 'fresh resource bytes' }, mode: 'run',
+    })
+    expect(files).toEqual(original)
+    expect(harness.prepareWorkbenchExecution).not.toHaveBeenCalled()
+  })
+
   it('keeps prepare/start/stop/restart bound to the runtime instance that created it', async () => {
     const firstRuntime = runtime('runtime.first')
     const secondRuntime = runtime('runtime.second')

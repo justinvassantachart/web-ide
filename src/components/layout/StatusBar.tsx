@@ -2,6 +2,7 @@
 // Blue while editing, orange (statusBar.debuggingBackground) while a debug
 // session is live — the same at-a-glance signal VS Code users rely on.
 
+import { useTestingSnapshot } from '@/testing/use-testing-snapshot'
 import { Codicon } from '@/components/ui/codicon'
 import {
     useWorkbenchDebugStore,
@@ -12,6 +13,7 @@ import { monacoLanguageLabelForPath } from '@/web-ide/core/monaco-language'
 
 export function StatusBar() {
     const { debugMode, currentLine, currentFile } = useWorkbenchDebugStore()
+    const { snapshot: testing } = useTestingSnapshot()
     const isRunning = useWorkbenchExecutionStore((s) => s.isRunning)
     const isCompiling = useWorkbenchExecutionStore((s) => s.isCompiling)
     const { activeFile, cursorLine, cursorColumn } = useWorkbenchEditorStore()
@@ -26,7 +28,7 @@ export function StatusBar() {
     if (isCompiling) { stateIcon = 'loading'; stateText = 'Compiling…' }
     else if (debugMode === 'paused') {
         stateIcon = 'debug-pause'
-        stateText = `Paused at ${currentFile?.split('/').pop() ?? '?'}:${currentLine ?? '?'}`
+        stateText = `Paused at ${currentFile?.split('/').pop() ?? '?'}:${currentLine ?? '?'}${testing.state === 'running' && testing.stale ? ' (executed source snapshot)' : ''}`
     }
     else if (debugging) { stateIcon = 'debug-alt'; stateText = 'Debugging' }
     else if (isRunning) { stateIcon = 'play'; stateText = 'Running' }

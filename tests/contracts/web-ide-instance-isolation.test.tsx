@@ -14,7 +14,6 @@ import type {
   WebIDEHost,
   WebIDEInstanceHandle,
   TestCatalogV2,
-  TestDecoderFrameV2,
   TestProviderV2,
   TestReportEventV2,
 } from '../../src/web-ide'
@@ -382,37 +381,34 @@ function configuration(runtime: RuntimeProvider): WebIDEConfiguration {
   }
 }
 
-function oneMessageDecoder<T>(message: () => T) {
-  let sent = false
-  const frame = (): TestDecoderFrameV2<T> => {
-    if (sent) return { output: '', messages: [] }
-    sent = true
-    return { output: '', messages: [message()] }
-  }
-  return { push: frame, finish: () => ({ output: '', messages: [] }) }
-}
-
 function mountedTestingV2Provider() {
-  let run = 0
-  const prepareDiscovery = vi.fn<TestProviderV2['prepareDiscovery']>(async ({ files, workspaceDigest }) => {
-    const catalog: TestCatalogV2 = {
-      apiVersion: 2,
-      kind: 'catalog',
-      workspaceDigest,
-      catalogDigest: 'c'.repeat(64),
-      tests: [
-        { id: 'mounted:alpha', name: 'mounted alpha', origin: 'student', location: { path: '/workspace/main.cpp', line: 1 } },
-        { id: 'mounted:beta', name: 'mounted beta', origin: 'provided' },
-      ],
-    }
-    return { execution: { files, mode: 'run' }, decoder: oneMessageDecoder(() => catalog) }
-  })
+  const tests: TestCatalogV2['tests'] = [
+    { id: 'mounted:alpha', name: 'mounted alpha', origin: 'student', location: { path: '/workspace/main.cpp', line: 1 } },
+    { id: 'mounted:beta', name: 'mounted beta', origin: 'provided' },
+  ]
+  const discover = vi.fn<TestProviderV2['discover']>(async ({ workspaceDigest }) => ({
+    apiVersion: 2,
+    kind: 'catalog',
+    workspaceDigest,
+    catalogDigest: 'c'.repeat(64),
+    tests,
+  }))
   const prepareRun = vi.fn<TestProviderV2['prepareRun']>(async (request, context) => {
-    const runId = `mounted-${++run}`
-    const events: TestReportEventV2[] = [
-      { apiVersion: 2, kind: 'report_event', runId, sequence: 0, event: { type: 'run_started' } },
-      { apiVersion: 2, kind: 'report_event', runId, sequence: 1, event: { type: 'run_finished', reason: 'completed' } },
+    const selected = request.selection.kind === 'all' ? tests : tests.filter(test =>
+      request.selection.kind === 'tests' && request.selection.testIds.includes(test.id))
+    const payloads: TestReportEventV2['event'][] = [
+      { type: 'run_started' },
+      ...tests.map(descriptor => ({ type: 'test_discovered' as const, descriptor })),
+      { type: 'discovery_finished' },
+      ...selected.flatMap(test => [
+        { type: 'test_started' as const, testId: test.id },
+        { type: 'test_passed' as const, testId: test.id },
+      ]),
+      { type: 'run_finished', reason: 'completed' },
     ]
+    const events: TestReportEventV2[] = payloads.map((event, sequence) => ({
+      apiVersion: 2, kind: 'report_event', runId: context.runId, sequence, event,
+    }))
     let index = 0
     return {
       execution: { files: context.files, mode: request.mode },
@@ -427,10 +423,10 @@ function mountedTestingV2Provider() {
     id: 'synthetic.testing.v2',
     label: 'Synthetic Testing V2',
     languageIds: ['cpp'],
-    prepareDiscovery,
+    discover,
     prepareRun,
   }
-  return { prepareDiscovery, prepareRun, provider }
+  return { discover, prepareRun, provider }
 }
 
 function testingConfiguration(runtime: RuntimeProvider, provider: TestProviderV2): WebIDEConfiguration {
@@ -659,7 +655,7 @@ describe('same-realm WebIDE instance isolation', () => {
       first.filesStore.getState().toggleDir('/workspace')
       first.executionStore.getState().setIsRunning(true)
       first.compilerStore.getState().setCacheState('error')
-      first.testStore.getState().processEvent({ type: 'run-start', total: 1 })
+      first.testStore.setState({ isTesting: true, totalCount: 1 })
       first.workspace.writeLocal('/workspace/main.cpp', 'first changed\n')
     })
 
@@ -761,7 +757,7 @@ describe('same-realm WebIDE instance isolation', () => {
     })
     await act(async () => {
       await vi.waitFor(() => {
-        expect(testing.prepareDiscovery).toHaveBeenCalledTimes(1)
+        expect(testing.discover).toHaveBeenCalledTimes(1)
         expect(mountedContainer?.textContent).toContain('mounted alpha')
         expect(mountedContainer?.textContent).toContain('mounted beta')
       })
@@ -816,6 +812,8 @@ describe('same-realm WebIDE instance isolation', () => {
       },
     ])
 
+    const discoveredBeforeEdit = testing.discover.mock.calls.length
+    const stopsBeforeEdit = vi.mocked(harness.runtimeSessions[0]!.stop).mock.calls.length
     await act(async () => {
       await instanceRef.current!.workspace.apply({
         version: 1,
@@ -825,8 +823,15 @@ describe('same-realm WebIDE instance isolation', () => {
         origin: { kind: 'external-authority', source: 'remote-provider' },
         operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'int main() { return 1; }\n' }],
       })
-      await vi.waitFor(() => expect(testing.prepareDiscovery).toHaveBeenCalledTimes(2))
+      await vi.waitFor(() => expect(testing.discover.mock.calls.length).toBeGreaterThan(discoveredBeforeEdit))
     })
+    expect(harness.runtimeSessions[0]!.stop).toHaveBeenCalledTimes(stopsBeforeEdit)
+    expect(mountedContainer.textContent).toMatch(/stale results/i)
+    expect(mountedContainer.textContent).toContain('1 passed')
+    expect(mountedContainer.querySelector<HTMLInputElement>('[aria-label="Select mounted beta"]')?.checked).toBe(false)
+    await act(async () => { instanceRef.current!.reset(); await Promise.resolve() })
+    expect(mountedContainer.textContent).not.toContain('1 passed')
+    expect(instanceRef.current!.snapshot().tests).toEqual([])
   })
 
   it('seeds a replacement persistence adapter and isolates a pending old-adapter failure', async () => {

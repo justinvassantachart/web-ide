@@ -51,12 +51,12 @@ const plainProgram = [
 
 const testedProgram = [
   '#include <iostream>',
-  '#include "nova_test.h"',
+  '#include "webide_test.h"',
   '',
   'int square(int value) { return value * value; }',
   '',
   'STUDENT_TEST("square") {',
-  '    EXPECT_EQUALS(square(4), 16);',
+  '    EXPECT_EQUAL(square(4), 16);',
   '}',
   '',
   'int main() {',

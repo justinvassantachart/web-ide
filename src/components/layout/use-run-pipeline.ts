@@ -5,12 +5,13 @@ import type {
     RuntimeExecutionMode,
     RuntimeExecutionPlan,
     RuntimePreparationResult,
+    RuntimeOutcome,
 } from '@/web-ide/contracts/runtime'
 import { isTestProviderV2, prepareWorkbenchExecution } from '@/testing/test-execution'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { useIDEWorkspaceResources } from '@/web-ide/react/contribution-context'
 import { mergeExecutionResourceFiles } from '@/web-ide/core/workspace-resources'
-import { canonicalRuntimeFilePath } from '@/web-ide/core/workspace-path'
+import { canonicalRuntimeFilePath, normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
 import type { IDEExecutionController } from '@/web-ide/contracts/contributions'
 import { useRunPipelineCoordinator } from './run-pipeline-context'
 import { usePanelLayout } from '@/web-ide/react/panel-layout-context'
@@ -36,9 +37,11 @@ export function useRunPipeline() {
         debug: boolean,
         isTest = false,
         preparedPlan?: RuntimeExecutionPlan,
+        resourcesResolved = false,
     ) => {
         const exec = instance.executionStore.getState()
-        if (exec.isCompiling || exec.isRunning || coordinator.getPendingRun()) return
+        if (exec.isCompiling || exec.isRunning || coordinator.getPendingRun()) return { type: 'busy' as const }
+        let outcome: RuntimeOutcome | { type: 'build_failed'; message: string } = { type: 'stopped' }
         const generation = coordinator.beginTransition()
         let releaseTask!: () => void
         const startGate = new Promise<void>((resolve) => {
@@ -75,11 +78,10 @@ export function useRunPipeline() {
                     return
                 }
                 let plan = preparedPlan ?? await prepareWorkbenchExecution({
-                        files: instance.workspace.snapshot(),
+                        files: mergeExecutionResourceFiles(resources, instance.workspace.snapshot()),
                         mode,
                         executeTests: isTest,
                         testProvider,
-                        onTestEvent: (event) => instance.testStore.getState().processEvent(event),
                     })
                 if (!coordinator.isCurrent(generation)) {
                     instance.testStore.getState().finalize()
@@ -90,7 +92,7 @@ export function useRunPipeline() {
                 const entrypoint = plan.entrypoint === undefined
                     ? undefined
                     : canonicalRuntimeFilePath(plan.entrypoint)
-                const files = mergeExecutionResourceFiles(resources, plan.files)
+                const files = !preparedPlan || resourcesResolved ? normalizeRuntimeFiles(plan.files) : mergeExecutionResourceFiles(resources, plan.files)
                 plan = entrypoint === undefined
                     ? { ...plan, files }
                     : { ...plan, files, entrypoint }
@@ -110,6 +112,7 @@ export function useRunPipeline() {
                     instance.testStore.getState().finalize()
                     return
                 }
+                outcome = { type: 'build_failed', message: error instanceof Error ? error.message : String(error) }
                 console.error('[web-ide] runtime preparation failed', error)
                 host?.events?.emit('compile_error', { debug })
                 instance.testStore.getState().finalize()
@@ -122,6 +125,7 @@ export function useRunPipeline() {
                 return
             }
             if (!prepared.success) {
+                outcome = { type: 'build_failed', message: prepared.errors.join('\n') }
                 host?.events?.emit('compile_error', { debug })
                 instance.testStore.getState().finalize()
                 return
@@ -139,10 +143,12 @@ export function useRunPipeline() {
             coordinator.markRuntimeStart(generation)
             try {
                 await engine.start({ mode: executionMode })
+                outcome = engine.waitForSettlement ? await engine.waitForSettlement() : { type: 'completed', exitCode: 0 }
             } catch (error) {
                 // A conforming adapter should normally surface runtime failures
                 // through typed events, but a rejected start must never leave the
                 // host workbench stuck in a running state.
+                outcome = { type: 'error', error: { type: 'runtime', message: error instanceof Error ? error.message : String(error) } }
                 console.error('[web-ide] runtime start failed', error)
                 instance.executionStore.getState().setIsRunning(false)
                 instance.debugStore.getState().setDebugMode('idle')
@@ -156,6 +162,7 @@ export function useRunPipeline() {
         } finally {
             coordinator.clearPendingRun(task)
         }
+        return outcome
     }, [coordinator, engine, host, instance, panelLayout, resources, settleStop, testProvider])
 
     const stop = useCallback(async () => {
@@ -183,6 +190,12 @@ export function useRunPipeline() {
     }, [coordinator, instance, settleStop])
 
     const restart = useCallback(async (debug: boolean) => {
+        const testing = instance.testingV2?.snapshot()
+        if (testing?.snapshot().state === 'running') {
+            host?.events?.emit('debug_restart', {})
+            await testing.restart()
+            return
+        }
         const generation = coordinator.beginTransition()
         const pending = coordinator.getPendingRun()
         const pendingWasPreparing = pending
@@ -228,10 +241,11 @@ export function useRunPipeline() {
         },
         stop,
         restart: async (mode) => restart(mode === 'debug'),
-        executePrepared: async ({ plan, workflow }) => run(
+        executePrepared: async ({ plan, workflow, resourcesResolved }) => run(
             plan.mode === 'debug',
             workflow === 'test',
             plan,
+            resourcesResolved,
         ),
     }), [instance, panelLayout, restart, run, stop, testProvider])
 

@@ -77,9 +77,9 @@ test('debugs Python with production assets and clean browser diagnostics', async
   await expect(testCommand).toBeVisible()
   await testCommand.click()
   await expect(statusBar).toContainText('Ready')
-  await expect(page.getByText('1 passed', { exact: true })).toBeVisible()
+  await expect(page.getByText(/1 passed/)).toBeVisible()
   await expect(page.getByText(/test_double/)).toBeVisible()
-  await expect(page.locator('.xterm-rows')).not.toContainText('###WEB_IDE_UNITTEST###')
+  await expect(page.locator('.xterm-rows')).not.toContainText('__WEBIDE_TEST_V2__:')
 
   // Test providers stage an ephemeral file plan. That plan must not erase the
   // durable main.py breakpoint still shown in the editor.
@@ -104,7 +104,7 @@ test('maps unittest failures in staged main.py back to the host workspace', asyn
 
   await testCommand.click()
   await expect(statusBar).toContainText('Ready')
-  await expect(page.getByText('1 failed', { exact: true })).toBeVisible()
+  await expect(page.getByText(/1 errored/)).toBeVisible()
   await expect(page.getByText(/^test_failure_location \(/)).toBeVisible()
   const location = page.getByRole('button', { name: 'main.py:8', exact: true })
   await expect(location).toBeVisible()
@@ -126,5 +126,37 @@ test('maps unittest failures in staged main.py back to the host workspace', asyn
   await expect(page.locator('.monaco-editor .source-presentation-error-line')).toHaveCount(1)
   await page.getByRole('tab', { name: 'Variables', exact: true }).click()
   await expect(page.locator('.monaco-editor .source-presentation-error-line')).toHaveCount(0)
+  expectCleanBrowser(diagnostics)
+})
+
+
+test('discovers without execution and debugs selected tests through the preserved main source', async ({ page }) => {
+  const diagnostics = observeBrowserDiagnostics(page)
+  const navigation = await page.goto('/?tests=failing')
+  await expectIsolatedRuntime(page, navigation)
+  const statusBar = page.getByRole('contentinfo', { name: 'Status bar' })
+  await expect(page.locator('.monaco-editor')).toBeVisible()
+  await expect(statusBar).toContainText('Ready')
+
+  await page.getByRole('treeitem', { name: 'test_helpers.py', exact: true }).click()
+  await editorLine(page, '        fail_from_main()').click()
+  await page.keyboard.press('F9')
+  await page.getByRole('treeitem', { name: 'main.py', exact: true }).click()
+  await editorLine(page, '    raise ValueError("failure from user main")').click()
+  await page.keyboard.press('F9')
+
+  await page.getByRole('tab', { name: 'Tests', exact: true }).click()
+  await expect(page.getByText('test_helpers.MainLocationTests.test_failure_location', { exact: true })).toBeVisible()
+  await expect(page.locator('.xterm-rows')).not.toContainText('Initializing execution environment')
+  await page.getByRole('button', { name: 'Debug Selected', exact: true }).click()
+  await expect(statusBar).toContainText('Paused at test_helpers.py:8')
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await expect(statusBar).toContainText('Paused at main.py:8')
+  await expect(page.getByRole('tab', { name: 'main.py' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText(/__web_ide_user_main__/)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await expect(statusBar).toContainText('Ready')
+  await page.getByRole('tab', { name: 'Tests', exact: true }).click()
+  await expect(page.getByText(/1 errored/)).toBeVisible()
   expectCleanBrowser(diagnostics)
 })

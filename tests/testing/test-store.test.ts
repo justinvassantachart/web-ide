@@ -1,59 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { useTestStore } from '../../src/testing/test-store'
-
-beforeEach(() => useTestStore.getState().reset())
-
-describe('generic structured test result store', () => {
-  it('reduces framework-neutral events into panel state', () => {
-    const process = useTestStore.getState().processEvent
-    process({ type: 'run-start', total: 1 })
-    process({ type: 'test-start', testId: 'one', name: 'works' })
-    process({
-      type: 'test-assertion',
-      testId: 'one',
-      assertion: {
-        status: 'fail',
-        actual: { value: '3' },
-        expected: { value: '4' },
-      },
-    })
-    process({
-      type: 'test-diagnostic',
-      testId: 'one',
-      diagnostic: { message: 'values differ' },
-    })
-    process({ type: 'test-end', testId: 'one', status: 'fail', durationMs: 4 })
-    process({ type: 'run-end' })
-
-    expect(useTestStore.getState()).toMatchObject({
-      isTesting: false,
-      completedCount: 1,
-      totalCount: 1,
-      tests: [{
-        id: 'one',
-        name: 'works',
-        status: 'fail',
-        durationMs: 4,
-        assertions: [{
-          status: 'fail',
-          actual: { value: '3' },
-          expected: { value: '4' },
-        }],
-        diagnostics: [{ message: 'values differ' }],
-      }],
-    })
-  })
-
-  it('turns unfinished cases into failures when a run exits unexpectedly', () => {
-    const process = useTestStore.getState().processEvent
-    process({ type: 'run-start', total: 1 })
-    process({ type: 'test-start', testId: 'crash', name: 'crashes' })
-
-    useTestStore.getState().finalize()
-
-    expect(useTestStore.getState()).toMatchObject({
-      isTesting: false,
-      tests: [{ id: 'crash', status: 'fail' }],
-    })
-  })
+import { expect, it } from 'vitest'
+import { createTestStore } from '../../src/testing/test-store'
+it('projects V2 rows for host snapshots without a second execution protocol', () => {
+  const store = createTestStore()
+  store.getState().update({ state: 'ready', tests: [{ id: 'a', name: 'First', origin: 'student' }], events: [
+    { apiVersion: 2, kind: 'report_event', runId: 'run', sequence: 0, event: { type: 'test_started', testId: 'a' } },
+    { apiVersion: 2, kind: 'report_event', runId: 'run', sequence: 1, event: { type: 'test_failed', testId: 'a', message: 'different', actual: { value: '1' }, expected: { value: '2' }, path: '/workspace/main.cpp', line: 3 } },
+  ] })
+  expect(store.getState()).toMatchObject({ isTesting: false, completedCount: 1, totalCount: 1, tests: [{ name: 'First', status: 'fail', location: { file: '/workspace/main.cpp', line: 3 }, assertions: [{ actual: { value: '1' }, expected: { value: '2' } }] }] })
+  store.getState().reset()
+  expect(store.getState().tests).toEqual([])
 })

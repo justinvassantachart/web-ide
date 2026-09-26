@@ -43,7 +43,7 @@ describe('declaration module specifiers', () => {
   it('rejects private loader queries and missing targets', () => {
     expect(() => rewrite(
       'testing/resources.d.ts',
-      "import source from './nova_test.h?raw';",
+      "import source from './webide_test.h?raw';",
     )).toThrow(/non-runtime module specifier/u)
     expect(() => rewrite('index.d.ts', "export * from './missing';"))
       .toThrow(/no source target/u)
