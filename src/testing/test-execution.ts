@@ -3,11 +3,8 @@ import type {
   RuntimeExecutionMode,
   RuntimeExecutionPlan,
   RuntimeSession,
-  RuntimeStreamInterceptor,
 } from '@/web-ide/contracts/runtime'
 import type {
-  TestEvent,
-  TestOutputParser,
   TestProviderContribution,
   TestProviderV2,
 } from '@/web-ide/contracts/testing'
@@ -43,71 +40,13 @@ export function resolveTestProvider(
   return matches.length === 1 ? matches[0] : undefined
 }
 
-export function createTestStreamInterceptor(
-  parser: TestOutputParser,
-  onEvent: (event: TestEvent) => void,
-): RuntimeStreamInterceptor {
-  const dispatch = (events: readonly TestEvent[]) => {
-    for (const event of events) onEvent(event)
-  }
-
-  return {
-    push(stream, chunk) {
-      const frame = parser.push(stream, chunk)
-      dispatch(frame.events)
-      return frame.output
-    },
-    finish() {
-      const frame = parser.finish()
-      dispatch(frame.events)
-      return frame.output
-    },
-  }
-}
-
 export interface PrepareWorkbenchExecutionRequest {
   files: WorkspaceFiles
   mode: RuntimeExecutionMode
   executeTests: boolean
   testProvider?: TestProviderContribution
-  onTestEvent(event: TestEvent): void
 }
-
-export async function prepareWorkbenchExecution({
-  files,
-  mode,
-  executeTests,
-  testProvider,
-  onTestEvent,
-}: PrepareWorkbenchExecutionRequest): Promise<RuntimeExecutionPlan> {
-  if (!testProvider) {
-    if (executeTests) {
-      throw new Error('No unambiguous test provider is available for this runtime')
-    }
-    return { files, mode }
-  }
-
-  if (isTestProviderV2(testProvider)) {
-    if (executeTests) {
-      throw new Error(`Test provider "${testProvider.id}" requires the Testing V2 controller`)
-    }
-    return { files, mode }
-  }
-
-  const prepared = await testProvider.prepare({
-    files,
-    mode,
-    executeTests,
-  })
-
-  if (!executeTests) return prepared.execution
-  if (!prepared.parser) {
-    throw new Error(`Test provider "${testProvider.id}" did not create an output parser`)
-  }
-
-  return {
-    ...prepared.execution,
-    mode: 'run',
-    streamInterceptor: createTestStreamInterceptor(prepared.parser, onTestEvent),
-  }
+export async function prepareWorkbenchExecution({ files, mode, executeTests, testProvider }: PrepareWorkbenchExecutionRequest): Promise<RuntimeExecutionPlan> {
+  if (executeTests) throw new Error('Tests require the Testing V2 controller')
+  return testProvider?.prepareExecution?.({ files, mode }) ?? { files, mode }
 }

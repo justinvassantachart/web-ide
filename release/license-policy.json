@@ -6,6 +6,11 @@
       "licenseTextPaths": [
         "node_modules/@jsonjoy.com/fs-core/LICENSE"
       ]
+    },
+    "react-remove-scroll-bar": {
+      "licenseTextPaths": [
+        "release/licenses/react-remove-scroll-bar-7301c160-LICENSE.txt"
+      ]
     }
   },
   "sourceAttributions": [

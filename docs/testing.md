@@ -41,7 +41,7 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.6.0-source` tag, or a toolchain mismatch. The immutable
+`web-ide-v0.7.0-source` tag, or a toolchain mismatch. The immutable
 `web-ide-v0.5.0-source` tag remains the previous release's source identity;
 `web-ide-v0.4.0-source-r4` remains an earlier release identity;
 `web-ide-v0.3.1-source` remains an earlier release identity, and
@@ -91,7 +91,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.6.0.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.7.0.tgz \
   npm run test:consumer
 ```
 
@@ -279,7 +279,7 @@ plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
 The built-in browser providers target exactly one pinned engine build.
-Web IDE 0.6.0 selects the exact immutable
+Web IDE 0.7.0 selects the exact immutable
 `debugger-sh@0.3.15-webide.0.5.0.2` fork release asset recorded in
 `release/engine-fork-input.json`. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream

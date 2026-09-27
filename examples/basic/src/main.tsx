@@ -9,7 +9,7 @@ import {
   type WorkspaceFiles,
 } from 'web-ide'
 import { cppRuntimePlugin, pythonRuntimePlugin } from 'web-ide/runtimes'
-import { pythonTestingPlugin, testingPlugin } from 'web-ide/testing'
+import { cppTestingPlugin, pythonTestingPlugin, testingPlugin } from 'web-ide/testing'
 import { canvasPlugin, coreWorkbenchPlugin } from 'web-ide/plugins'
 import { ExampleApplication } from './ExampleApplication'
 import { ExecutionSourceProbe } from './ExecutionSourceProbe'
@@ -21,6 +21,8 @@ import 'web-ide/styles.css'
 
 const searchParams = new URLSearchParams(window.location.search)
 const useCppRuntime = searchParams.get('runtime') === 'cpp'
+const useCppTests = useCppRuntime && ['framework', 'timeout'].includes(searchParams.get('tests') ?? '')
+const useTimeoutTest = useCppRuntime && searchParams.get('tests') === 'timeout'
 const useFailingPythonTest = searchParams.get('tests') === 'failing'
 const useExecutionOnlyResource = searchParams.get('resources') === 'execution-only'
 const showLifecycleProbe = searchParams.get('lifecycle') === 'probe'
@@ -60,9 +62,12 @@ const executionSourceProbePlugin: IDEPlugin = {
 const configuration: WebIDEConfiguration = useCppRuntime
   ? {
       runtimeProvider: 'web-ide.runtime.cpp',
+      testing: { timeoutMs: useTimeoutTest ? 200 : 60000 },
       brand: 'WEB·IDE',
       plugins: [
         cppRuntimePlugin,
+        cppTestingPlugin,
+        testingPlugin,
         ...(useExecutionOnlyResource ? [executionOnlyResourcePlugin] : []),
         coreWorkbenchPlugin,
         canvasPlugin,
@@ -87,6 +92,21 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
   ? { '/workspace/node/child.cpp': 'initial child\n' }
   : useCppRuntime
     ? {
+      ...(useCppTests ? { '/workspace/tests.cpp': useTimeoutTest
+        ? '#include "webide_test.h"\nSTUDENT_TEST("infinite loop") { while (true) {} }'
+        : [
+          '#include "webide_test.h"',
+          '#include <stdexcept>',
+          'int doubleValue(int);',
+          'PROVIDED_TEST("numeric provided") { EXPECT_EQUAL(doubleValue(3), 6); EXPECT_EQUAL(0.1 + 0.2, 0.3); }',
+          'STUDENT_TEST("assertion detail") { EXPECT_EQUAL(2, 3); }',
+          'STUDENT_TEST("exception detail") { throw std::runtime_error("expected boom"); }',
+          '#define WRAPPED_TEST(name) STUDENT_TEST(name)',
+          'WRAPPED_TEST("runtime macro") { EXPECT_NO_ERROR(doubleValue(1)); }',
+          '#if 0',
+          'STUDENT_TEST("inactive test") {}',
+          '#endif',
+        ].join('\n') } : {}),
       '/workspace/main.cpp': [
         '#include <iostream>',
         '',
@@ -156,7 +176,7 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
 const workspaceId = showOPFSHierarchyProbe
   ? 'browser-opfs-hierarchy-v1'
   : useCppRuntime
-    ? 'basic-example-cpp-v1'
+    ? `basic-example-cpp-v2-${searchParams.get('tests') ?? 'ordinary'}`
     : showExecutionSourceProbe
       ? 'basic-example-python-execution-source-v1'
       : useFailingPythonTest

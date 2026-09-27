@@ -67,9 +67,9 @@ export function RightPanel() {
     }
 
     return (
-        <div className="flex flex-col h-full bg-background" data-web-ide-region="panel-content">
+        <div className="flex flex-col h-full min-w-0 bg-background" data-web-ide-region="panel-content">
             <div
-                className="flex border-b border-border bg-[var(--color-chrome)] h-9 px-1 items-stretch"
+                className="flex min-w-0 shrink-0 overflow-x-auto overflow-y-hidden border-b border-border bg-[var(--color-chrome)] h-9 px-1 items-stretch"
                 role="tablist"
                 aria-label="Workbench panels"
             >
@@ -88,7 +88,7 @@ export function RightPanel() {
                         tabIndex={isSelected ? 0 : -1}
                         onClick={() => setActiveTab(panel.id)}
                         onKeyDown={(event) => selectFromKeyboard(event, panelIndex)}
-                        className={`relative px-4 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+                        className={`relative shrink-0 px-4 text-[11px] font-medium uppercase tracking-wider transition-colors ${
                             isSelected
                                 ? 'text-foreground'
                                 : 'text-muted-foreground hover:text-foreground'
@@ -115,7 +115,7 @@ export function RightPanel() {
                     ? `${controller.domIdPrefix}-tab-${panels.indexOf(selected)}`
                     : undefined}
                 tabIndex={selected ? 0 : undefined}
-                className="flex-1 min-h-0 overflow-hidden"
+                className="flex-1 min-h-0 min-w-0 overflow-hidden"
             >
                 {SelectedPanel && selected && (
                     <ContributionSurface

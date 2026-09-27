@@ -1,170 +1,194 @@
 import UNITTEST_RUNNER from './unittest_runner.py?raw'
-import type {
-  TestCaseStatus,
-  TestDiagnostic,
-  TestEvent,
-  TestLocation,
-  TestOutputFrame,
-  TestOutputParser,
-  TestOutputStream,
-  TestProvider,
-} from '@/web-ide/contracts/testing'
+import type { TestDescriptorV2, TestProviderV2 } from '@/web-ide/contracts/testing'
+import type { WorkspaceFiles } from '@/web-ide/contracts/host'
 import type { IDEPlugin } from '@/web-ide/contracts/plugin'
-import { BoundedLineProtocolParser } from '@/testing/bounded-line-protocol-parser'
+import { canonicalStringifyV1, sha256Hex } from '@/web-ide/public/canonical-contract'
+import { normalizeRuntimeFiles, runtimeRelativeFilePath } from '@/web-ide/core/workspace-path'
+import { createTestReportDecoder } from '@/testing/testing-protocol'
 
 export const PYTHON_UNITTEST_RUNNER_PATH = '/workspace/__web_ide/unittest_runner.py'
 export const PYTHON_USER_MAIN_PATH = '/workspace/__web_ide_user_main__.py'
-export const PYTHON_UNITTEST_MARKER = '###WEB_IDE_UNITTEST###'
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+interface PythonSource {
+  path: string
+  runtimePath: string
+  module: string
+  origin: 'student' | 'provided'
 }
 
-function parseLocation(value: unknown): TestLocation | undefined {
-  if (!isObject(value) || typeof value.file !== 'string') return undefined
-  if ('line' in value && typeof value.line !== 'number') return undefined
-  if ('column' in value && typeof value.column !== 'number') return undefined
-  return {
-    file: value.file,
-    ...(typeof value.line === 'number' ? { line: value.line } : {}),
-    ...(typeof value.column === 'number' ? { column: value.column } : {}),
-  }
+function sourcesFor(files: WorkspaceFiles): PythonSource[] {
+  return Object.keys(files).filter(path => path.endsWith('.py')).sort().map(path => ({
+    path,
+    runtimePath: '/' + runtimeRelativeFilePath(path),
+    module: runtimeRelativeFilePath(path).slice(0, -3).replaceAll('/', '.').replace(/\.__init__$/, ''),
+    origin: path.startsWith('/sysroot/') ? 'provided' : 'student',
+  }))
 }
 
-function parseDiagnostic(value: unknown): TestDiagnostic | undefined {
-  if (!isObject(value) || typeof value.message !== 'string') return undefined
-  if ('details' in value && typeof value.details !== 'string') return undefined
-  const location = parseLocation(value.location)
-  if ('location' in value && !location) return undefined
-  return {
-    message: value.message,
-    ...(typeof value.details === 'string' ? { details: value.details } : {}),
-    ...(location ? { location } : {}),
-  }
-}
-
-function parseStatus(value: unknown): Exclude<TestCaseStatus, 'running'> | undefined {
-  return value === 'pass' || value === 'fail' || value === 'skip' || value === 'error'
-    ? value
-    : undefined
-}
-
-function parseEvent(value: unknown): TestEvent | undefined {
-  if (!isObject(value) || typeof value.type !== 'string') return undefined
-
-  if (value.type === 'run-start') {
-    if ('total' in value) {
-      if (
-        typeof value.total !== 'number'
-        || !Number.isSafeInteger(value.total)
-        || value.total < 0
-      ) return undefined
-      return { type: 'run-start', total: value.total }
-    }
-    return { type: 'run-start' }
-  }
-  if (value.type === 'run-end') return { type: 'run-end' }
-
-  if (
-    value.type === 'test-start'
-    && typeof value.testId === 'string'
-    && typeof value.name === 'string'
-  ) {
-    const location = parseLocation(value.location)
-    if ('location' in value && !location) return undefined
-    return {
-      type: 'test-start',
-      testId: value.testId,
-      name: value.name,
-      ...(location ? { location } : {}),
-    }
-  }
-
-  if (value.type === 'test-diagnostic' && typeof value.testId === 'string') {
-    const diagnostic = parseDiagnostic(value.diagnostic)
-    return diagnostic
-      ? { type: 'test-diagnostic', testId: value.testId, diagnostic }
-      : undefined
-  }
-
-  if (value.type === 'test-end' && typeof value.testId === 'string') {
-    const status = parseStatus(value.status)
-    if (!status) return undefined
-    if (
-      'durationMs' in value
-      && (typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs))
-    ) return undefined
-    return {
-      type: 'test-end',
-      testId: value.testId,
-      status,
-      ...(typeof value.durationMs === 'number' ? { durationMs: value.durationMs } : {}),
-    }
-  }
-
-  return undefined
-}
-
-class PythonUnittestOutputParser implements TestOutputParser {
-  private readonly lines = new BoundedLineProtocolParser(
-    PYTHON_UNITTEST_MARKER,
-    (payload) => {
-      try {
-        const event = parseEvent(JSON.parse(payload) as unknown)
-        return event ? [event] : undefined
-      } catch {
-        return undefined
+/** Remove literal/comment contents while retaining whitespace and line positions. */
+function maskedPython(source: string): string {
+  let output = '', index = 0
+  while (index < source.length) {
+    const ch = source[index]!
+    if (ch === '#') {
+      while (index < source.length && source[index] !== '\n') { output += ' '; index++ }
+    } else if (ch === '"' || ch === "'") {
+      const quote = source.slice(index, index + 3) === ch.repeat(3) ? ch.repeat(3) : ch
+      output += ' '.repeat(quote.length); index += quote.length
+      while (index < source.length) {
+        if (source.slice(index, index + quote.length) === quote) {
+          output += ' '.repeat(quote.length); index += quote.length; break
+        }
+        if (source[index] === '\\' && index + 1 < source.length) {
+          output += ' ' + (source[index + 1] === '\n' ? '\n' : ' '); index += 2
+        } else { output += source[index] === '\n' ? '\n' : ' '; index++ }
       }
-    },
-  )
-
-  push(stream: TestOutputStream, chunk: string): TestOutputFrame {
-    if (stream !== 'stdout') return { output: chunk, events: [] }
-    return this.lines.push(chunk)
+    } else { output += ch; index++ }
   }
-
-  finish(): TestOutputFrame {
-    return this.lines.finish()
-  }
+  return output
 }
 
-export function createPythonUnittestOutputParser(): TestOutputParser {
-  return new PythonUnittestOutputParser()
+interface ClassPreview { name: string; bases: string[]; methods: Map<string, number>; indent: number; line: number }
+
+function classPreviews(text: string): ClassPreview[] {
+  const lines = maskedPython(text).replaceAll('\r\n', '\n').split('\n')
+  const classes: ClassPreview[] = []
+  const stack: { indent: number; class?: ClassPreview }[] = []
+  const aliases = new Set(['TestCase', 'unittest.TestCase', 'IsolatedAsyncioTestCase', 'unittest.IsolatedAsyncioTestCase'])
+  for (let index = 0; index < lines.length; index++) {
+    let line = lines[index]!
+    if (!line.trim()) continue
+    const start = index + 1
+    const indent = line.match(/^\s*/)?.[0].replaceAll('\t', '        ').length ?? 0
+    let balance = (line.match(/[([{]/g)?.length ?? 0) - (line.match(/[)\]}]/g)?.length ?? 0)
+    while ((balance > 0 || /\\\s*$/.test(line)) && index + 1 < lines.length) {
+      const next = lines[++index]!
+      balance += (next.match(/[([{]/g)?.length ?? 0) - (next.match(/[)\]}]/g)?.length ?? 0)
+      line = line.replace(/\\\s*$/, '') + ' ' + next.trim()
+    }
+    const importAlias = line.match(/^\s*import\s+unittest\s+as\s+(\w+)/)
+    if (importAlias) {
+      aliases.add(importAlias[1] + '.TestCase'); aliases.add(importAlias[1] + '.IsolatedAsyncioTestCase')
+    }
+    if (/^\s*from\s+unittest\s+import\s/.test(line)) {
+      for (const match of line.matchAll(/\b(TestCase|IsolatedAsyncioTestCase)(?:\s+as\s+(\w+))?/g)) aliases.add(match[2] ?? match[1]!)
+    }
+    while (stack.length && stack.at(-1)!.indent >= indent) stack.pop()
+    const cls = line.match(/^\s*class\s+([\p{ID_Start}_][\p{ID_Continue}]*)\s*(?:\((.*?)\))?\s*:/u)
+    if (cls) {
+      const item = { name: cls[1]!, bases: (cls[2] ?? '').split(',').map(s => s.trim()), methods: new Map<string, number>(), indent, line: start }
+      // Nested classes/functions are not module-level unittest attributes.
+      if (stack.length === 0 && indent === 0) classes.push(item)
+      stack.push({ indent, class: item }); continue
+    }
+    const method = line.match(/^\s*(?:async\s+)?def\s+([\p{ID_Start}_][\p{ID_Continue}]*)\s*\(/u)
+    if (method) {
+      const owner = stack.at(-1)?.class
+      if (owner && method[1]!.startsWith('test')) owner.methods.set(method[1]!, start)
+      stack.push({ indent })
+    }
+  }
+  const byName = new Map(classes.map(cls => [cls.name, cls]))
+  const memo = new Map<ClassPreview, Map<string, number> | undefined>()
+  const resolve = (cls: ClassPreview, visiting = new Set<ClassPreview>()): Map<string, number> | undefined => {
+    if (memo.has(cls)) return memo.get(cls)
+    if (visiting.has(cls)) return undefined
+    visiting.add(cls)
+    let valid = cls.bases.some(base => aliases.has(base))
+    const methods = new Map<string, number>()
+    for (const name of cls.bases) {
+      const base = byName.get(name)
+      const inherited = base ? resolve(base, visiting) : undefined
+      if (inherited) { valid = true; for (const [method, line] of inherited) if (!methods.has(method)) methods.set(method, line) }
+    }
+    visiting.delete(cls)
+    for (const [method, line] of cls.methods) methods.set(method, line)
+    memo.set(cls, valid ? methods : undefined)
+    return memo.get(cls)
+  }
+  // Module attributes use the last binding, as unittest's runtime loader does.
+  return [...byName.values()].flatMap(cls => {
+    const methods = resolve(cls)
+    return methods ? [{ ...cls, methods }] : []
+  })
 }
 
-export const pythonUnittestTestProvider: TestProvider = {
+export async function pythonTestKey(path: string, unittestId: string): Promise<string> {
+  return sha256Hex(path + '\n' + unittestId)
+}
+
+async function discoverPythonEntries(filesInput: WorkspaceFiles): Promise<{ descriptor: TestDescriptorV2; sourcePath: string }[]> {
+  const files = normalizeRuntimeFiles(filesInput)
+  const sources = sourcesFor(files)
+  const runtimeFiles = new Set(Object.keys(files).map(runtimeRelativeFilePath))
+  const tests: { descriptor: TestDescriptorV2; sourcePath: string }[] = []
+  for (const source of sources) {
+    const relative = runtimeRelativeFilePath(source.path)
+    const parts = relative.split('/')
+    if (!/^test[^/]*\.py$/.test(parts.at(-1)!) || !/^[_a-z]\w*\.py$/i.test(parts.at(-1)!)) continue
+    if (parts.slice(0, -1).some((_, i) => !runtimeFiles.has(parts.slice(0, i + 1).join('/') + '/__init__.py'))) continue
+    for (const cls of classPreviews(files[source.path]!)) {
+      for (const [method, line] of [...cls.methods].sort(([a], [b]) => a.localeCompare(b))) {
+        const rawId = `${source.module}.${cls.name}.${method}`
+        tests.push({ sourcePath: source.path, descriptor: {
+          id: 'py:' + await pythonTestKey(source.path, rawId), name: [...rawId].slice(0, 1024).join(''), origin: source.origin,
+          group: [...relative].slice(0, 512).join(''),
+          ...(source.origin === 'student' ? { location: { path: source.path, line } } : {}),
+        } })
+      }
+    }
+  }
+  return tests
+}
+
+export async function discoverPythonTests(files: WorkspaceFiles): Promise<TestDescriptorV2[]> {
+  return (await discoverPythonEntries(files)).map(entry => entry.descriptor)
+}
+
+export const pythonUnittestTestProvider: TestProviderV2 = {
+  apiVersion: 2,
   id: 'web-ide.testing.python-unittest',
   label: 'Python unittest',
   languageIds: ['python'],
-  help: {
-    message: 'Create test*.py files with',
-    examples: [{ code: 'unittest.TestCase' }],
+  help: { message: 'Create test*.py files with', examples: [{ code: 'unittest.TestCase' }] },
+  async discover({ files, workspaceDigest }) {
+    const tests = await discoverPythonTests(files)
+    return { apiVersion: 2, kind: 'catalog', workspaceDigest, catalogDigest: await sha256Hex(canonicalStringifyV1(tests)), tests }
   },
-  prepare({ files, mode, executeTests }) {
-    if (!executeTests) {
-      return { execution: { files: { ...files }, mode } }
+  prepareExecution({ files, mode }) { return { files: { ...files }, mode } },
+  async prepareRun(request, { files, runId }) {
+    const preparedFiles = normalizeRuntimeFiles(files)
+    const sources = sourcesFor(preparedFiles)
+    for (const reserved of [PYTHON_UNITTEST_RUNNER_PATH, PYTHON_USER_MAIN_PATH]) {
+      if (Object.keys(preparedFiles).some(path => runtimeRelativeFilePath(path) === runtimeRelativeFilePath(reserved))) {
+        throw new Error(`Python testing reserves ${reserved}`)
+      }
     }
-
-    const preparedFiles = { ...files }
-    const mainEntry = Object.entries(files).find(([path]) =>
-      path === 'main.py' || path === '/main.py' || path === '/workspace/main.py',
-    )
-    if (mainEntry) {
-      preparedFiles[PYTHON_USER_MAIN_PATH] = mainEntry[1]
-      // The runtime owns /main.py as its fixed launcher. The runner preloads
-      // this preserved copy as module `main`, so keeping the original path in
-      // the execution plan would collide with the selected runner entrypoint.
-      delete preparedFiles[mainEntry[0]]
+    const main = sources.find(source => source.runtimePath === '/main.py')
+    const sourceAliases: Record<string, string> = {}
+    if (main) {
+      preparedFiles[PYTHON_USER_MAIN_PATH] = preparedFiles[main.path]!
+      delete preparedFiles[main.path]
+      sourceAliases[PYTHON_USER_MAIN_PATH] = main.path
+      main.runtimePath = '/' + runtimeRelativeFilePath(PYTHON_USER_MAIN_PATH)
     }
-    preparedFiles[PYTHON_UNITTEST_RUNNER_PATH] = UNITTEST_RUNNER
-
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+    const selection = request.selection.kind === 'all' ? null : request.selection.testIds.map(id => {
+      if (!/^py:[a-f0-9]{64}$/.test(id)) throw new Error('Invalid Python test selection')
+      return id.slice(3)
+    })
+    const preview = selection === null ? [] : await discoverPythonEntries(files)
+    const selectionSources = Object.fromEntries(preview.filter(entry => selection?.includes(entry.descriptor.id.slice(3)))
+      .map(entry => [entry.descriptor.id.slice(3), entry.sourcePath]))
+    const config = new TextEncoder().encode(JSON.stringify({ nonce, sources, selection, selectionSources }))
+    const hex = Array.from(config, byte => byte.toString(16).padStart(2, '0')).join('')
+    preparedFiles[PYTHON_UNITTEST_RUNNER_PATH] = UNITTEST_RUNNER.replace('__WEB_IDE_CONFIG_HEX__', hex)
     return {
-      execution: {
-        files: preparedFiles,
-        mode: 'run',
-        entrypoint: PYTHON_UNITTEST_RUNNER_PATH,
-      },
-      parser: createPythonUnittestOutputParser(),
+      execution: { files: preparedFiles, mode: request.mode, entrypoint: PYTHON_UNITTEST_RUNNER_PATH, sourceAliases },
+      decoder: createTestReportDecoder({ nonce, runId, toTestId: key => {
+        if (!/^[a-f0-9]{64}$/.test(key)) throw new Error('Invalid Python test key')
+        return 'py:' + key
+      } }),
     }
   },
 }

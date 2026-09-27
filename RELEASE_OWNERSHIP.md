@@ -72,14 +72,17 @@ design, so those URLs must not be retired.
 
 ## Current release configuration
 
-Web IDE `0.6.0` is published and verified. Its version-specific configuration,
+Web IDE `0.7.0` is the prepared successor; publication is not established by this
+source change. Its version-specific configuration,
 manifest schema, evidence tools and fixtures name the public canonical
 `justinvassantachart/web-ide` channel with mechanism
-`public-github-release-asset`, source tag `web-ide-v0.6.0-source`, release tag
-`web-ide-v0.6.0`, and asset `web-ide-0.6.0.tgz`.
+`public-github-release-asset`, source tag `web-ide-v0.7.0-source`, release tag
+`web-ide-v0.7.0`, and asset `web-ide-0.7.0.tgz`.
 
-The minor version records the terminal's new bottom panel beneath the editor
-and the corresponding initial-layout contract. The exact engine successor
+The minor version records shared C++/Python testing and the Testing V2 provider
+and session API migration. The runtime composition identity remains
+`cs106b.source/2`; exact new package digests and consumer proofs distinguish the
+new testing contract. The engine remains
 `debugger-sh@0.3.15-webide.0.5.0.2` contains the separately reviewed five-line
 empty-stdin-read correction in [engine PR 1](https://github.com/justinvassantachart/engine/pull/1).
 It retains the preceding engine source apart from that correction, regression
@@ -88,7 +91,8 @@ remain immutable. The `0.5.0` source tag retains tooling for validating its
 original release identity and channel.
 
 The four local gates, finalizer and immutable download verification in
-[Publishing readiness](docs/publishing-readiness.md) are complete for the
-published `0.6.0` artifact above. Each consuming application must still verify
-its own exact package composition. The npm manifest remains `private: true`;
+[Publishing readiness](docs/publishing-readiness.md) must bind the final `0.7.0`
+candidate before publication. The completed `0.6.0` evidence above remains
+historical evidence for its original bytes. Each consuming application must
+verify its own exact package composition. The npm manifest remains `private: true`;
 no npm publication is configured.

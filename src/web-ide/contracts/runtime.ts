@@ -94,6 +94,8 @@ export interface RuntimeExecutionPlan {
    */
   entrypoint?: string
   streamInterceptor?: RuntimeStreamInterceptor
+  /** Ephemeral staged source path → original editor source path. */
+  sourceAliases?: Readonly<Record<string, string>>
   /** Optional validated structured build; omission preserves legacy compilation. */
   cppBuildPlan?: CppBuildPlanV1
   /** Binary inputs stay separate from editor/persistence text files. */

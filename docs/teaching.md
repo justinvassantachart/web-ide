@@ -66,16 +66,16 @@ begin does not overwrite their existing workspaces.
 
 ## Add a small C++ test
 
-The C++ testing provider supplies `nova_test.h`, `STUDENT_TEST`, and
-`EXPECT_EQUALS`. The header's name is part of the testing API.
+The C++ testing provider supplies `webide_test.h`, `STUDENT_TEST`, and
+`EXPECT_EQUAL`. The header's name is part of the testing API.
 
 ```cpp
-#include "nova_test.h"
+#include "webide_test.h"
 
 int twice(int value) { return value * 2; }
 
 STUDENT_TEST("twice handles zero") {
-    EXPECT_EQUALS(twice(0), 0);
+    EXPECT_EQUAL(twice(0), 0);
 }
 
 int main() { return 0; }
@@ -87,7 +87,56 @@ application, register `cppTestingPlugin` and `testingPlugin` as shown in
 [Import IDE component](import-ide-component.md). The provider adds its support
 files during execution; there is no need to copy the header into each workspace.
 See the [test-provider source](../src/cpp/testing/provider.ts) and
-[framework header](../src/cpp/testing/nova_test.h) for the supported API.
+[framework header](../src/cpp/testing/webide_test.h) for the supported API.
+
+## Built-in testing behavior
+
+The same Tests panel supports C++ and Python `unittest`. Opening the panel scans
+source text without compiling or importing it. Runtime discovery replaces that
+provisional list when a suite starts, including C++ macro-generated tests and
+Python inherited or generated cases. Use **Run All**, **Run Selected**, **Debug
+Selected**, or **Stop**. Failures include source links and comparison values or
+Python tracebacks; provider/student origins and test durations appear per row.
+
+Each run freezes source and execution-only resources. Editing during a run keeps
+that run active and marks its results stale; live discovery refreshes separately.
+A subsequent run uses current files. Results and generated support files are not
+persisted as workspace files. This is a learning tool, not a grading boundary:
+tests and protocol output execute alongside editable student code.
+
+C++ checks are `EXPECT`, `EXPECT_EQUAL`, `EXPECT_ERROR`, and `EXPECT_NO_ERROR`.
+`PROVIDED_TEST` labels teacher tests and `STUDENT_TEST` labels student tests.
+The first failed check unwinds the current test; the next test still runs.
+`EXPECT_ERROR` accepts any C++ exception, and never consumes an internal failed
+check. Operands are evaluated once. Integers compare exactly, strings compare
+contents, and floating values use absolute/relative tolerance `1e-9`; matching
+infinities compare equal and NaNs do not. Unprintable values have an explicit
+placeholder; long values and tracebacks are bounded. `TIME_OPERATION` is not
+part of this release.
+
+Configure the suite deadline with `testing: { timeoutMs: 60000 }` on
+`WebIDEConfiguration`. The default is 60 seconds; ordinary Run and Debug Selected
+do not use this deadline. The clock starts at the runner's execution marker so
+compilation is excluded. The current C++ engine does not expose a separate
+post-compile execution-start event: a hang in C++ static initialization, before
+the runner starts, still requires **Stop**. Python emits its marker before it
+imports or discovers test modules. A fatal trap ends the suite and reports an
+interruption, rather than passing unexecuted tests.
+
+Custom providers implement Testing V2: `discover`, `prepareRun`, and optional
+`prepareExecution` for ordinary Run/Debug support. V1 test providers and the old
+`nova_test.h`/`EXPECT_EQUALS` surface have been removed. C++ execution reserves
+`webide_test.h`, `webide_test.cpp`, `webide_test_runner.cpp`, and
+`webide_test_config.h`; do not create workspace files with those names. The
+`web-ide/testing` entrypoint exports trusted support constants and
+`validateCppTestSupportFiles` for hosts that validate prepared build inputs.
+
+When a test location refers to a file changed since the run began, its source
+link opens a read-only excerpt of the executed source. Paused test debugging
+likewise offers the executed snapshot and removes the execution highlight from
+changed editor text. Each run retains its original bytes until the next run.
+Discovery uses static resources or the last resolved snapshot; dynamic resource
+callbacks run only when preparing a new execution.
 
 ## Understand storage
 

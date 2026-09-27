@@ -1,299 +1,225 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { IDEExecutionController } from '../../src/web-ide/contracts/contributions'
-import type {
-  TestCatalogV2,
-  TestDecoderFrameV2,
-  TestProviderV2,
-  TestReportEventV2,
-} from '../../src/web-ide/contracts/testing'
-import { createWorkbenchInstance } from '../../src/web-ide/react/workbench-instance-context'
 import { createTestingControllerV2 } from '../../src/testing/testing-controller-v2'
-
-const DIGEST = 'a'.repeat(64)
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise
-    reject = rejectPromise
-  })
-  return { promise, reject, resolve }
-}
-
-function oneMessageDecoder<T>(message: () => T) {
-  let sent = false
-  const frame = (): TestDecoderFrameV2<T> => {
-    if (sent) return { output: '', messages: [] }
-    sent = true
-    return { output: '', messages: [message()] }
-  }
-  return { push: frame, finish: () => ({ output: '', messages: [] }) }
-}
-
-async function fixture() {
-  const instance = createWorkbenchInstance()
-  await instance.workspace.initialize({
-    projectId: 'testing-v2',
-    initialFiles: { '/workspace/main.cpp': 'int main() {}\n' },
-    ephemeral: true,
-  })
-  const workspace = {
-    snapshot: () => instance.workspace.snapshot(),
-    revision: () => instance.workspace.revision,
-    subscribe: (listener: Parameters<typeof instance.workspace.subscribe>[0]) =>
-      instance.workspace.subscribe(listener),
-  }
-  const executed: Array<{ mode: string; workflow?: string }> = []
+import type { IDEExecutionController } from '../../src/web-ide/contracts/contributions'
+import type { TestProviderV2, TestReportEventPayloadV2, TestDescriptorV2 } from '../../src/web-ide/contracts/testing'
+import type { WorkspaceChangeV1 } from '../../src/web-ide/contracts/workspace'
+const tests: TestDescriptorV2[] = [{ id: 'alpha', name: 'Alpha', origin: 'student', location: { path: '/workspace/main.cpp', line: 2 } }, { id: 'beta', name: 'Beta', origin: 'provided' }]
+const complete: TestReportEventPayloadV2[] = [{ type: 'run_started' }, ...tests.map(descriptor => ({ type: 'test_discovered' as const, descriptor })), { type: 'discovery_finished' }, ...tests.flatMap(test => [{ type: 'test_started' as const, testId: test.id }, { type: 'test_passed' as const, testId: test.id }]), { type: 'run_finished' }]
+function fixture(options: { timeoutMs?: number; resolveResources?: () => Record<string,string> } = {}) {
+  let files = { '/workspace/main.cpp': 'original' }, revision = 0
+  const subscribers = new Set<(change: WorkspaceChangeV1) => void>()
+  const workspace = { snapshot: () => ({ ...files }), revision: () => revision, subscribe: (listener: (change: WorkspaceChangeV1) => void) => { subscribers.add(listener); return () => subscribers.delete(listener) } }
+  const edit = () => { files = { '/workspace/main.cpp': 'edited' }; revision++; for (const listener of subscribers) listener({} as WorkspaceChangeV1) }
+  let reports = complete, release: (() => void) | undefined, hold = false
   const execution: IDEExecutionController = {
-    start: vi.fn(async () => undefined),
-    stop: vi.fn(),
-    restart: vi.fn(async () => undefined),
-    executePrepared: vi.fn(async ({ plan, workflow }) => {
-      executed.push({ mode: plan.mode, workflow })
-      plan.streamInterceptor?.push('stdout', 'frame')
-      plan.streamInterceptor?.finish()
+    start: vi.fn(async () => undefined), restart: vi.fn(async () => undefined), stop: vi.fn(async () => { release?.() }),
+    executePrepared: vi.fn<NonNullable<IDEExecutionController['executePrepared']>>(async ({ plan }) => { plan.streamInterceptor?.push('stdout', 'frames'); if (hold) await new Promise<void>(resolve => { release = resolve }); plan.streamInterceptor?.finish(); return { type: 'completed', exitCode: 0 } }),
+  }
+  const provider: TestProviderV2 = {
+    apiVersion: 2, id: 'fixture', label: 'Tests', languageIds: ['cpp'],
+    discover: vi.fn<TestProviderV2['discover']>(async ({ workspaceDigest }) => ({ apiVersion: 2, kind: 'catalog', workspaceDigest, catalogDigest: 'a'.repeat(64), tests })),
+    prepareRun: vi.fn(async (request, context) => {
+      let sent = false
+      return { execution: { files: context.files, mode: request.mode }, decoder: { push: () => ({ output: '', messages: sent ? [] : (sent = true, reports.map((event, sequence) => ({ apiVersion: 2 as const, kind: 'report_event' as const, runId: context.runId, sequence, event }))) }), finish: () => ({ output: '', messages: [] }) } }
     }),
   }
-  let reportRun = 0
-  const prepareDiscovery = vi.fn<TestProviderV2['prepareDiscovery']>(async ({ files, workspaceDigest }) => {
-    const catalog: TestCatalogV2 = {
-      apiVersion: 2,
-      kind: 'catalog',
-      workspaceDigest,
-      catalogDigest: DIGEST,
-      tests: [
-        { id: 'test:v1:alpha', name: 'alpha', origin: 'student', location: { path: '/workspace/main.cpp', line: 1 } },
-        { id: 'test:v1:beta', name: 'beta', origin: 'provided' },
-      ],
-    }
-    return {
-      execution: { files, mode: 'run' },
-      decoder: oneMessageDecoder(() => catalog),
-    }
-  })
-  const prepareRun = vi.fn<TestProviderV2['prepareRun']>(async (request, context) => {
-    const runId = `run-${++reportRun}`
-    const events: TestReportEventV2[] = [
-      { apiVersion: 2, kind: 'report_event', runId, sequence: 0, event: { type: 'run_started' } },
-      { apiVersion: 2, kind: 'report_event', runId, sequence: 1, event: { type: 'run_finished', reason: 'completed' } },
-    ]
-    let index = 0
-    return {
-      execution: { files: context.files, mode: request.mode },
-      decoder: {
-        push: () => ({ output: '', messages: events.slice(index, index = events.length) }),
-        finish: () => ({ output: '', messages: [] }),
-      },
-    }
-  })
-  const provider: TestProviderV2 = {
-    apiVersion: 2,
-    id: 'synthetic.testing.v2',
-    label: 'Synthetic tests',
-    languageIds: ['cpp'],
-    prepareDiscovery,
-    prepareRun,
-  }
-  const controller = createTestingControllerV2({ provider, workspace, execution })
-  return { controller, executed, execution, instance, prepareDiscovery, prepareRun }
+  const controller = createTestingControllerV2({ provider, workspace, execution, ...options })
+  return { controller, provider, execution, edit, setReports: (next: TestReportEventPayloadV2[]) => { reports = next }, hold: () => { hold = true }, release: () => release?.() }
 }
-
+const run = { mode: 'run' as const, selection: { kind: 'all' as const } }
 describe('Testing V2 controller', () => {
-  it('discovers and supports run-all, selected-run, and selected-debug', async () => {
-    const { controller, executed, prepareRun } = await fixture()
-
-    await controller.discover()
-    expect(controller.snapshot()).toMatchObject({
-      state: 'ready',
-      catalogDigest: DIGEST,
-      tests: [{ id: 'test:v1:alpha' }, { id: 'test:v1:beta' }],
-    })
-
-    await controller.run({ mode: 'run', selection: { kind: 'all' } })
-    await controller.run({ mode: 'run', selection: { kind: 'tests', testIds: ['test:v1:alpha'] } })
-    await controller.run({ mode: 'debug', selection: { kind: 'tests', testIds: ['test:v1:beta'] } })
-
-    expect(prepareRun.mock.calls.map(([request]) => request)).toEqual([
-      { apiVersion: 2, kind: 'run_request', mode: 'run', workspaceDigest: expect.any(String), catalogDigest: DIGEST, selection: { kind: 'all' } },
-      { apiVersion: 2, kind: 'run_request', mode: 'run', workspaceDigest: expect.any(String), catalogDigest: DIGEST, selection: { kind: 'tests', testIds: ['test:v1:alpha'] } },
-      { apiVersion: 2, kind: 'run_request', mode: 'debug', workspaceDigest: expect.any(String), catalogDigest: DIGEST, selection: { kind: 'tests', testIds: ['test:v1:beta'] } },
-    ])
-    for (const [request, context] of prepareRun.mock.calls) {
-      expect(Object.keys(request)).toEqual([
-        'apiVersion',
-        'kind',
-        'mode',
-        'workspaceDigest',
-        'catalogDigest',
-        'selection',
-      ])
-      expect(Object.isFrozen(request)).toBe(true)
-      expect(Object.isFrozen(request.selection)).toBe(true)
-      expect(context).toEqual({ files: { '/workspace/main.cpp': 'int main() {}\n' } })
-    }
-    expect(executed).toEqual([
-      { mode: 'run', workflow: 'test' },
-      { mode: 'run', workflow: 'test' },
-      { mode: 'run', workflow: 'test' },
-      { mode: 'debug', workflow: 'test' },
-    ])
+  it('discovers without executing and binds run/debug to immutable snapshots', async () => {
+    const f = fixture(); await f.controller.discover()
+    expect(f.execution.executePrepared).not.toHaveBeenCalled()
+    expect(f.controller.snapshot().tests).toEqual(tests)
+    await f.controller.run(run)
+    expect(f.controller.snapshot().events.at(-1)?.event.type).toBe('run_finished')
+    const context = vi.mocked(f.provider.prepareRun).mock.calls[0][1]
+    expect(context.files).toEqual({ '/workspace/main.cpp': 'original' })
+    expect(Object.isFrozen(context.files)).toBe(true)
+    expect(context.runId).toMatch(/^[a-f0-9]{32}$/)
+    expect(f.execution.executePrepared).toHaveBeenCalledWith(expect.objectContaining({ resourcesResolved: true }))
+    await f.controller.dispose()
   })
-
-  it('invalidates discovery through the public workspace feed after external application', async () => {
-    const { controller, instance, prepareDiscovery } = await fixture()
-    await controller.discover()
-    expect(controller.snapshot().state).toBe('ready')
-
-    await instance.workspace.applyExternal({
-      version: 1,
-      kind: 'apply',
-      transactionId: 'remote-test-edit',
-      expectedRevision: instance.workspace.revision,
-      origin: { kind: 'external-authority', source: 'remote-test' },
-      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'int main() { return 1; }\n' }],
-    })
-
-    expect(controller.snapshot()).toMatchObject({ state: 'idle', tests: [] })
-    await controller.run({ mode: 'run', selection: { kind: 'all' } })
-    expect(prepareDiscovery).toHaveBeenCalledTimes(2)
+  it('resolves dynamic resources once for each run and preserves the merged snapshot', async () => {
+    const resolveResources = vi.fn(() => ({ '/sysroot/library.h': 'one' }))
+    const f = fixture({ resolveResources }); f.hold()
+    const running = f.controller.run(run)
+    await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledOnce())
+    expect(resolveResources).toHaveBeenCalledOnce()
+    expect(vi.mocked(f.provider.prepareRun).mock.calls[0][1].files['/sysroot/library.h']).toBe('one')
+    f.release(); await running; await f.controller.dispose()
   })
-
-  it('rejects a selected id outside the digest-bound catalog', async () => {
-    const { controller } = await fixture()
-    await controller.discover()
-    await expect(controller.run({
-      mode: 'debug',
-      selection: { kind: 'tests', testIds: ['test:v1:missing'] },
-    })).rejects.toMatchObject({ code: 'selection_stale' })
+  it('keeps frozen runs active through edits and preserves stale completed results', async () => {
+    const f = fixture(); f.hold(); const running = f.controller.run(run)
+    await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledOnce())
+    f.edit(); expect(f.execution.stop).not.toHaveBeenCalled()
+    expect(f.controller.snapshot().sourceFiles?.['/workspace/main.cpp']).toBe('original')
+    expect(Object.isFrozen(f.controller.snapshot().sourceFiles)).toBe(true)
+    expect(f.controller.snapshot()).toMatchObject({ state: 'running', stale: true })
+    f.release(); await running
+    expect(f.controller.snapshot()).toMatchObject({ state: 'ready', stale: true })
+    expect(f.controller.snapshot().events.at(-1)?.event.type).toBe('run_finished')
+    await f.controller.discover()
+    expect(f.controller.snapshot().events).toHaveLength(complete.length)
+    await f.controller.dispose()
   })
-
-  it('rejects a per-test terminal event without the frozen required test id', async () => {
-    const { controller, prepareRun } = await fixture()
-    await controller.discover()
-    prepareRun.mockResolvedValueOnce({
-      execution: { files: { '/workspace/main.cpp': 'int main() {}\n' }, mode: 'run' },
-      decoder: oneMessageDecoder(() => ({
-        apiVersion: 2,
-        kind: 'report_event',
-        runId: 'run-invalid-terminal',
-        sequence: 0,
-        event: { type: 'test_failed', message: 'missing id' },
-      } as TestReportEventV2)),
-    })
-
-    await expect(controller.run({ mode: 'run', selection: { kind: 'all' } }))
-      .rejects.toThrow(/requires a valid test id/)
-    expect(controller.snapshot().state).toBe('error')
+  it('ends stop and timeout with explicit terminal outcomes and disables timeout in debug', async () => {
+    const f = fixture({ timeoutMs: 20 }); f.hold(); f.setReports(complete.slice(0,5))
+    await f.controller.run(run)
+    expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ type: 'run_terminated', reason: 'timeout' })
+    expect(f.execution.stop).toHaveBeenCalledOnce()
+    const debugging = f.controller.run({ ...run, mode: 'debug' })
+    await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledTimes(2))
+    await new Promise(resolve => setTimeout(resolve, 35))
+    expect(f.execution.stop).toHaveBeenCalledOnce()
+    await f.controller.stop(); await debugging
+    expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ type: 'run_terminated', reason: 'stopped' })
+    await f.controller.dispose()
   })
-
-  it('cancels obsolete discovery after a deferred provider await without executing it', async () => {
-    const { controller, execution, instance, prepareDiscovery } = await fixture()
-    type PreparedDiscovery = Awaited<ReturnType<TestProviderV2['prepareDiscovery']>>
-    const gate = deferred<PreparedDiscovery>()
-    let requestedDigest = ''
-    prepareDiscovery.mockImplementationOnce(async (request) => {
-      requestedDigest = request.workspaceDigest
-      return gate.promise
-    })
-
-    const discovering = controller.discover()
-    await vi.waitFor(() => expect(prepareDiscovery).toHaveBeenCalledTimes(1))
-    await instance.workspace.applyExternal({
-      version: 1,
-      kind: 'apply',
-      transactionId: 'invalidate-deferred-discovery',
-      expectedRevision: instance.workspace.revision,
-      origin: { kind: 'external-authority', source: 'remote-test' },
-      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'changed\n' }],
-    })
-    gate.resolve({
-      execution: { files: { '/workspace/main.cpp': 'stale\n' }, mode: 'run' },
-      decoder: oneMessageDecoder(() => ({
-        apiVersion: 2,
-        kind: 'catalog',
-        workspaceDigest: requestedDigest,
-        catalogDigest: DIGEST,
-        tests: [],
-      })),
-    })
-    await discovering
-
-    expect(execution.executePrepared).not.toHaveBeenCalled()
-    expect(controller.snapshot()).toMatchObject({ state: 'idle', tests: [] })
+  it.each([
+    [complete.slice(0,5), 'runtime_crash'],
+    [[{ type: 'run_started' }, { type: 'discovery_finished' }, { type: 'test_passed', testId: 'alpha' }], 'protocol_violation'],
+    [[{ type: 'run_started' }, { type: 'test_discovered', descriptor: tests[0] }, { type: 'discovery_finished' }, { type: 'run_finished' }], 'protocol_violation'],
+    [[{ type: 'run_started' }, { type: 'run_started' }], 'protocol_violation'],
+    [[], 'build_failed'],
+  ] as const)('does not turn incomplete or malformed reports into success', async (events, reason) => {
+    const f = fixture(); f.setReports([...events] as TestReportEventPayloadV2[]); await f.controller.run(run)
+    expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ type: 'run_terminated', reason })
+    await f.controller.dispose()
   })
-
-  it('cancels deferred run preparation on a newer feed revision', async () => {
-    const { controller, executed, instance, prepareRun } = await fixture()
-    await controller.discover()
-    type PreparedRun = Awaited<ReturnType<TestProviderV2['prepareRun']>>
-    const gate = deferred<PreparedRun>()
-    prepareRun.mockImplementationOnce(async () => gate.promise)
-
-    const running = controller.run({ mode: 'run', selection: { kind: 'all' } })
-    await vi.waitFor(() => expect(prepareRun).toHaveBeenCalledTimes(1))
-    await instance.workspace.applyExternal({
-      version: 1,
-      kind: 'apply',
-      transactionId: 'invalidate-deferred-run',
-      expectedRevision: instance.workspace.revision,
-      origin: { kind: 'external-authority', source: 'remote-test' },
-      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'changed\n' }],
-    })
-    gate.resolve({
-      execution: { files: { '/workspace/main.cpp': 'stale\n' }, mode: 'run' },
-      decoder: oneMessageDecoder<TestReportEventV2>(() => ({
-        apiVersion: 2,
-        kind: 'report_event',
-        runId: 'stale-run',
-        sequence: 0,
-        event: { type: 'run_started' },
-      })),
-    })
-    await running
-
-    expect(executed).toHaveLength(1)
-    expect(controller.snapshot().state).toBe('idle')
+  it('surfaces build rejection/busy and rejects empty or stale selected IDs without running', async () => {
+    const f = fixture()
+    await f.controller.run({ mode: 'debug', selection: { kind: 'tests', testIds: [] } })
+    expect(f.execution.executePrepared).not.toHaveBeenCalled()
+    await f.controller.run({ mode: 'run', selection: { kind: 'tests', testIds: ['missing'] } })
+    expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ reason: 'selection_stale' })
+    vi.mocked(f.execution.executePrepared!).mockResolvedValueOnce({ type: 'build_failed', message: 'Compiler error' })
+    await f.controller.run(run)
+    expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ reason: 'build_failed', message: 'Compiler error' })
+    await f.controller.dispose()
   })
-
-  it('stops an executing obsolete run once and never publishes its late result', async () => {
-    const { controller, execution, instance } = await fixture()
-    await controller.discover()
-    const gate = deferred<void>()
-    vi.mocked(execution.executePrepared!).mockImplementationOnce(async () => gate.promise)
-
-    const running = controller.run({ mode: 'run', selection: { kind: 'all' } })
-    await vi.waitFor(() => expect(controller.snapshot().state).toBe('running'))
-    await instance.workspace.applyExternal({
-      version: 1,
-      kind: 'apply',
-      transactionId: 'invalidate-active-run',
-      expectedRevision: instance.workspace.revision,
-      origin: { kind: 'external-authority', source: 'remote-test' },
-      operations: [{ op: 'write', path: '/workspace/main.cpp', text: 'changed\n' }],
-    })
-    expect(execution.stop).toHaveBeenCalledTimes(1)
-    gate.resolve()
-    await running
-
-    expect(controller.snapshot()).toMatchObject({ state: 'idle', events: [] })
+  it('accepts runtime-only descriptors and later selected reruns for the same inputs', async () => {
+    const f = fixture(); const runtime = { id: 'runtime-only', name: 'Macro test', origin: 'student' as const }
+    f.setReports([{ type: 'run_started' }, { type: 'test_discovered', descriptor: runtime }, { type: 'discovery_finished' }, { type: 'test_started', testId: runtime.id }, { type: 'test_passed', testId: runtime.id }, { type: 'run_finished' }])
+    await f.controller.run(run)
+    await f.controller.run({ mode: 'run', selection: { kind: 'tests', testIds: [runtime.id] } })
+    expect(f.execution.executePrepared).toHaveBeenCalledTimes(2)
+    expect(f.controller.snapshot().events.at(-1)?.event.type).toBe('run_finished')
+    await f.controller.dispose()
   })
+})
 
-  it('stops and disposes once while execution is deferred', async () => {
-    const { controller, execution } = await fixture()
-    const gate = deferred<void>()
-    vi.mocked(execution.executePrepared!).mockImplementationOnce(async () => gate.promise)
-    const discovering = controller.discover()
-    await vi.waitFor(() => expect(execution.executePrepared).toHaveBeenCalledTimes(1))
+it('rejects unselected cases while allowing selected-run fixture failures', async () => {
+  const f = fixture()
+  const fixtureRow: TestDescriptorV2 = { id: 'setup', name: 'setUpClass', origin: 'student', kind: 'fixture' }
+  f.setReports([{ type: 'run_started' }, { type: 'test_discovered', descriptor: tests[0] }, { type: 'discovery_finished' }, { type: 'test_discovered', descriptor: fixtureRow }, { type: 'test_started', testId: 'setup' }, { type: 'test_errored', testId: 'setup' }, { type: 'test_started', testId: 'alpha' }, { type: 'test_skipped', testId: 'alpha' }, { type: 'run_finished' }])
+  await f.controller.run({ mode: 'run', selection: { kind: 'tests', testIds: ['alpha'] } })
+  expect(f.controller.snapshot().events.at(-1)?.event.type).toBe('run_finished')
+  f.setReports(complete)
+  await f.controller.run({ mode: 'run', selection: { kind: 'tests', testIds: ['alpha'] } })
+  expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ type: 'run_terminated', reason: 'protocol_violation' })
+  await f.controller.dispose()
+})
 
-    const disposed = controller.dispose()
-    await disposed
-    expect(execution.stop).toHaveBeenCalledTimes(1)
-    expect(controller.snapshot().state).toBe('disposed')
-    gate.resolve()
-    await discovering
-    await controller.dispose()
-    expect(execution.stop).toHaveBeenCalledTimes(1)
-    expect(controller.snapshot().state).toBe('disposed')
+it('refreshes live discovery during a frozen run without mutating its result identity', async () => {
+  const f = fixture(); f.hold()
+  const running = f.controller.run(run)
+  await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledOnce())
+  const digest = f.controller.snapshot().workspaceDigest
+  f.edit(); await f.controller.discover()
+  expect(f.controller.snapshot()).toMatchObject({ state: 'running', stale: true, workspaceDigest: digest, liveTests: tests })
+  expect(f.execution.stop).not.toHaveBeenCalled()
+  f.release(); await running; await f.controller.dispose()
+})
+
+it('includes changed resource bytes in catalog validity and marks old results stale', async () => {
+  let resource = 'first'
+  const f = fixture({ resolveResources: () => ({ '/sysroot/support.h': resource }) })
+  await f.controller.run(run)
+  const digest = f.controller.snapshot().catalogDigest
+  resource = 'second'; await f.controller.discover()
+  expect(f.controller.snapshot().catalogDigest).toBe(digest)
+  expect(f.controller.snapshot().stale).toBe(false)
+  await f.controller.run(run)
+  expect(f.controller.snapshot().catalogDigest).not.toBe(digest)
+  await f.controller.dispose()
+})
+
+it('restarts the selected testing workflow with a fresh report identity', async () => {
+  const f = fixture(); f.hold(); f.setReports(complete.slice(0, 5))
+  const first = f.controller.run({ mode: 'debug', selection: { kind: 'tests', testIds: ['alpha'] } })
+  await vi.waitFor(() => expect(f.provider.prepareRun).toHaveBeenCalledOnce())
+  await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledOnce())
+  const restarting = f.controller.restart()
+  await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledTimes(2))
+  const calls = vi.mocked(f.provider.prepareRun).mock.calls
+  expect(calls[1][0]).toMatchObject({ mode: 'debug', selection: { kind: 'tests', testIds: ['alpha'] } })
+  expect(calls[1][1].runId).not.toBe(calls[0][1].runId)
+  await f.controller.stop(); await first; await restarting; await f.controller.dispose()
+})
+
+
+it('keeps authoritative result descriptors frozen across refreshes and live name edits', async () => {
+  const f = fixture()
+  f.setReports([{ type: 'run_started' }, { type: 'test_discovered', descriptor: tests[0] }, { type: 'discovery_finished' }, { type: 'test_started', testId: 'alpha' }, { type: 'test_passed', testId: 'alpha' }, { type: 'run_finished' }])
+  await f.controller.run(run)
+  await f.controller.discover()
+  expect(f.controller.snapshot().tests).toEqual([tests[0]])
+  vi.mocked(f.provider.discover).mockImplementation(async ({ workspaceDigest }) => ({ apiVersion: 2, kind: 'catalog', workspaceDigest, catalogDigest: 'b'.repeat(64), tests: [{ ...tests[0], name: 'New name on the same line' }] }))
+  f.edit(); await f.controller.discover()
+  expect(f.controller.snapshot().tests).toEqual([tests[0]])
+  expect(f.controller.snapshot().liveTests?.[0].name).toBe('New name on the same line')
+  await f.controller.dispose()
+})
+
+
+it('bounds accumulated report memory independently of the per-frame cap', async () => {
+  const f = fixture()
+  const message = 'x'.repeat(60_000)
+  f.setReports([{ type: 'run_started' }, ...Array.from({ length: 300 }, () => ({ type: 'output' as const, message }))])
+  await f.controller.run(run)
+  expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ type: 'run_terminated', reason: 'protocol_violation', message: expect.stringContaining('16 MiB') })
+  expect(f.controller.snapshot().events.length).toBeLessThan(300)
+  await f.controller.dispose()
+})
+
+
+it('lets a runtime crash after suite completion override the earlier terminal report', async () => {
+  const f = fixture()
+  vi.mocked(f.execution.executePrepared!).mockImplementation(async ({ plan }) => {
+    plan.streamInterceptor!.push('stdout', 'frames')
+    return { type: 'error', error: { type: 'RuntimeError', message: 'A global destructor crashed' } }
   })
+  await f.controller.run(run)
+  expect(f.controller.snapshot().events.at(-1)?.event).toMatchObject({ type: 'run_terminated', reason: 'runtime_crash', message: 'A global destructor crashed' })
+  expect(f.controller.snapshot().events.filter(({ event }) => event.type === 'run_finished' || event.type === 'run_terminated')).toHaveLength(1)
+  await f.controller.dispose()
+})
+
+
+it('never invokes dynamic resource callbacks for discovery and clears retained results on reset', async () => {
+  const resolveResources = vi.fn(() => ({ '/sysroot/generated.h': 'one' }))
+  const f = fixture({ resolveResources })
+  await f.controller.discover(); await f.controller.discover()
+  expect(resolveResources).not.toHaveBeenCalled()
+  await f.controller.run(run)
+  expect(resolveResources).toHaveBeenCalledOnce()
+  await f.controller.discover(); expect(resolveResources).toHaveBeenCalledOnce()
+  await f.controller.clearResults(); f.edit(); await f.controller.discover()
+  expect(f.controller.snapshot().events).toEqual([])
+  expect(f.controller.snapshot().sourceFiles).toBeUndefined()
+  expect(resolveResources).toHaveBeenCalledOnce()
+  await f.controller.dispose()
+})
+
+it('does not schedule discovery after disposal races an edited active run', async () => {
+  const f = fixture(); f.hold()
+  const running = f.controller.run(run)
+  await vi.waitFor(() => expect(f.execution.executePrepared).toHaveBeenCalledOnce())
+  f.edit(); await f.controller.dispose(); await running
+  const discoveries = vi.mocked(f.provider.discover).mock.calls.length
+  await new Promise(resolve => setTimeout(resolve, 210))
+  expect(f.controller.snapshot().state).toBe('disposed')
+  expect(f.provider.discover).toHaveBeenCalledTimes(discoveries)
 })

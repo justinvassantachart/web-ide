@@ -1,6 +1,9 @@
 import MonacoEditor, { type OnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react'
+import { useTestingSnapshot } from '@/testing/use-testing-snapshot'
+import { ExecutedSourceDialog, type ExecutedSource } from '@/testing/ExecutedSourceDialog'
+import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { EditorTabs } from './EditorTabs'
 import { WorkspaceModelViews } from './workspace-model-view'
@@ -29,11 +32,17 @@ export function Editor() {
     const { currentLine, currentFile, debugMode, breakpoints, toggleBreakpoint } = useWorkbenchDebugStore()
     const instance = useWorkbenchInstance()
     const { workspace } = instance
+    const { snapshot: testing } = useTestingSnapshot()
+    const originalDebugSource = currentFile ? testing.sourceFiles?.[currentFile] : undefined
+    const staleDebugSource = testing.state === 'running' && debugMode === 'paused' && originalDebugSource !== undefined
+        && originalDebugSource !== (currentFile && workspace.fileExists(currentFile) ? workspace.readFile(currentFile) : undefined)
+    const [executedSource, setExecutedSource] = useState<ExecutedSource>()
     const monaco = useSafeMonaco()
     const theme = useThemeStore((s) => s.theme)
     const engine = useEngine()
     const host = useIDEHost()
     const readOnly = host?.workspace?.readOnly === true
+        || (!!activeFile && host?.workspace?.mutationPolicy?.({ kind: 'write', path: activeFile }) === false)
     const languageTooling = useLanguageTooling()
     const { snapshot: sourcePresentation, revealRequest } = useSourcePresentationState()
     const languageToolingRef = useRef(languageTooling)
@@ -174,7 +183,7 @@ export function Editor() {
     }, [instance, monaco, workspace])
 
     useEffect(() => {
-        if (debugMode === 'paused' && currentFile && currentLine !== null) {
+        if (debugMode === 'paused' && !staleDebugSource && currentFile && currentLine !== null) {
             const stepped = lastDebugState.current.file !== currentFile || lastDebugState.current.line !== currentLine
             if (stepped) {
                 lastDebugState.current = { file: currentFile, line: currentLine }
@@ -185,7 +194,7 @@ export function Editor() {
         } else if (debugMode !== 'paused') {
             lastDebugState.current = { file: null, line: null }
         }
-    }, [debugMode, currentFile, currentLine, instance, setActiveFile, workspace])
+    }, [debugMode, staleDebugSource, currentFile, currentLine, instance, setActiveFile, workspace])
 
     const getDecoIds = (path: string): DecoIds => {
         let entry = decoIdsByPath.current.get(path)
@@ -332,14 +341,14 @@ export function Editor() {
         // currentFile itself when the session is no longer paused, so the
         // yellow arrow doesn't linger after the program exits mid-pause.
         for (const [path, ids] of decoIdsByPath.current.entries()) {
-            if (path === currentFile && debugMode === 'paused') continue
+            if (path === currentFile && debugMode === 'paused' && !staleDebugSource) continue
             if (ids.step.length === 0) continue
             const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(path)))
             if (model) ids.step = model.deltaDecorations(ids.step, [])
             else ids.step = []
         }
 
-        if (debugMode === 'paused' && currentFile && currentLine !== null) {
+        if (debugMode === 'paused' && !staleDebugSource && currentFile && currentLine !== null) {
             const model = monaco.editor.getModel(monaco.Uri.parse(workspace.toMonacoUri(currentFile)))
             if (model) {
                 const ids = getDecoIds(currentFile)
@@ -356,7 +365,7 @@ export function Editor() {
                 }
             }
         }
-    }, [activeFile, currentFile, currentLine, debugMode, editorReady, monaco, workspace])
+    }, [activeFile, currentFile, currentLine, debugMode, staleDebugSource, editorReady, monaco, workspace])
 
     // Render owner-scoped plugin decorations without exposing Monaco or this
     // per-file identifier map through the public contribution API.
@@ -515,6 +524,8 @@ export function Editor() {
     return (
         <div className="h-full overflow-hidden bg-background flex flex-col">
             <EditorTabs />
+            {staleDebugSource && currentFile && currentLine && <div role="status" className="px-3 py-2 text-xs text-amber-500">Paused in the executed source at {currentFile}:{currentLine}. This file has changed. <Button size="sm" variant="ghost" onClick={() => setExecutedSource({ path: currentFile, line: currentLine, text: originalDebugSource! })}>View executed source</Button></div>}
+            <ExecutedSourceDialog source={executedSource} close={() => setExecutedSource(undefined)} />
             {/* `path` makes Monaco keep one ITextModel per file (including its
                 content and undo history). We disable the wrapper's module-global
                 path-keyed view-state cache: it crosses IDE instances and can

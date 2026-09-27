@@ -9,7 +9,9 @@ service or Firebase.
 
 The package is distributed through
 [web-ide releases](https://github.com/justinvassantachart/web-ide/releases), not
-through an npm registry publication. Use the verified `0.6.0` release below;
+through an npm registry publication. The testing example below requires `0.7.0`.
+This source prepares that release; the commands require its published immutable
+package and artifact manifest and fail until both are available.
 `npm install web-ide` alone does not identify this project.
 
 Run these commands from an existing React/Vite application. React and React DOM
@@ -18,14 +20,32 @@ must satisfy `^18.3.0 || ^19.0.0`.
 ```sh
 mkdir -p vendor
 curl --fail --location \
-  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/web-ide-0.6.0.tgz \
-  --output vendor/web-ide-0.6.0.tgz
-printf '%s\n' 'a9e154d154f7903a0b1a13d89d92c3f38d1407dc9c1597baf48b7cad85671653  vendor/web-ide-0.6.0.tgz' | shasum -a 256 -c -
-npm install --save-exact ./vendor/web-ide-0.6.0.tgz
+  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/web-ide-0.7.0.tgz \
+  --output vendor/web-ide-0.7.0.tgz
+curl --fail --location \
+  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/artifact-manifest.json \
+  --output vendor/web-ide-0.7.0-manifest.json
+node --input-type=module <<'JS'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+const manifest = JSON.parse(readFileSync('vendor/web-ide-0.7.0-manifest.json', 'utf8'))
+assert.equal(manifest.package.version, '0.7.0')
+assert.equal(manifest.distribution.repository, 'justinvassantachart/web-ide')
+assert.equal(manifest.distribution.intendedTag, 'web-ide-v0.7.0')
+const artifact = manifest.distribution.artifact
+assert.equal(artifact.fileName, 'web-ide-0.7.0.tgz')
+const bytes = readFileSync('vendor/web-ide-0.7.0.tgz')
+assert.equal(bytes.length, artifact.size)
+assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256)
+assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), artifact.sha512Integrity)
+console.log('Verified WebIDE 0.7.0 package bytes')
+JS
+npm install --save-exact ./vendor/web-ide-0.7.0.tgz
 npm install --save-dev vite-plugin-wasm buffer@6.0.3 events@3.3.0 path-browserify@1.0.1 process@0.11.10 stream-browserify@3.0.0
 ```
 
-Continue only after the checksum command reports `OK`. Commit the tarball and
+Continue only after the verification command succeeds. Commit the tarball and
 lockfile, or use the same immutable release asset in your dependency workflow.
 The release includes its package checksum, source archive, dependency inventory,
 and validation records. Its existing release bytes are unchanged by later

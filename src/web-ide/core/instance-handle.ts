@@ -177,6 +177,7 @@ export function createWebIDEInstanceController(
       }
       debugStore.getState().reset()
       testStore.getState().reset()
+      void instance.testingV2.snapshot()?.clearResults().catch(error => console.error('[web-ide] Could not clear test results', error))
     },
   }
 

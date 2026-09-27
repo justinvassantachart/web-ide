@@ -95,7 +95,7 @@ export function partitionWorkspaceResources(
   return { workspaceFiles, executionFiles }
 }
 
-function resolveExecutionResourceFiles(
+export function resolveExecutionResourceFiles(
   contributions: readonly IDEWorkspaceResourceContribution[],
 ): WorkspaceFiles | undefined {
   let executionFiles: WorkspaceFiles | undefined

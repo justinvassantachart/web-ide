@@ -2,21 +2,23 @@ import type { IDEExecutionController } from '@/web-ide/contracts/contributions'
 import type { CppCompileProfileV1 } from '@/web-ide/contracts/cpp'
 import type { IDEWorkspaceFeed } from '@/web-ide/contracts/workspace'
 import type {
-  TestCatalogDecoderV2,
   TestCatalogV2,
   TestDescriptorV2,
   TestProviderV2,
-  TestReportDecoderV2,
   TestReportEventV2,
+  TestReportEventPayloadV2,
   TestRunIntentV2,
   TestRunRequestV2,
   TestSelectionV2,
 } from '@/web-ide/contracts/testing'
+import type { WorkspaceFiles } from '@/web-ide/contracts/host'
+import { assertNoFlattenedRuntimePathCollisions, normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
 import type { RuntimeStreamInterceptor } from '@/web-ide/contracts/runtime'
 import {
   canonicalStringifyV1,
   normalizeWorkspacePathV1,
   workspaceDigestV1,
+  sha256Hex,
 } from '@/web-ide/public/canonical-contract'
 
 const SHA256 = /^[a-f0-9]{64}$/
@@ -24,6 +26,8 @@ const TEST_ID = /^[A-Za-z0-9._:/@+-]{1,512}$/
 const RUN_ID = /^[A-Za-z0-9._:-]{1,128}$/
 const REPORT_EVENT_TYPES = new Set([
   'run_started',
+  'test_discovered',
+  'discovery_finished',
   'test_started',
   'test_passed',
   'test_failed',
@@ -79,8 +83,13 @@ export interface IDETestingSnapshotV2 {
   readonly workspaceDigest?: string
   readonly catalogDigest?: string
   readonly tests: readonly TestDescriptorV2[]
+  readonly liveTests?: readonly TestDescriptorV2[]
   readonly events: readonly TestReportEventV2[]
   readonly error?: string
+  readonly stale?: boolean
+  readonly runId?: string
+  /** Original frozen source used for accurate stale-result and debugger navigation. */
+  readonly sourceFiles?: Readonly<WorkspaceFiles>
 }
 
 export interface IDETestingControllerV2 {
@@ -89,6 +98,8 @@ export interface IDETestingControllerV2 {
   discover(): Promise<void>
   run(intent: TestRunIntentV2): Promise<void>
   stop(): void | Promise<void>
+  restart(): Promise<void>
+  clearResults(): Promise<void>
   dispose(): void | Promise<void>
 }
 
@@ -97,19 +108,25 @@ export interface CreateTestingControllerV2Options {
   readonly workspace: IDEWorkspaceFeed
   readonly execution: IDEExecutionController
   readonly profile?: CppCompileProfileV1
+  readonly timeoutMs?: number
+  /** Resolves execution-only callbacks exactly once for each operation. */
+  readonly resolveResources?: () => WorkspaceFiles | undefined
+  /** Static resources only; discovery must never invoke per-run callbacks. */
+  readonly resolveDiscoveryResources?: () => WorkspaceFiles | undefined
 }
 
 function freezeSnapshot(snapshot: IDETestingSnapshotV2): IDETestingSnapshotV2 {
   return Object.freeze({
     ...snapshot,
     tests: Object.freeze([...snapshot.tests]),
+    ...(snapshot.liveTests ? { liveTests: Object.freeze([...snapshot.liveTests]) } : {}),
     events: Object.freeze([...snapshot.events]),
   })
 }
 
 function validateDescriptor(value: TestDescriptorV2): TestDescriptorV2 {
   assertObject(value, 'Testing V2 descriptor')
-  assertKeys(value, ['id', 'name', 'origin'], ['group', 'location'], 'Testing V2 descriptor')
+  assertKeys(value, ['id', 'name', 'origin'], ['group', 'location', 'kind'], 'Testing V2 descriptor')
   if (
     typeof value.id !== 'string'
     || !TEST_ID.test(value.id)
@@ -120,6 +137,7 @@ function validateDescriptor(value: TestDescriptorV2): TestDescriptorV2 {
     throw new TypeError('Testing V2 descriptor is invalid')
   }
   if (!['student', 'provided', 'external'].includes(value.origin)) throw new TypeError('Testing V2 descriptor origin is invalid')
+  if (value.kind !== undefined && value.kind !== 'fixture') throw new TypeError('Testing V2 descriptor kind is invalid')
   if (value.group !== undefined && (typeof value.group !== 'string' || exceedsCodePointLimit(value.group, 512))) {
     throw new TypeError('Testing V2 descriptor group is invalid')
   }
@@ -143,6 +161,7 @@ function validateDescriptor(value: TestDescriptorV2): TestDescriptorV2 {
     name: value.name,
     ...(value.group === undefined ? {} : { group: value.group }),
     origin: value.origin,
+    ...(value.kind === 'fixture' ? { kind: 'fixture' as const } : {}),
     ...(value.location === undefined ? {} : { location: Object.freeze({ ...value.location }) }),
   })
 }
@@ -191,12 +210,29 @@ function validateReportEvent(value: TestReportEventV2): TestReportEventV2 {
   assertKeys(
     event,
     ['type'],
-    ['testId', 'durationMs', 'message', 'path', 'line', 'column', 'reason'],
+    ['testId', 'durationMs', 'message', 'path', 'line', 'column', 'reason', 'descriptor', 'actual', 'expected', 'details'],
     'Testing V2 report event',
   )
   if (typeof event.type !== 'string' || !REPORT_EVENT_TYPES.has(event.type)) {
     throw new TypeError('Testing V2 report event type is invalid')
   }
+  const optionalByType: Record<string, readonly string[]> = {
+    run_started: ['message'], test_discovered: ['descriptor'], discovery_finished: [],
+    test_started: ['testId', 'message', 'path', 'line', 'column'],
+    output: ['message', 'testId'], run_finished: ['reason', 'durationMs', 'message'],
+    run_terminated: ['reason', 'message'],
+  }
+  assertKeys(event, ['type'], optionalByType[event.type] ?? ['testId', 'durationMs', 'message', 'path', 'line', 'column', 'actual', 'expected', 'details'], 'Testing V2 report event')
+  if (event.type === 'test_discovered') validateDescriptor(event.descriptor)
+  for (const key of ['actual', 'expected'] as const) {
+    if (!(key in event)) continue
+    const value = (event as unknown as Record<string, unknown>)[key]
+    assertObject(value, 'Testing V2 value')
+    assertKeys(value, ['value'], ['expression'], 'Testing V2 value')
+    if (typeof value.value !== 'string' || value.value.length > 8192 || (value.expression !== undefined && (typeof value.expression !== 'string' || value.expression.length > 8192))) throw new TypeError('Testing V2 value is invalid')
+  }
+  if ('details' in event && (typeof event.details !== 'string' || event.details.length > 32768)) throw new TypeError('Testing V2 details are invalid')
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 65536) throw new TypeError('Testing V2 report exceeds frame limit')
   const testEvent = ['test_started', 'test_passed', 'test_failed', 'test_skipped', 'test_errored'].includes(event.type)
   const eventTestId = 'testId' in event ? event.testId : undefined
   if (eventTestId !== undefined && (typeof eventTestId !== 'string' || !TEST_ID.test(eventTestId))) {
@@ -238,24 +274,11 @@ function validateReportEvent(value: TestReportEventV2): TestReportEventV2 {
   if (event.type === 'run_finished' && reason !== undefined && reason !== 'completed') {
     throw new TypeError('Testing V2 finished report reason is invalid')
   }
-  return Object.freeze({ ...value, event: Object.freeze({ ...event }) })
-}
-
-function createDecoderInterceptor<T>(
-  decoder: {
-    push: TestCatalogDecoderV2['push'] | TestReportDecoderV2['push']
-    finish: TestCatalogDecoderV2['finish'] | TestReportDecoderV2['finish']
-  },
-  consume: (message: T) => void,
-): RuntimeStreamInterceptor {
-  const consumeFrame = (frame: { output: string; messages: readonly unknown[] }) => {
-    for (const message of frame.messages) consume(message as T)
-    return frame.output
-  }
-  return {
-    push: (stream, chunk) => consumeFrame(decoder.push(stream, chunk)),
-    finish: () => consumeFrame(decoder.finish()),
-  }
+  return Object.freeze({ ...value, event: Object.freeze({ ...event,
+    ...(event.type === 'test_discovered' ? { descriptor: validateDescriptor(event.descriptor) } : {}),
+    ...('actual' in event && event.actual ? { actual: Object.freeze({ ...event.actual }) } : {}),
+    ...('expected' in event && event.expected ? { expected: Object.freeze({ ...event.expected }) } : {}),
+  }) })
 }
 
 export class TestingSelectionStaleError extends Error {
@@ -267,229 +290,252 @@ export class TestingSelectionStaleError extends Error {
   }
 }
 
-export function createTestingControllerV2(
-  options: CreateTestingControllerV2Options,
-): IDETestingControllerV2 {
-  if (options.provider.apiVersion !== 2) throw new TypeError('Testing V2 controller requires an apiVersion 2 provider')
+export function createTestingControllerV2(options: CreateTestingControllerV2Options): IDETestingControllerV2 {
+  if (options.provider.apiVersion !== 2) throw new TypeError('Testing requires an apiVersion 2 provider')
+  const timeoutMs = options.timeoutMs ?? 60_000
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_600_000) throw new TypeError('Testing timeout must be between 1 and 3600000 milliseconds')
   let current = freezeSnapshot({ state: 'idle', tests: [], events: [] })
-  let catalog: TestCatalogV2 | undefined
+  let runtimeInputs: string | undefined
+  let resultInputs: string | undefined
+  let runtimeTests: readonly TestDescriptorV2[] = []
+  let lastIntent: TestRunIntentV2 | undefined
+  let lastResources: Readonly<WorkspaceFiles> | undefined
   let disposed = false
-  let operationGeneration = 0
-  let activeExecutionGeneration: number | undefined
-  let cancellation = Promise.resolve()
+  let discoveryGeneration = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  type ActiveOperation = { stopReason?: 'stopped' | 'timeout' | 'protocol_violation'; executing: boolean; done?: Promise<void> }
+  let active: ActiveOperation | undefined
   const listeners = new Set<() => void>()
-
   const publish = (next: IDETestingSnapshotV2) => {
+    if (disposed) return
     current = freezeSnapshot(next)
     for (const listener of [...listeners]) {
-      try {
-        listener()
-      } catch (error) {
-        console.error('[web-ide] Testing V2 observer failed', error)
-      }
+      try { listener() } catch (error) { console.error('[web-ide] Testing observer failed', error) }
     }
   }
-  const assertLive = () => {
-    if (disposed) throw new Error('Testing V2 controller is disposed')
+  const assertLive = () => { if (disposed) throw new Error('Testing controller is disposed') }
+  const capture = (execute = false) => {
+    const workspace = Object.freeze({ ...options.workspace.snapshot() })
+    const resources = Object.freeze({ ...(execute ? options.resolveResources?.() ?? {} : lastResources ?? options.resolveDiscoveryResources?.() ?? {}) })
+    if (execute) lastResources = resources
+    const files = normalizeRuntimeFiles(workspace)
+    for (const [path, content] of Object.entries(normalizeRuntimeFiles(resources))) {
+      if (Object.hasOwn(files, path)) throw new TypeError(`Testing resource collides with workspace: ${path}`)
+      files[path] = content
+    }
+    assertNoFlattenedRuntimePathCollisions(files)
+    return { workspace, resources, files: Object.freeze(files), inputs: canonicalStringifyV1(files) }
   }
-  const execute = async (plan: Parameters<NonNullable<IDEExecutionController['executePrepared']>>[0]['plan']) => {
-    if (!options.execution.executePrepared) throw new Error('The selected workbench does not provide prepared execution')
-    await options.execution.executePrepared({ plan, workflow: 'test' })
+  const discoverSnapshot = async (captured: ReturnType<typeof capture>) => {
+    const workspaceDigest = await workspaceDigestV1(captured.workspace)
+    const discovered = validateCatalog(await options.provider.discover({ files: captured.files, workspaceDigest, profile: options.profile }), workspaceDigest)
+    // Resource bytes participate even if a provider only hashes the editable plane.
+    return Object.freeze({ ...discovered, catalogDigest: await sha256Hex(canonicalStringifyV1({ inputs: captured.inputs, catalogDigest: discovered.catalogDigest })) })
   }
-  const isCurrent = (generation: number, revision: number) =>
-    !disposed
-    && generation === operationGeneration
-    && revision === options.workspace.revision()
-  const cancelActiveExecution = (): Promise<void> => {
-    if (activeExecutionGeneration === undefined) return cancellation
-    activeExecutionGeneration = undefined
-    cancellation = cancellation
-      .then(() => options.execution.stop())
-      .then(() => undefined)
-      .catch((error) => {
-        console.error('[web-ide] Testing V2 cancellation failed', error)
-      })
-    return cancellation
-  }
-  const invalidate = () => {
-    operationGeneration += 1
-    catalog = undefined
-    void cancelActiveExecution()
-    if (!disposed) publish({ state: 'idle', tests: [], events: [] })
-  }
-  const unsubscribeWorkspace = options.workspace.subscribe(invalidate)
-
-  const discoverFor = async (generation: number, revision: number): Promise<boolean> => {
-    publish({ state: 'discovering', tests: [], events: [] })
-    const files = Object.freeze(options.workspace.snapshot())
-    const workspaceDigest = await workspaceDigestV1(files)
-    if (!isCurrent(generation, revision)) return false
-    const prepared = await options.provider.prepareDiscovery({ files, workspaceDigest, profile: options.profile })
-    if (!isCurrent(generation, revision)) return false
-    let received: TestCatalogV2 | undefined
-    const interceptor = createDecoderInterceptor<TestCatalogV2>(prepared.decoder, (message) => {
-      if (!isCurrent(generation, revision)) return
-      if (received) throw new TypeError('Testing V2 discovery emitted more than one catalog')
-      received = validateCatalog(message, workspaceDigest)
-    })
-    await cancellation
-    if (!isCurrent(generation, revision)) return false
-    // This guard intentionally sits immediately beside execution. A provider
-    // continuation cannot race a newer workspace revision into the runtime.
-    if (!isCurrent(generation, revision)) return false
-    activeExecutionGeneration = generation
+  const discover = async () => {
+    assertLive()
+    const generation = ++discoveryGeneration
+    const revision = options.workspace.revision()
+    publish({ ...current, state: active ? 'running' : 'discovering', error: undefined })
     try {
-      await execute({ ...prepared.execution, streamInterceptor: interceptor })
-    } finally {
-      if (activeExecutionGeneration === generation) activeExecutionGeneration = undefined
+      const captured = capture()
+      const discovered = await discoverSnapshot(captured)
+      if (disposed || generation !== discoveryGeneration || revision !== options.workspace.revision()) return
+      const stale = current.stale || (current.events.length > 0 && resultInputs !== undefined && resultInputs !== discovered.catalogDigest)
+      if (active) { publish({ ...current, stale, liveTests: discovered.tests }); return }
+      // A refresh must not relabel frozen results or reintroduce provisional
+      // rows eliminated by authoritative runtime discovery. Live candidates
+      // remain separate until the next run replaces the result snapshot.
+      publish(current.events.length
+        ? { ...current, state: 'ready', stale, liveTests: stale ? discovered.tests : undefined }
+        : { ...current, state: 'ready', stale, tests: discovered.tests, workspaceDigest: discovered.workspaceDigest, catalogDigest: discovered.catalogDigest })
+    } catch (error) {
+      if (!disposed && !active && generation === discoveryGeneration) publish({ ...current, state: 'error', error: String(error instanceof Error ? error.message : error) })
     }
-    if (!isCurrent(generation, revision)) return false
-    if (!received) throw new TypeError('Testing V2 discovery did not emit a catalog')
-    catalog = received
-    publish({
-      state: 'ready',
-      workspaceDigest: received.workspaceDigest,
-      catalogDigest: received.catalogDigest,
-      tests: received.tests,
-      events: [],
-    })
-    return true
   }
-
+  const scheduleDiscovery = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => { timer = undefined; if (!disposed) void discover() }, 180)
+  }
+  const unsubscribeWorkspace = options.workspace.subscribe(() => {
+    discoveryGeneration += 1
+    publish({ ...current, stale: current.events.length > 0 || !!active })
+    scheduleDiscovery()
+  })
   const controller: IDETestingControllerV2 = {
     snapshot: () => current,
-    subscribe(listener) {
-      assertLive()
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-    async discover() {
-      assertLive()
-      void cancelActiveExecution()
-      const generation = ++operationGeneration
-      const revision = options.workspace.revision()
-      try {
-        await discoverFor(generation, revision)
-        if (!isCurrent(generation, revision)) return
-      } catch (error) {
-        if (isCurrent(generation, revision)) {
-          publish({ state: 'error', tests: [], events: [], error: error instanceof Error ? error.message : String(error) })
-          throw error
-        }
-      }
-    },
+    subscribe(listener) { assertLive(); listeners.add(listener); return () => listeners.delete(listener) },
+    discover,
     async run(intent) {
       assertLive()
       validateRunIntent(intent)
-      void cancelActiveExecution()
-      const generation = ++operationGeneration
+      if (active) throw new Error('A test run is already active')
+      lastIntent = { mode: intent.mode, selection: intent.selection.kind === 'all' ? { kind: 'all' } : { kind: 'tests', testIds: [...intent.selection.testIds] } }
+      if (timer) clearTimeout(timer)
+      discoveryGeneration += 1
+      const operation: ActiveOperation = { executing: false }
+      active = operation
       const revision = options.workspace.revision()
-      try {
-        await cancellation
-        if (!isCurrent(generation, revision)) return
-        if (!catalog) {
-          const discovered = await discoverFor(generation, revision)
-          if (!isCurrent(generation, revision)) return
-          if (!discovered) return
-        }
-      } catch (error) {
-        if (isCurrent(generation, revision)) {
-          publish({ state: 'error', tests: [], events: [], error: error instanceof Error ? error.message : String(error) })
-          throw error
-        }
-        return
-      }
-      if (!isCurrent(generation, revision)) return
-      const selectedCatalog = catalog
-      if (!selectedCatalog) throw new TestingSelectionStaleError()
-      const files = Object.freeze(options.workspace.snapshot())
-      const currentDigest = await workspaceDigestV1(files)
-      if (!isCurrent(generation, revision)) return
-      if (currentDigest !== selectedCatalog.workspaceDigest) {
-        invalidate()
-        throw new TestingSelectionStaleError()
-      }
-      validateSelection(intent.selection, selectedCatalog.tests)
-      const selection: TestSelectionV2 = intent.selection.kind === 'all'
-        ? Object.freeze({ kind: 'all' })
-        : Object.freeze({ kind: 'tests', testIds: Object.freeze([...intent.selection.testIds]) })
-      const request: TestRunRequestV2 = Object.freeze({
-        apiVersion: 2,
-        kind: 'run_request',
-        mode: intent.mode,
-        workspaceDigest: selectedCatalog.workspaceDigest,
-        catalogDigest: selectedCatalog.catalogDigest,
-        selection,
-      })
+      const runId = crypto.randomUUID().replaceAll('-', '')
       const events: TestReportEventV2[] = []
-      try {
-        const prepared = await options.provider.prepareRun(request, { files })
-        if (!isCurrent(generation, revision)) return
-        let runId: string | undefined
-        let nextSequence = 0
-        const interceptor = createDecoderInterceptor<TestReportEventV2>(prepared.decoder, (message) => {
-          if (!isCurrent(generation, revision)) return
-          const validated = validateReportEvent(message)
-          runId ??= validated.runId
-          if (validated.runId !== runId || validated.sequence !== nextSequence) {
-            throw new TypeError('Testing V2 report run or sequence is invalid')
-          }
-          nextSequence += 1
-          events.push(validated)
-          if (!disposed && generation === operationGeneration) publish({ ...current, state: 'running', events })
-          if (validated.event.type === 'run_terminated' && validated.event.reason === 'selection_stale') catalog = undefined
-        })
-        await cancellation
-        if (!isCurrent(generation, revision)) return
-        publish({ ...current, state: 'running', events })
-        // Keep the final generation/revision guard adjacent to runtime entry.
-        if (!isCurrent(generation, revision)) return
-        activeExecutionGeneration = generation
-        try {
-          await execute({ ...prepared.execution, mode: request.mode, streamInterceptor: interceptor })
-        } finally {
-          if (activeExecutionGeneration === generation) activeExecutionGeneration = undefined
-        }
-        if (!isCurrent(generation, revision)) return
-        publish({ ...current, state: catalog ? 'ready' : 'idle', events })
-      } catch (error) {
-        if (isCurrent(generation, revision)) {
-          publish({ ...current, state: 'error', events, error: error instanceof Error ? error.message : String(error) })
-          throw error
-        }
+      let nextSequence = 0
+      let started = false
+      let discoveryFinished = false
+      let terminal = false
+      let activeTest: string | undefined
+      let deadline: ReturnType<typeof setTimeout> | undefined
+      let protocolError: string | undefined
+      let reportBytes = 0
+      let reportTimer: ReturnType<typeof setTimeout> | undefined
+      const descriptors = new Map<string, TestDescriptorV2>()
+      const completed = new Set<string>()
+      const append = (event: TestReportEventPayloadV2) => {
+        events.push(Object.freeze({ apiVersion: 2, kind: 'report_event', runId, sequence: nextSequence++, event }))
+        reportTimer ??= setTimeout(() => {
+          reportTimer = undefined
+          if (active === operation && !disposed) publish({ ...current, state: 'running', events })
+        }, 16)
       }
+      const terminate = (reason: Extract<TestReportEventPayloadV2, { type: 'run_terminated' }>['reason'], message?: string) => {
+        if (terminal) return
+        if (events.at(-1)?.event.type === 'run_finished' || events.at(-1)?.event.type === 'run_terminated') { events.pop(); nextSequence-- }
+        terminal = true
+        append({ type: 'run_terminated', reason, ...(message ? { message } : {}) })
+      }
+      const requestStop = (reason: NonNullable<typeof operation.stopReason>) => {
+        operation.stopReason ??= reason
+        if (operation.executing) void Promise.resolve(options.execution.stop()).catch(error => { protocolError ??= String(error) })
+      }
+      publish({ ...current, state: 'running', liveTests: undefined, events, stale: false, runId, error: undefined })
+      operation.done = (async () => {
+        try {
+          const captured = capture(true)
+          const selectedCatalog = await discoverSnapshot(captured)
+          resultInputs = selectedCatalog.catalogDigest
+          publish({ ...current, sourceFiles: captured.files })
+          if (operation.stopReason || disposed) { terminate(operation.stopReason ?? 'stopped'); return }
+          // Resources may change without a workspace revision. Never reuse a prior
+          // runtime-only selection against a different set of inputs.
+          const known = runtimeInputs === selectedCatalog.catalogDigest ? [...selectedCatalog.tests, ...runtimeTests] : selectedCatalog.tests
+          validateSelection(intent.selection, known)
+          publish({ ...current, tests: selectedCatalog.tests, workspaceDigest: selectedCatalog.workspaceDigest, catalogDigest: selectedCatalog.catalogDigest })
+          const request: TestRunRequestV2 = Object.freeze({ apiVersion: 2, kind: 'run_request', mode: intent.mode, workspaceDigest: selectedCatalog.workspaceDigest, catalogDigest: selectedCatalog.catalogDigest,
+            selection: intent.selection.kind === 'all' ? Object.freeze({ kind: 'all' }) : Object.freeze({ kind: 'tests', testIds: Object.freeze([...intent.selection.testIds]) }) })
+          const prepared = await options.provider.prepareRun(request, { files: captured.files, resources: captured.resources, runId })
+          if (operation.stopReason || disposed) { terminate(operation.stopReason ?? 'stopped'); return }
+          const consume = (message: TestReportEventV2) => {
+            if (disposed || protocolError) return
+            try {
+              const report = validateReportEvent(message)
+              reportBytes += new TextEncoder().encode(JSON.stringify(report)).byteLength
+              if (reportBytes > 16 * 1024 * 1024) throw new TypeError('Test report exceeds the 16 MiB run limit')
+              const event = report.event
+              if (report.runId !== runId || report.sequence !== nextSequence || terminal || events.length >= 100_000) throw new TypeError('Invalid test report sequence, run, or lifecycle')
+              if (!started && event.type !== 'run_started') throw new TypeError('Test report must start with run_started')
+              if (event.type === 'run_started') {
+                if (started) throw new TypeError('Duplicate run_started')
+                started = true
+                if (intent.mode !== 'debug') deadline = setTimeout(() => requestStop('timeout'), timeoutMs)
+              } else if (event.type === 'test_discovered') {
+                const descriptor = validateDescriptor(event.descriptor)
+                if (descriptors.has(descriptor.id) || descriptors.size >= 10_000) throw new TypeError('Duplicate or excessive runtime test descriptors')
+                descriptors.set(descriptor.id, descriptor)
+                if (discoveryFinished) { runtimeTests = [...descriptors.values()]; publish({ ...current, tests: runtimeTests }) }
+              } else if (event.type === 'discovery_finished') {
+                if (discoveryFinished) throw new TypeError('Duplicate discovery_finished')
+                discoveryFinished = true
+                runtimeInputs = selectedCatalog.catalogDigest
+                runtimeTests = [...descriptors.values()]
+                publish({ ...current, tests: runtimeTests })
+              } else if (event.type === 'test_started') {
+                if (!discoveryFinished || activeTest || !descriptors.has(event.testId) || completed.has(event.testId)) throw new TypeError('Invalid test start')
+                if (intent.selection.kind === 'tests' && !intent.selection.testIds.includes(event.testId) && descriptors.get(event.testId)?.kind !== 'fixture') throw new TypeError('An unselected test was started')
+                activeTest = event.testId
+              } else if (['test_passed', 'test_failed', 'test_errored', 'test_skipped'].includes(event.type)) {
+                if (!('testId' in event) || event.testId !== activeTest) throw new TypeError('Test completion has no matching start')
+                completed.add(activeTest!)
+                activeTest = undefined
+              } else if (event.type === 'run_finished') {
+                if (!discoveryFinished || activeTest) throw new TypeError('Run finished with an incomplete test')
+                const expected = intent.selection.kind === 'all' ? [...descriptors.keys()] : intent.selection.testIds
+                if (expected.some(id => !completed.has(id))) throw new TypeError('Run finished before all selected tests completed')
+                terminal = true
+              } else if (event.type === 'run_terminated') terminal = true
+              append(event)
+            } catch (error) {
+              protocolError = error instanceof Error ? error.message : String(error)
+              requestStop('protocol_violation')
+            }
+          }
+          const interceptor: RuntimeStreamInterceptor = {
+            push(stream, chunk) {
+              try { const frame = prepared.decoder.push(stream, chunk); frame.messages.forEach(consume); return frame.output }
+              catch (error) { protocolError = String(error); requestStop('protocol_violation'); return chunk }
+            },
+            finish() {
+              try { const frame = prepared.decoder.finish(); frame.messages.forEach(consume); return frame.output }
+              catch (error) { protocolError = String(error); requestStop('protocol_violation'); return '' }
+            },
+          }
+          if (!options.execution.executePrepared) throw new Error('Workbench does not provide prepared execution')
+          operation.executing = true
+          const outcome = await options.execution.executePrepared({ plan: { ...prepared.execution, mode: intent.mode, streamInterceptor: interceptor }, workflow: 'test', resourcesResolved: true })
+          operation.executing = false
+          // A runtime exit cannot substitute for the protocol's terminal event.
+          if (protocolError) { terminal = false; terminate('protocol_violation', protocolError) }
+          else if (operation.stopReason) { terminal = false; terminate(operation.stopReason) }
+          else if (outcome?.type === 'build_failed') terminate('build_failed', outcome.message)
+          else if (outcome?.type === 'busy') terminate('runtime_crash', 'Another execution is active. Stop it before running tests.')
+          else if (outcome?.type === 'stopped') { terminal = false; terminate('stopped') }
+          else if (outcome?.type === 'error') { terminal = false; terminate('runtime_crash', outcome.error.message) }
+          else if (!terminal) terminate(started ? 'runtime_crash' : 'build_failed', started ? 'The runtime exited before the test suite finished.' : 'The test runner did not start. Check compiler output.')
+          else if (outcome?.type === 'completed' && outcome.exitCode !== 0 && (outcome.exitCode !== 1 || !events.some(({ event }) => event.type === 'test_failed' || event.type === 'test_errored' || event.type === 'run_terminated'))) {
+            terminal = false; terminate('runtime_crash', `Runtime exited with status ${outcome.exitCode}`)
+          }
+        } catch (error) {
+          terminate(error instanceof TestingSelectionStaleError ? 'selection_stale' : 'build_failed', error instanceof Error ? error.message : String(error))
+        } finally {
+          if (deadline) clearTimeout(deadline)
+          if (reportTimer) clearTimeout(reportTimer)
+          operation.executing = false
+          active = undefined
+          publish({ ...current, state: 'ready', events, stale: current.stale || revision !== options.workspace.revision(), error: protocolError })
+          if (!disposed && revision !== options.workspace.revision()) scheduleDiscovery()
+        }
+      })()
+      await operation.done
     },
     async stop() {
       assertLive()
-      const generation = ++operationGeneration
-      const revision = options.workspace.revision()
-      await cancelActiveExecution()
-      if (isCurrent(generation, revision)) {
-        publish(catalog
-          ? {
-              state: 'ready',
-              workspaceDigest: catalog.workspaceDigest,
-              catalogDigest: catalog.catalogDigest,
-              tests: catalog.tests,
-              events: current.events,
-            }
-          : { state: 'idle', tests: [], events: [] })
-      }
+      const operation = active
+      if (!operation) return
+      operation.stopReason ??= 'stopped'
+      if (operation.executing) await options.execution.stop()
+      await operation.done
+    },
+    async restart() {
+      assertLive()
+      const intent = lastIntent
+      if (!intent) return
+      await controller.stop()
+      await controller.run(intent)
+    },
+    async clearResults() {
+      assertLive()
+      await controller.stop()
+      runtimeInputs = undefined; resultInputs = undefined; runtimeTests = []; lastIntent = undefined
+      publish({ state: 'idle', tests: [], events: [] })
+      await discover()
     },
     async dispose() {
       if (disposed) return
       disposed = true
-      operationGeneration += 1
       unsubscribeWorkspace()
-      await cancelActiveExecution()
+      if (timer) clearTimeout(timer)
+      if (active) { active.stopReason = 'stopped'; if (active.executing) await options.execution.stop() }
+      discoveryGeneration += 1
       current = freezeSnapshot({ state: 'disposed', tests: [], events: [] })
-      for (const listener of [...listeners]) {
-        try {
-          listener()
-        } catch (error) {
-          console.error('[web-ide] Testing V2 observer failed', error)
-        }
-      }
+      for (const listener of [...listeners]) listener()
       listeners.clear()
     },
   }
@@ -498,27 +544,17 @@ export function createTestingControllerV2(
 
 function validateSelection(selection: TestSelectionV2, tests: readonly TestDescriptorV2[]): void {
   canonicalStringifyV1(selection)
-  assertObject(selection, 'Testing V2 selection')
-  if (selection.kind === 'all') {
-    assertKeys(selection, ['kind'], [], 'Testing V2 selection')
-    return
-  }
-  assertKeys(selection, ['kind', 'testIds'], [], 'Testing V2 selection')
-  if (selection.kind !== 'tests' || !Array.isArray(selection.testIds) || selection.testIds.length < 1 || selection.testIds.length > 10_000) {
-    throw new TypeError('Testing V2 selection is invalid')
-  }
-  if (new Set(selection.testIds).size !== selection.testIds.length) throw new TypeError('Testing V2 selection contains duplicate ids')
+  assertObject(selection, 'Testing selection')
+  if (selection.kind === 'all') { assertKeys(selection, ['kind'], [], 'Testing selection'); return }
+  assertKeys(selection, ['kind', 'testIds'], [], 'Testing selection')
+  if (selection.kind !== 'tests' || !Array.isArray(selection.testIds) || selection.testIds.length < 1 || selection.testIds.length > 10_000) throw new TypeError('Testing selection is empty or invalid')
+  if (new Set(selection.testIds).size !== selection.testIds.length) throw new TypeError('Testing selection contains duplicate ids')
   const available = new Set(tests.map(({ id }) => id))
-  if (selection.testIds.some((id) => !TEST_ID.test(id) || !available.has(id))) {
-    throw new TestingSelectionStaleError()
-  }
+  if (selection.testIds.some(id => !TEST_ID.test(id) || !available.has(id))) throw new TestingSelectionStaleError()
 }
-
 function validateRunIntent(intent: TestRunIntentV2): void {
   canonicalStringifyV1(intent)
-  assertObject(intent, 'Testing V2 run intent')
-  assertKeys(intent, ['mode', 'selection'], [], 'Testing V2 run intent')
-  if (intent.mode !== 'run' && intent.mode !== 'debug') {
-    throw new TypeError('Testing V2 run mode is invalid')
-  }
+  assertObject(intent, 'Testing run intent')
+  assertKeys(intent, ['mode', 'selection'], [], 'Testing run intent')
+  if (intent.mode !== 'run' && intent.mode !== 'debug') throw new TypeError('Testing run mode is invalid')
 }
