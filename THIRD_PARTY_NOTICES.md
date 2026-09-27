@@ -27,6 +27,14 @@ Notable retained dependencies and source provenance include:
 - Material Icon Theme — MIT; this package bundles only a curated SVG subset.
 - xterm.js, XYFlow, React, React DOM, Zustand, Radix UI, and
   react-resizable-panels — MIT-family project licenses as shipped upstream.
+- `react-remove-scroll-bar@2.3.8` declares MIT in its package metadata but omits
+  the license file from its npm archive. Its supplemental text is copied without
+  modification from upstream commit
+  [`7301c160fda44cb8cf2b9fdfde61efad35736196`](https://github.com/theKashey/react-remove-scroll-bar/blob/7301c160fda44cb8cf2b9fdfde61efad35736196/LICENSE),
+  retained at `release/licenses/react-remove-scroll-bar-7301c160-LICENSE.txt`
+  (SHA-256 `a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84`).
+  The explicit license-policy entry includes this text in the generated package
+  inventory; it does not waive license evidence for other dependencies.
 - class-variance-authority and memfs — Apache-2.0.
 - Lucide — ISC.
 - `src/clangd/json-stream.ts` is adapted from clangd-in-browser, MIT.

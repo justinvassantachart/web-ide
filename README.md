@@ -23,15 +23,19 @@ not contain those application services.
 
 ## Package distribution
 
-The MIT-licensed component is available in the
-[0.6.0 release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.6.0).
+This source prepares version 0.7.0 of the MIT-licensed component. Its immutable
+distribution identity is
+[web-ide-v0.7.0](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.0);
+use its package only after the release and validation evidence are published.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
 [import guide](docs/import-ide-component.md). Release assets include the source,
 dependency inventory, and validation records; newer source commits do not alter
 those published bytes.
 
-Version 0.6.0 places the terminal beneath the editor and adds panel controls.
+Version 0.7.0 adds built-in C++ and Python testing with selected-test debugging,
+frozen source snapshots, and shared result reporting. Hosts using the earlier
+testing-provider API must migrate to Testing V2.
 The built-in providers support C/C++ and Python execution and source-level
 debugging. The public provider/session API is independent of its underlying
 engine. See [Publishing readiness](docs/publishing-readiness.md) for the release
