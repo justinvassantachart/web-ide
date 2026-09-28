@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "package": "web-ide@0.7.1",
   "sourceRepository": "https://github.com/justinvassantachart/web-ide.git",
-  "sourceTag": "web-ide-v0.7.1-source-r2",
+  "sourceTag": "web-ide-v0.7.1-source-r3",
   "sourceAssetFilename": "web-ide-0.7.1-source.tar.gz",
   "capabilityReleaseId": "cs106b.source/2",
   "packageRole": "web-ide",

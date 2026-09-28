@@ -6,10 +6,31 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   PACKED_CANDIDATE_REFERENCE,
+  packedFilenameFromReport,
   withVerifiedPackedCandidate,
 } from './packed-candidate.mjs'
 
 const temporaryRoots = []
+
+describe('npm pack candidate filename', () => {
+  it.each(['0.7.1', '0.8.0-preview.1'])('selects the reported artifact for %s without a previous version pin', (version) => {
+    const current = { name: 'web-ide', version }
+    const filename = `web-ide-${version}.tgz`
+    expect(packedFilenameFromReport(JSON.stringify([{ ...current, filename }]), current)).toBe(filename)
+  })
+
+  it('rejects stale, ambiguous, and unsafe pack output before candidate installation', () => {
+    const current = { name: 'web-ide', version: '0.7.1' }
+    for (const records of [
+      [],
+      [{ ...current, filename: 'web-ide-0.7.0.tgz' }],
+      [{ ...current, filename: '../web-ide-0.7.1.tgz' }],
+      [{ ...current, filename: 'web-ide-0.7.1.tgz' }, { ...current, filename: 'extra.tgz' }],
+    ]) {
+      expect(() => packedFilenameFromReport(JSON.stringify(records), current)).toThrow()
+    }
+  })
+})
 
 function integrity(bytes) {
   return `sha512-${createHash('sha512').update(bytes).digest('base64')}`

@@ -72,27 +72,33 @@ design, so those URLs must not be retired.
 
 ## Current release configuration
 
-Web IDE `0.7.0` is the prepared successor; publication is not established by this
-source change. Its version-specific configuration,
-manifest schema, evidence tools and fixtures name the public canonical
-`justinvassantachart/web-ide` channel with mechanism
-`public-github-release-asset`, source tag `web-ide-v0.7.0-source`, release tag
-`web-ide-v0.7.0`, and asset `web-ide-0.7.0.tgz`.
+Web IDE `0.7.1` is the prepared patch to the published `0.7.0` release;
+publication is not established by this source change. Its version-specific
+configuration, manifest schema, evidence tools and fixtures name the public
+canonical `justinvassantachart/web-ide` channel with mechanism
+`public-github-release-asset`, source tag `web-ide-v0.7.1-source-r3`, release tag
+`web-ide-v0.7.1`, and asset `web-ide-0.7.1.tgz`.
 
-The minor version records shared C++/Python testing and the Testing V2 provider
-and session API migration. The runtime composition identity remains
-`cs106b.source/2`; exact new package digests and consumer proofs distinguish the
-new testing contract. The engine remains
-`debugger-sh@0.3.15-webide.0.5.0.2` contains the separately reviewed five-line
+The patch preserves the shared C++/Python Testing V2 provider and session API,
+terminal behavior, and independent workbench instances from `0.7.0`. It adds
+optional initial breakpoints, graph layout improvements, native clangd symbol
+rename, and a bounded opt-in PCH rejection fallback for Debug compilation.
+Rename applies only edits returned by clangd; open relevant source/header files
+once per session so clangd can index them before renaming.
+
+The runtime composition identity remains `cs106b.source/2`; the engine remains
+`debugger-sh@0.3.15-webide.0.5.0.2`, which contains the separately reviewed
 empty-stdin-read correction in [engine PR 1](https://github.com/justinvassantachart/engine/pull/1).
-It retains the preceding engine source apart from that correction, regression
-coverage and release metadata. Existing published release assets, source tags and manifests
-remain immutable. The `0.5.0` source tag retains tooling for validating its
-original release identity and channel.
+Existing published release assets, source tags and manifests remain immutable.
+The unpublished `web-ide-v0.7.1-source` and `web-ide-v0.7.1-source-r2` checkpoints
+are retained: the first exposed a clangd bootstrap ordering defect, and the
+second exposed a packed-viewer launcher pinned to the previous package filename.
+The current checkpoint derives that filename from validated npm pack output
+and settles native visibility and initial layout before lifecycle assertions.
 
 The four local gates, finalizer and immutable download verification in
-[Publishing readiness](docs/publishing-readiness.md) must bind the final `0.7.0`
-candidate before publication. The completed `0.6.0` evidence above remains
-historical evidence for its original bytes. Each consuming application must
-verify its own exact package composition. The npm manifest remains `private: true`;
-no npm publication is configured.
+[Publishing readiness](docs/publishing-readiness.md) must bind the final `0.7.1`
+candidate before publication. Historical release evidence remains bound to its
+original bytes. Each consuming application must verify its own exact package
+composition. The npm manifest remains `private: true`; no npm publication is
+configured.

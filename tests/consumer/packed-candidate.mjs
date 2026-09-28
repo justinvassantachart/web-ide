@@ -5,6 +5,24 @@ import path from 'node:path'
 
 export const PACKED_CANDIDATE_REFERENCE = 'file:web-ide.tgz'
 
+export function packedFilenameFromReport(output, expectedPackage) {
+  const records = parseJSON(output, 'npm pack --json')
+  if (!Array.isArray(records) || records.length !== 1) {
+    throw new Error('npm pack must report exactly one candidate')
+  }
+  const record = records[0]
+  const expectedFilename = `${expectedPackage.name.replace(/^@/u, '').replaceAll('/', '-')}-${expectedPackage.version}.tgz`
+  if (
+    record?.name !== expectedPackage.name
+    || record?.version !== expectedPackage.version
+    || record?.filename !== expectedFilename
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/u.test(record.filename)
+  ) {
+    throw new Error('npm pack candidate does not match the current package identity')
+  }
+  return record.filename
+}
+
 function parseJSON(text, source) {
   try {
     return JSON.parse(text)

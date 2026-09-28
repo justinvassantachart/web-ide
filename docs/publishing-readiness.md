@@ -50,11 +50,16 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.7.1-source-r2` tag object peeled to that exact commit. The initial
+`web-ide-v0.7.1-source-r3` tag object peeled to that exact commit. The initial
 `web-ide-v0.7.1-source` checkpoint is retained unchanged and did not produce a
 package release: a browser check found that asynchronous clangd startup could drop the initial
-workspace files. The r2 checkpoint corrects worker message ordering before
-language-server initialization. The previous
+workspace files. The retained `web-ide-v0.7.1-source-r2` checkpoint corrects
+worker message ordering before language-server initialization, but its packed
+viewer gate exposed a launcher pinned to the previous package filename. The r3
+checkpoint selects the filename from validated npm pack output, keeps the exact
+consumer integrity check, and waits for real native visibility and settled
+initial layout in the browser lifecycle harness. Neither earlier checkpoint
+produced a package release. The previous
 `web-ide-v0.7.0-source`, `web-ide-v0.6.0-source`, `web-ide-v0.5.0-source` and
 `web-ide-v0.4.0-source-r4` release identities remain
 unchanged. The initial
@@ -170,7 +175,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.7.1-source-r2` tag at that commit, and use an
+and push the annotated `web-ide-v0.7.1-source-r3` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while

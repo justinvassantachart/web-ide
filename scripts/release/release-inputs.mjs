@@ -64,7 +64,7 @@ export async function loadReleaseConfiguration() {
   if (input.capabilityReleaseId !== 'cs106b.source/2' || input.packageRole !== 'web-ide') {
     throw new TypeError('Release input does not match the accepted CS106B composition identity')
   }
-  if (input.sourceTag !== 'web-ide-v0.7.1-source-r2') {
+  if (input.sourceTag !== 'web-ide-v0.7.1-source-r3') {
     throw new TypeError('Release input does not use the forward-only Web IDE 0.7.1 source tag')
   }
   if (input.releaseAssetFilename !== 'web-ide-0.7.1.tgz' || input.sourceAssetFilename !== 'web-ide-0.7.1-source.tar.gz') {
