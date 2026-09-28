@@ -105,6 +105,8 @@ export interface RuntimeExecutionPlan {
     readonly sources?: readonly string[]
     readonly archives?: readonly string[]
     readonly precompiledHeader?: string
+    /** Allow a Debug retry before DAP initialization; sources must explicitly include the headers. */
+    readonly fallbackToSource?: boolean
   }
 }
 

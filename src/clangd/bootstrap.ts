@@ -40,6 +40,7 @@ const INITIALIZE_PARAMS = {
                 },
             },
             definition: { linkSupport: false },
+            rename: { prepareSupport: true },
             documentSymbol: {
                 hierarchicalDocumentSymbolSupport: true,
                 tagSupport: { valueSet: [1] },
@@ -53,6 +54,7 @@ const INITIALIZE_PARAMS = {
         },
         workspace: {
             workspaceFolders: true,
+            workspaceEdit: { documentChanges: true, resourceOperations: [] },
             didChangeConfiguration: { dynamicRegistration: false },
             configuration: false,
         },

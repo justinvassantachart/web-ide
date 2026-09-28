@@ -23,9 +23,9 @@ not contain those application services.
 
 ## Package distribution
 
-This source prepares version 0.7.0 of the MIT-licensed component. Its immutable
+This source prepares version 0.7.1 of the MIT-licensed component. Its immutable
 distribution identity is
-[web-ide-v0.7.0](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.0);
+[web-ide-v0.7.1](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1);
 use its package only after the release and validation evidence are published.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
@@ -33,7 +33,11 @@ Use the exact release tarball and checksum in the
 dependency inventory, and validation records; newer source commits do not alter
 those published bytes.
 
-Version 0.7.0 adds built-in C++ and Python testing with selected-test debugging,
+Version 0.7.1 preserves the 0.7 APIs and per-instance architecture while adding
+optional initial breakpoints, C++ symbol renaming, graph layout improvements,
+and safe source fallback for rejected optional precompiled headers.
+
+Version 0.7.0 introduced built-in C++ and Python testing with selected-test debugging,
 frozen source snapshots, and shared result reporting. Hosts using the earlier
 testing-provider API must migrate to Testing V2.
 The built-in providers support C/C++ and Python execution and source-level
@@ -88,6 +92,20 @@ createRoot(document.getElementById('root')!).render(
 ```
 
 The runnable example is in `examples/basic`.
+
+### Initial breakpoints
+
+Starting in 0.7.1, a host can set `workspace.initialBreakpoints` alongside
+`initialFiles`, for example `{ '/workspace/main.cpp': [1] }` for the one-line
+program above. Paths identify existing workspace files and line numbers are
+one-based. Defaults apply when the workspace is first seeded.
+
+This option also retains the learner's breakpoint changes in browser storage
+under the workspace ID, including removal of every default. Existing saved
+workspaces with no breakpoint record start empty. With `localCache: 'memory'`,
+defaults apply per mount and breakpoint changes are not saved. Each mounted IDE
+owns its breakpoint state. See [the component guide](docs/import-ide-component.md#start-with-a-breakpoint)
+for a complete example.
 
 The packaged browser runtime providers currently use Debugger.sh internally,
 but that implementation name is not part of the public provider/session API.
@@ -393,8 +411,14 @@ editor focus, the status bar, and settings remain safe for Python, Karel, or
 custom runtimes without a language backend.
 
 The C/C++ provider preserves lazy startup, completion, hover, signatures,
-definitions, symbols, diagnostics, and the existing clangd preference. A
-read-only workspace disables backend startup. Provider effects own the worker,
+definitions, symbols, diagnostics, and the existing clangd preference. Starting
+in 0.7.1, **Rename Symbol** (F2) also updates references across existing C/C++
+workspace files, including unopened headers. Changes use the workspace's normal
+saving path and respect `readOnly` and `mutationPolicy`; other IDE instances are
+unaffected. Turn on **Enable clangd (reloads)** in the IDE settings and wait for
+the language service before renaming.
+
+A read-only workspace disables backend startup. Provider effects own the worker,
 Monaco registrations, workspace synchronization, diagnostics, and teardown.
 
 ## Host-created plugins are first class

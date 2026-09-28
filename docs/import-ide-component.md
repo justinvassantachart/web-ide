@@ -9,7 +9,7 @@ service or Firebase.
 
 The package is distributed through
 [web-ide releases](https://github.com/justinvassantachart/web-ide/releases), not
-through an npm registry publication. The testing example below requires `0.7.0`.
+through an npm registry publication. The testing example below requires `0.7.0` or later.
 This source prepares that release; the commands require its published immutable
 package and artifact manifest and fail until both are available.
 `npm install web-ide` alone does not identify this project.
@@ -20,28 +20,28 @@ must satisfy `^18.3.0 || ^19.0.0`.
 ```sh
 mkdir -p vendor
 curl --fail --location \
-  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/web-ide-0.7.0.tgz \
-  --output vendor/web-ide-0.7.0.tgz
+  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/web-ide-0.7.1.tgz \
+  --output vendor/web-ide-0.7.1.tgz
 curl --fail --location \
-  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/artifact-manifest.json \
-  --output vendor/web-ide-0.7.0-manifest.json
+  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/artifact-manifest.json \
+  --output vendor/web-ide-0.7.1-manifest.json
 node --input-type=module <<'JS'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-const manifest = JSON.parse(readFileSync('vendor/web-ide-0.7.0-manifest.json', 'utf8'))
-assert.equal(manifest.package.version, '0.7.0')
+const manifest = JSON.parse(readFileSync('vendor/web-ide-0.7.1-manifest.json', 'utf8'))
+assert.equal(manifest.package.version, '0.7.1')
 assert.equal(manifest.distribution.repository, 'justinvassantachart/web-ide')
-assert.equal(manifest.distribution.intendedTag, 'web-ide-v0.7.0')
+assert.equal(manifest.distribution.intendedTag, 'web-ide-v0.7.1')
 const artifact = manifest.distribution.artifact
-assert.equal(artifact.fileName, 'web-ide-0.7.0.tgz')
-const bytes = readFileSync('vendor/web-ide-0.7.0.tgz')
+assert.equal(artifact.fileName, 'web-ide-0.7.1.tgz')
+const bytes = readFileSync('vendor/web-ide-0.7.1.tgz')
 assert.equal(bytes.length, artifact.size)
 assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256)
 assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), artifact.sha512Integrity)
-console.log('Verified WebIDE 0.7.0 package bytes')
+console.log('Verified WebIDE 0.7.1 package bytes')
 JS
-npm install --save-exact ./vendor/web-ide-0.7.0.tgz
+npm install --save-exact ./vendor/web-ide-0.7.1.tgz
 npm install --save-dev vite-plugin-wasm buffer@6.0.3 events@3.3.0 path-browserify@1.0.1 process@0.11.10 stream-browserify@3.0.0
 ```
 
@@ -141,6 +141,31 @@ workspace. `initialFiles` seed a new workspace; they do not overwrite an
 existing browser-local workspace. Use `localCache: 'memory'` for a disposable
 example that starts fresh each time it is mounted.
 
+## Start with a breakpoint
+
+In 0.7.1 or later, add `initialBreakpoints` to `workspace` to put a default
+breakpoint on the first executable statement of the example above:
+
+```tsx
+const hostWithBreakpoint: WebIDEHost = {
+  workspace: {
+    ...host.workspace!,
+    initialBreakpoints: { '/workspace/main.cpp': [4] },
+  },
+}
+```
+
+Pass `hostWithBreakpoint` to `WebIDEHostProvider`. Line numbers are one-based
+and must exist in the seeded files. The learner can then click **Debug** without
+first adding a breakpoint.
+
+Defaults apply to a newly seeded workspace. Opting in also saves subsequent
+breakpoint choices in browser storage by workspace ID, so removing the default
+keeps it removed after a reload. Existing saved workspaces without a breakpoint
+record start empty. Use a new workspace ID when intentionally creating a new
+activity. `localCache: 'memory'` applies the defaults per mount and does not
+persist changes. Concurrent IDE components keep their breakpoint state separate.
+
 ## Save workspace files
 
 Browser-local storage is useful for return visits. To save to your own service,
@@ -192,6 +217,15 @@ For C++ completion, diagnostics, hover, and navigation, add
 `languageToolingProvider: 'web-ide.language-tooling.cpp'`. The language service is
 optional and has its own worker and asset downloads; execution does not depend
 on enabling it.
+
+Starting in 0.7.1, this provider also supports **Rename Symbol**. Turn on
+**Enable clangd (reloads)** in the IDE settings, wait for the language service,
+place the cursor on a symbol, and press **F2** or select **Rename Symbol** from
+the editor's context menu. References in existing C/C++ workspace files,
+including unopened headers, update through the normal workspace saving path.
+The rename respects the host's `readOnly` setting and `mutationPolicy` and
+cannot modify another mounted IDE's files. A stale workspace or an edit to a
+protected file rejects the rename instead of applying the returned edits.
 
 See the [package exports](../README.md#package-surface),
 [plugin guide](../README.md#bring-your-own-runtime-or-plugin), and

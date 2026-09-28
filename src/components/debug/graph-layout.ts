@@ -67,7 +67,7 @@ export type HeapLayoutInput = {
     previous: ReadonlyMap<string, Point>
 }
 
-// Pointer-depth rank per node: BFS from the stack-pointed roots, then from
+// Pointer-depth rank per node: multi-source BFS from all stack-pointed roots, then from
 // any still-unranked node in snapshot order (covers orphans and cycles).
 export function computeRanks(input: Pick<HeapLayoutInput, 'nodes' | 'edges' | 'roots'>): Map<string, number> {
     const present = new Set(input.nodes.map((n) => n.id))
@@ -80,12 +80,18 @@ export function computeRanks(input: Pick<HeapLayoutInput, 'nodes' | 'edges' | 'r
         else adjacency.set(e.source, [e.target])
     }
 
-    const bfs = (start: string) => {
-        if (out.has(start)) return
-        out.set(start, 0)
-        const queue = [start]
-        while (queue.length > 0) {
-            const id = queue.shift()!
+    const bfs = (starts: string[]) => {
+        const queue: string[] = []
+        // All direct stack targets must be roots before any edges are visited.
+        // Otherwise a chain reached from an earlier root can incorrectly give
+        // another root a nonzero rank, making the layout depend on root order.
+        for (const start of starts) {
+            if (!present.has(start) || out.has(start)) continue
+            out.set(start, 0)
+            queue.push(start)
+        }
+        for (let index = 0; index < queue.length; index++) {
+            const id = queue[index]
             const rank = out.get(id)!
             for (const next of adjacency.get(id) ?? []) {
                 if (!out.has(next)) {
@@ -96,8 +102,8 @@ export function computeRanks(input: Pick<HeapLayoutInput, 'nodes' | 'edges' | 'r
         }
     }
 
-    for (const root of input.roots) if (present.has(root)) bfs(root)
-    for (const node of input.nodes) bfs(node.id)
+    bfs(input.roots)
+    for (const node of input.nodes) bfs([node.id])
     return out
 }
 

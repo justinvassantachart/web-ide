@@ -196,10 +196,8 @@ describe('computeRanks', () => {
         expect(ranks.get('a')).toBe(0)
     })
 
-    it('gives a shared node the rank from the FIRST BFS root that reaches it', () => {
+    it('uses the shortest path from any root regardless of root order', () => {
         // root1(rank0) → shared; root2(rank0) → mid(rank1) → shared
-        // With roots: ['root1', 'root2'], BFS from root1 reaches shared first
-        // giving rank 1; BFS from root2 would give rank 2 via mid→shared.
         const nodes = [
             { id: 'root1', height: MIN_NODE_HEIGHT },
             { id: 'root2', height: MIN_NODE_HEIGHT },
@@ -211,14 +209,28 @@ describe('computeRanks', () => {
             { source: 'root2', target: 'mid' },
             { source: 'mid', target: 'shared' },
         ]
-        // root1 is listed first in roots, so its BFS runs first
-        const ranks = computeRanks({ nodes, edges, roots: ['root1', 'root2'] })
+        for (const roots of [['root1', 'root2'], ['root2', 'root1']]) {
+            const ranks = computeRanks({ nodes, edges, roots })
+            expect(Object.fromEntries(ranks)).toEqual({ root1: 0, root2: 0, mid: 1, shared: 1 })
+        }
+    })
 
-        expect(ranks.get('root1')).toBe(0)
-        expect(ranks.get('root2')).toBe(0)
-        expect(ranks.get('mid')).toBe(1)
-        // root1 reaches shared at rank 1; root2's path gives rank 2
-        expect(ranks.get('shared')).toBe(1)
+    it('keeps every direct stack target at rank zero even when roots point to each other', () => {
+        const nodes = ['head', 'middle', 'tail', 'child', 'orphan', 'orphan-child']
+            .map(id => ({ id, height: MIN_NODE_HEIGHT }))
+        const edges = [
+            { source: 'head', target: 'middle' },
+            { source: 'middle', target: 'tail' },
+            { source: 'tail', target: 'middle' },
+            { source: 'tail', target: 'child' },
+            { source: 'orphan', target: 'orphan-child' },
+        ]
+        const ranks = computeRanks({
+            nodes, edges, roots: ['head', 'middle', 'tail', 'head', 'missing'],
+        })
+        expect(Object.fromEntries(ranks)).toEqual({
+            head: 0, middle: 0, tail: 0, child: 1, orphan: 0, 'orphan-child': 1,
+        })
     })
 })
 
@@ -226,6 +238,21 @@ describe('computeRanks', () => {
 
 describe('placeHeapNodes', () => {
     const noPos: ReadonlyMap<string, Point> = new Map()
+
+    it('places directly stack-pointed list nodes in one collision-free heap column', () => {
+        const nodes = ['head', 'middle', 'tail'].map(id => ({ id, height: rowsToHeight(2) }))
+        const edges = [
+            { source: 'head', target: 'middle' },
+            { source: 'middle', target: 'tail' },
+        ]
+        const roots = nodes.map(node => node.id)
+        const layout = placeHeapNodes({ nodes, edges, roots, previous: noPos })
+        const reversed = placeHeapNodes({ nodes, edges, roots: [...roots].reverse(), previous: noPos })
+
+        expect(layout).toEqual(reversed)
+        for (const point of layout.values()) expect(point.x).toBe(HEAP_X0)
+        assertNoOverlap(layout, new Map(nodes.map(node => [node.id, node.height])))
+    })
 
     // ── Test 9: NO-OVERLAP on fresh layouts ──────────────────────────────────
 

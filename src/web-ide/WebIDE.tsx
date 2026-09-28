@@ -246,6 +246,9 @@ function ActiveLanguageToolingMount({
 }) {
   const instance = useWorkbenchInstance()
   const instanceWorkspace = instance.workspace
+  const host = useWebIDEHost()
+  const readOnly = host?.workspace?.readOnly
+  const mutationPolicy = host?.workspace?.mutationPolicy
   const [service, setService] = useState(NO_LANGUAGE_TOOLING)
   const active = useRef(true)
   const workspace = useMemo(() => ({
@@ -254,6 +257,10 @@ function ActiveLanguageToolingMount({
     subscribe: (listener: Parameters<typeof instanceWorkspace.subscribe>[0]) =>
       instanceWorkspace.subscribe(listener),
   }), [instanceWorkspace])
+  const workspaceEdits = useMemo(() => ({
+    canWrite: (path: string) => readOnly !== true && mutationPolicy?.({ kind: 'write', path }) !== false,
+    write: (path: string, content: string) => { instanceWorkspace.writeLocal(path, content) },
+  }), [instanceWorkspace, mutationPolicy, readOnly])
   const modelNamespace = useMemo(() => ({
     toUri: (path: string) => instanceWorkspace.toMonacoUri(path),
     owns: (uri: { authority: string; path: string }) => instanceWorkspace.ownsMonacoUri(uri),
@@ -279,6 +286,7 @@ function ActiveLanguageToolingMount({
         disabled={disabled}
         supplementalFiles={supplementalFiles}
         workspace={workspace}
+        workspaceEdits={workspaceEdits}
         modelNamespace={modelNamespace}
         publishService={publishService}
       />

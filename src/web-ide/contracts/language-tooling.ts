@@ -8,6 +8,12 @@ export interface IDEEditorModelNamespace {
   owns(uri: { readonly authority: string; readonly path: string }): boolean
 }
 
+/** Local editor mutations; implementations must enforce the host's current policy. */
+export interface IDELanguageToolingEdits {
+  canWrite(path: string): boolean
+  write(path: string, content: string): void
+}
+
 export type LanguageToolingStatus =
   | { state: 'disabled' }
   | { state: 'idle' }
@@ -47,6 +53,8 @@ export interface LanguageToolingProviderComponentProps {
   supplementalFiles?: WorkspaceFiles
   /** Instance-scoped canonical files and structured mutation feed. */
   workspace?: IDEWorkspaceFeed
+  /** Optional local-edit authority for refactorings, separate from the read-only feed. */
+  workspaceEdits?: IDELanguageToolingEdits
   /** Instance-owned model filter/translator; no Monaco object crosses this seam. */
   modelNamespace?: IDEEditorModelNamespace
   /**

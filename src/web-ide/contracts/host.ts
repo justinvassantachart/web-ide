@@ -25,6 +25,13 @@ export interface IDEWorkspace {
    */
   id: string
   initialFiles?: WorkspaceFiles
+  /**
+   * Default 1-based breakpoints for a newly seeded workspace. Opting in also
+   * saves breakpoint changes per workspace in browser storage, including
+   * removals. Existing workspaces without saved breakpoint state start empty.
+   * Memory-only workspaces apply defaults per mount without saving them.
+   */
+  initialBreakpoints?: Readonly<Record<string, readonly number[]>>
   /** `memory` skips OPFS and always re-seeds from initialFiles. */
   localCache?: 'opfs' | 'memory'
   readOnly?: boolean

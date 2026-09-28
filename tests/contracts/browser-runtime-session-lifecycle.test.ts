@@ -33,7 +33,7 @@ interface FakeRunError {
 }
 
 type FakeRunResult =
-  | { type: 'completed'; exitCode: number }
+  | { type: 'completed'; exitCode: number; timing?: { totalMs: number; buildMs: number; runMs: number } }
   | { type: 'stopped' }
   | FakeRunError
 
@@ -117,6 +117,8 @@ class FakeDebugger {
 
 class FakeEngine {
   fs: Record<string, unknown> = {}
+  declare binaryFiles: Record<string, Uint8Array>
+  declare cppArtifacts?: { precompiledHeader?: string }
   readonly stdout = new FakeDataStream()
   readonly stderr = new FakeDataStream()
   readonly stdin = { write: vi.fn(() => Promise.resolve()) }
@@ -390,6 +392,90 @@ afterEach(() => {
 })
 
 describe('BrowserRuntimeSession run lifecycle', () => {
+  it('retries a rejected optional PCH once before user execution in Debug', async () => {
+    const mode = 'debug' as const
+    const engine = Object.assign(new FakeEngine(), { binaryFiles: {} })
+    engineCreate.mockResolvedValueOnce(engine)
+    const adapter = createSession()
+    const exit = vi.fn()
+    adapter.events.exit.subscribe(exit)
+    await adapter.prepare({ files: workspace, mode,
+      binaryFiles: { '/sysroot/headers.pch': new Uint8Array([1]) },
+      cppArtifacts: { precompiledHeader: '/sysroot/headers.pch', fallbackToSource: true },
+    })
+    const running = adapter.start({ mode })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.stderr.emit('error: PCH file uses an older PCH format that is no longer supported\n')
+    engine.complete({ type: 'completed', exitCode: 1, timing: { totalMs: 10, buildMs: 10, runMs: 0 } })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
+    expect(exit).not.toHaveBeenCalled()
+    expect(engine.cppArtifacts?.precompiledHeader).toBeUndefined()
+    if (mode === 'debug') expect(commands(engine, 'initialize')).toHaveLength(2)
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+    expect(exit).toHaveBeenCalledExactlyOnceWith(0)
+  })
+
+  it('never retries ordinary Run even when its PCH-like error has rounded execution timing', async () => {
+    const engine = Object.assign(new FakeEngine(), { binaryFiles: {} })
+    engineCreate.mockResolvedValueOnce(engine)
+    const adapter = createSession()
+    await adapter.prepare({ files: workspace, mode: 'run',
+      binaryFiles: { '/sysroot/headers.pch': new Uint8Array([1]) },
+      cppArtifacts: { precompiledHeader: '/sysroot/headers.pch', fallbackToSource: true },
+    })
+    const running = adapter.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.stderr.emit('error: PCH file uses an older PCH format that is no longer supported\n')
+    engine.complete({ type: 'completed', exitCode: 1, timing: { totalMs: 10, buildMs: 10, runMs: 0 } })
+    await running
+    expect(engine.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('honors a synchronous Stop from the PCH recovery message', async () => {
+    const engine = Object.assign(new FakeEngine(), { binaryFiles: {} })
+    engineCreate.mockResolvedValueOnce(engine)
+    const adapter = createSession()
+    adapter.events.stderr.subscribe(text => {
+      if (text.includes('recompiling from source')) adapter.stop()
+    })
+    await adapter.prepare({ files: workspace, mode: 'debug',
+      binaryFiles: { '/sysroot/headers.pch': new Uint8Array([1]) },
+      cppArtifacts: { precompiledHeader: '/sysroot/headers.pch', fallbackToSource: true },
+    })
+    const running = adapter.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.stderr.emit('error: PCH file uses an older PCH format that is no longer supported\n')
+    engine.complete({ type: 'completed', exitCode: 1, timing: { totalMs: 10, buildMs: 10, runMs: 0 } })
+    await running
+    expect(engine.run).toHaveBeenCalledTimes(1)
+    await expect(adapter.waitForSettlement!()).resolves.toEqual({ type: 'stopped' })
+  })
+
+  it('cancels the rejected PCH debug attempt timeout before configuring its replacement', async () => {
+    vi.useFakeTimers()
+    const engine = Object.assign(new FakeEngine(), { binaryFiles: {} })
+    engineCreate.mockResolvedValueOnce(engine)
+    const adapter = createSession()
+    await adapter.prepare({ files: workspace, mode: 'debug',
+      binaryFiles: { '/sysroot/headers.pch': new Uint8Array([1]) },
+      cppArtifacts: { precompiledHeader: '/sysroot/headers.pch', fallbackToSource: true },
+    })
+    const running = adapter.start({ mode: 'debug' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.stderr.emit('error: PCH file uses an older PCH format that is no longer supported\n')
+    engine.complete({ type: 'completed', exitCode: 1, timing: { totalMs: 10, buildMs: 10, runMs: 0 } })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
+    engine.debugger.emit('initialized')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(commands(engine, 'configurationDone')).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(121_000)
+    expect(engine.stop).not.toHaveBeenCalled()
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+  })
+
+
   it('snapshots binary inputs, maps artifact paths and clears them on the next prepare', async () => {
     const session = createSession()
     const engine = Object.assign(new FakeEngine(), {
