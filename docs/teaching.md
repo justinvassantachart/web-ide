@@ -1,10 +1,8 @@
 # Teaching with web-ide
 
-web-ide lets learners edit, run, and debug C++ in their browser. Try the
-[current interactive demo](https://deploy-preview-16--nova-ide.netlify.app) for the linked-list workspace and guided
-debugger tour. This is a deploy preview of the new public demo. The existing
-[hosted website](https://webide.org) provides ten self-paced lessons and a
-classroom interface.
+web-ide lets learners edit, run, and debug C++ in their browser. The
+[hosted website](https://webide.org) provides an editable linked-list workspace,
+a guided debugger tour, ten self-paced lessons, and a classroom interface.
 
 These teaching features are provided by the website applications; the reusable
 component in this repository supplies the editor, execution, debugger, and test
@@ -12,7 +10,7 @@ interface.
 
 ## Start with a debugging activity
 
-Open the [linked-list workspace](https://deploy-preview-16--nova-ide.netlify.app/ide?example=linked-list).
+Open the [linked-list workspace](https://webide.org/ide?example=linked-list).
 Ask learners to predict the list's values, links, and final sum before running it.
 
 1. Click **Debug**. A new linked-list workspace starts with a breakpoint at the
@@ -27,7 +25,7 @@ Ask learners to predict the list's values, links, and final sum before running i
    breakpoints for a new C++ run.
 
 The history controls revisit captured debugger states. They do not rewind the
-running program. The [guided debugger demo](https://deploy-preview-16--nova-ide.netlify.app/demo) provides
+running program. The [guided debugger demo](https://webide.org/demo) provides
 an alternative activity that starts with a failing test and a loop to repair.
 
 ## Use the ten lessons

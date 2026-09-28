@@ -10,9 +10,8 @@ component into your own application.
 - [Self-hosting](self-hosting.md): build and deploy the standalone example with
   the browser headers required by the compiler and debugger.
 
-The [current interactive demo](https://deploy-preview-16--nova-ide.netlify.app) is a deploy preview with an editable
-linked-list workspace and a guided debugger tour. The existing
-[hosted website](https://webide.org) provides lessons and the classroom interface.
+The [hosted website](https://webide.org) provides an editable linked-list
+workspace, a guided debugger tour, lessons, and the classroom interface.
 This repository provides the reusable IDE component and runnable examples;
 accounts, lessons, and assignment management are application features outside
 the component.
