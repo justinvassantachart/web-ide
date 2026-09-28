@@ -22,10 +22,9 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-This source prepares version 0.7.1 of the MIT-licensed component. Its immutable
-distribution identity is
-[web-ide-v0.7.1](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1);
-use its package only after the release and validation evidence are published.
+Version 0.7.1 of the MIT-licensed component is available as an immutable
+[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1),
+with its package and validation evidence published together.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
 [import guide](docs/import-ide-component.md). Release assets include the source,

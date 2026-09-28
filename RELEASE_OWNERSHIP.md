@@ -14,6 +14,7 @@ only `dist`, `docs`, `README.md`, `LICENSE.md`, `THIRD_PARTY_LICENSES.txt` and
 
 | Version | Canonical release | Package download |
 | --- | --- | --- |
+| 0.7.1 | [`web-ide-v0.7.1`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1) | [`web-ide-0.7.1.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/web-ide-0.7.1.tgz) |
 | 0.7.0 | [`web-ide-v0.7.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.0) | [`web-ide-0.7.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/web-ide-0.7.0.tgz) |
 | 0.6.0 | [`web-ide-v0.6.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.6.0) | [`web-ide-0.6.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/web-ide-0.6.0.tgz) |
 | 0.5.0 | [`web-ide-v0.5.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.5.0) | `https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.5.0/web-ide-0.5.0.tgz` |
@@ -86,8 +87,8 @@ design, so those URLs must not be retired.
 
 ## Current release configuration
 
-Web IDE `0.7.1` is the prepared patch to the published `0.7.0` release;
-publication is not established by this source change. Its version-specific
+Web IDE `0.7.1` was published on 2026-09-28 as an immutable patch to the
+`0.7.0` release. Its version-specific
 configuration, manifest schema, evidence tools and fixtures name the public
 canonical `justinvassantachart/web-ide` channel with mechanism
 `public-github-release-asset`, source tag `web-ide-v0.7.1-source-r3`, release tag
@@ -111,15 +112,16 @@ The current checkpoint derives that filename from validated npm pack output
 and settles native visibility and initial layout before lifecycle assertions.
 
 The four local gates, finalizer and immutable download verification in
-[Publishing readiness](docs/publishing-readiness.md) must bind the final `0.7.1`
-candidate before publication. Historical release evidence remains bound to its
-original bytes. Each consuming application must verify its own exact package
-composition. The npm manifest remains `private: true`; no npm publication is
-configured.
+[Publishing readiness](docs/publishing-readiness.md) passed for the published
+`0.7.1` candidate. All 18 release assets matched the finalized hashes, and
+`gh release verify` passed the signed release attestation. Historical release
+evidence remains bound to its original bytes. Each consuming application must
+verify its own exact package composition. The npm manifest remains
+`private: true`; no npm publication is configured.
 
-### Prepared 0.7.1 candidate — publication pending
+### Published 0.7.1 receipts
 
-The final candidate comes from source commit
+The published package comes from source commit
 [`28fee92135f45329404cdbf34377e0d0651a44e5`](https://github.com/justinvassantachart/web-ide/commit/28fee92135f45329404cdbf34377e0d0651a44e5),
 source tag `web-ide-v0.7.1-source-r3`. Its `web-ide-0.7.1.tgz` is 638,821 bytes,
 with SHA-256
@@ -127,9 +129,10 @@ with SHA-256
 and SHA-512 integrity
 `sha512-CpxTNxDq2GJxuCddNQKrt1JzDDDFvSO7C68errEE5bKG2mTPZsBCGbGfcjqIuE4/5zbUUiBvhg4CphkgECAPEw==`.
 
-After publication, its intended public receipts are the
-[artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/artifact-manifest.json)
-and [validation summary](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/validation-summary.json).
-These candidate facts do not establish that the release or its receipts are
-public. Download verification must confirm that the published package matches
-these exact bytes before this version joins the canonical releases above.
+The public [artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/artifact-manifest.json)
+and [validation summary](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/validation-summary.json)
+bind the package, source, and four passing release gates. The manifest SHA-256 is
+`800006a6c2e27c5666c65302a0df43bd77759bc76a05eb7a28558354d9198fe0`.
+An anonymous download of the package matched the recorded size, SHA-256, and
+SHA-512 integrity. GitHub reports release `398684331` as immutable, targeting
+source commit `28fee92135f45329404cdbf34377e0d0651a44e5`.
