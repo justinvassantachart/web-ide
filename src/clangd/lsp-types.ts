@@ -45,6 +45,16 @@ export interface TextEdit {
     newText: string
 }
 
+export interface WorkspaceEdit {
+    changes?: Record<string, TextEdit[]>
+    documentChanges?: Array<{
+        textDocument: { uri: string; version: number | null }
+        edits: TextEdit[]
+    } | { kind: string }>
+}
+
+export type PrepareRenameResult = Range | { range: Range; placeholder: string } | { defaultBehavior: true }
+
 export interface Diagnostic {
     range: Range
     severity?: 1 | 2 | 3 | 4

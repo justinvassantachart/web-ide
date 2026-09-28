@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { IDEWorkspacePersistence } from '../contracts/host'
 import type { WebIDEInstanceController } from '../core/instance-handle'
 import { WorkspacePersistenceCoordinator } from '../core/workspace-persistence'
+import { bindWorkspaceBreakpoints } from '../core/workspace-breakpoints'
 import {
   mergeWorkspaceFiles,
   projectPersistedWorkspaceFiles,
@@ -35,23 +36,32 @@ export function WorkspaceHostBridge({
   const persistence = workspace?.persistence
   const initialFiles = mergeWorkspaceFiles(resources, workspace?.initialFiles)
   const seedFingerprint = workspaceFilesFingerprint(initialFiles)
+  const breakpointSeedFingerprint = workspace?.initialBreakpoints === undefined ? '' : JSON.stringify(
+    Object.entries(workspace.initialBreakpoints)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([path, lines]) => [path, [...lines].sort((a, b) => a - b)]),
+  )
   const initializationKey = JSON.stringify([
     workspaceId ?? 'default-project',
     localCache ?? null,
     seedFingerprint,
+    breakpointSeedFingerprint,
   ])
   const initializationToken = useMemo(() => ({ key: initializationKey }), [initializationKey])
   const [readyInitializationToken, setReadyInitializationToken] = useState<object>()
 
   useLayoutEffect(() => {
     let cancelled = false
+    let unbindBreakpoints: (() => void) | undefined
     void instance.workspace.initialize({
       projectId: workspaceId ?? 'default-project',
       initialFiles,
       ephemeral: localCache === 'memory',
     }).then(
-      () => {
-        if (!cancelled) setReadyInitializationToken(initializationToken)
+      (result) => {
+        if (cancelled || !result) return
+        if (workspace) unbindBreakpoints = bindWorkspaceBreakpoints(instance, workspace, result.seeded)
+        setReadyInitializationToken(initializationToken)
       },
       (error: unknown) => {
         if (cancelled) return
@@ -62,7 +72,10 @@ export function WorkspaceHostBridge({
     // The fingerprint makes semantically identical inline file objects stable;
     // the controller itself guards overlapping async hydrations by generation
     // and shares an in-flight initialization across StrictMode replay.
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      unbindBreakpoints?.()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initializationKey, initializationToken, instance, localCache, seedFingerprint, workspaceId])
 

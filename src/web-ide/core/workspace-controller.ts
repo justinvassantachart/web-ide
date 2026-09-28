@@ -208,6 +208,10 @@ export interface WorkspaceInitializationOptions {
   ephemeral?: boolean
 }
 
+export interface WorkspaceInitializationResult {
+  readonly seeded: boolean
+}
+
 /** Error thrown before an atomic workspace transaction commits. */
 export class WorkspaceTransactionError extends Error {
   readonly code: 'revision_mismatch' | 'permission_denied' | 'path_missing' | 'path_exists' | 'digest_mismatch' | 'disposed'
@@ -235,7 +239,8 @@ export class WorkspaceController {
   private transactionSequence = 0
   private initializationGeneration = 0
   private initializationKey: string | undefined
-  private initializationPromise: Promise<void> | undefined
+  private initializationPromise: Promise<WorkspaceInitializationResult | undefined> | undefined
+  private initializationResult: WorkspaceInitializationResult | undefined
   private projectId = ''
   private ephemeral = true
   private readOnly = false
@@ -418,7 +423,7 @@ export class WorkspaceController {
     )
   }
 
-  async initialize(options: WorkspaceInitializationOptions): Promise<void> {
+  async initialize(options: WorkspaceInitializationOptions): Promise<WorkspaceInitializationResult | undefined> {
     this.assertLive()
     const initialFiles = options.initialFiles ? normalizeSnapshot(options.initialFiles) : undefined
     const initializationKey = canonicalStringifyV1({
@@ -430,10 +435,10 @@ export class WorkspaceController {
     // identical replay as one bootstrap lifecycle, including while OPFS is
     // still resolving, rather than emitting a second synthetic transaction.
     if (initializationKey === this.initializationKey) {
-      await this.initializationPromise
-      return
+      return this.initializationPromise ?? this.initializationResult
     }
     this.initializationKey = initializationKey
+    this.initializationResult = undefined
     const generation = ++this.initializationGeneration
     this.cancelPendingWrites()
     this.projectId = options.ephemeral ? '' : options.projectId
@@ -450,7 +455,8 @@ export class WorkspaceController {
         }
       }
       if (generation !== this.initializationGeneration || this.disposed) return
-      if (Object.keys(files).length === 0) files = initialFiles ?? {}
+      const seeded = Object.keys(files).length === 0
+      if (seeded) files = initialFiles ?? {}
       if (Object.keys(files).length === 0 && !this.ephemeral) {
         const { DEFAULT_MAIN } = await import('@/vfs/default-main')
         if (generation !== this.initializationGeneration || this.disposed) return
@@ -460,10 +466,13 @@ export class WorkspaceController {
         files = initialFiles ?? {}
       }
       this.applyInternal([{ op: 'replace', files }], { kind: 'bootstrap', source: 'workspace-bootstrap' })
+      return Object.freeze({ seeded })
     })()
     this.initializationPromise = initialization
     try {
-      await initialization
+      const result = await initialization
+      if (generation === this.initializationGeneration) this.initializationResult = result
+      return result
     } finally {
       if (generation === this.initializationGeneration) this.initializationPromise = undefined
     }
@@ -482,6 +491,7 @@ export class WorkspaceController {
     this.disposed = true
     this.initializationGeneration += 1
     this.initializationPromise = undefined
+    this.initializationResult = undefined
     this.cancelPendingWrites()
     this.listeners.clear()
     this.statusListeners.clear()

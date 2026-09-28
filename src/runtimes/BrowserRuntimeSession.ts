@@ -32,6 +32,7 @@ import { validateRuntimeHostServiceV1 } from './host-service';
 type Any = any;
 type EngineRunResult = Awaited<ReturnType<EngineType['run']>>;
 type RuntimeErrorOutcome = Extract<RuntimeOutcome, { type: 'error' }>;
+const pchRejectionPattern = /(?:fatal )?error:[^\r\n]*(?:precompiled header|PCH file|AST file)/i;
 
 interface DapResponse {
     type?: string;
@@ -286,6 +287,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private runtimeFileTree: DirNode = emptyDirectory();
     private runtimeBinaryFiles: Record<string, Uint8Array> = {};
     private runtimeCppArtifacts?: ArtifactEngine['cppArtifacts'];
+    private pchFallbackAllowed = false;
+    private pchCompilerOutput = '';
     private inputBuf = '';
     private currentIsDebug = false;
     private activeThreadId = 1;
@@ -600,6 +603,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.runtimeFileTree = nextRuntimeFileTree;
         this.runtimeBinaryFiles = nextBinaryFiles;
         this.runtimeCppArtifacts = nextCppArtifacts;
+        this.pchFallbackAllowed = cppArtifacts?.fallbackToSource === true;
         return { success: true, errors: [] };
     }
 
@@ -891,6 +895,9 @@ export class BrowserRuntimeSession implements RuntimeSession {
         engine.stderr.on('data', (chunk: Uint8Array) => {
             if (this.disposed || this.engine !== engine) return;
             const text = this.stderrDecoder.decode(chunk, { stream: true });
+            if (this.inCompilePhase && this.pchFallbackAllowed) {
+                this.pchCompilerOutput = (this.pchCompilerOutput + text).slice(-16_384);
+            }
             this.scanForCompileError(text);
             this.emitStream('stderr', text.replace(/\r?\n/g, '\r\n'));
         });
@@ -1025,6 +1032,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 this.inCompilePhase = true;
                 this.diagnosticEmitted = false;
                 this.stderrLineBuf = '';
+                this.pchCompilerOutput = '';
                 if (isDebug) this.beginDebuggerConfiguration(session);
 
                 // debugger-sh attaches its DAP transport while run() starts.
@@ -1035,8 +1043,32 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 this.currentRunSettlement = settlement;
                 if (isDebug) this.dapSend('initialize', {});
 
-                const result = await runPromise;
+                let result = await runPromise;
                 if (!this.isSessionCurrent(session)) return;
+                // In Debug, DAP initialized is an authoritative compile-success
+                // boundary. Ordinary Run has no such event: timing values can
+                // round to zero, so never replay a possibly executed program.
+                if (
+                    isDebug && this.pchFallbackAllowed && (engine as ArtifactEngine).cppArtifacts?.precompiledHeader
+                    && this.inCompilePhase && result.type === 'completed'
+                    && result.exitCode !== 0
+                    && pchRejectionPattern.test(this.pchCompilerOutput)
+                ) {
+                    (engine as ArtifactEngine).cppArtifacts = { ...(engine as ArtifactEngine).cppArtifacts, precompiledHeader: undefined };
+                    this.runtimeCppArtifacts = (engine as ArtifactEngine).cppArtifacts;
+                    this.pchFallbackAllowed = false;
+                    this.pchCompilerOutput = '';
+                    this.diagnosticEmitted = false;
+                    this.stderrLineBuf = '';
+                    this.emitStream('stderr', 'Cached headers were rejected; recompiling from source.\r\n');
+                    if (!this.isSessionActive(session)) return;
+                    if (isDebug) this.beginDebuggerConfiguration(session);
+                    runPromise = engine.run();
+                    this.currentRun = runPromise;
+                    if (isDebug) this.dapSend('initialize', {});
+                    result = await runPromise;
+                    if (!this.isSessionCurrent(session)) return;
+                }
                 if (result.type === 'completed') {
                     outcome = { type: 'completed', exitCode: result.exitCode };
                 } else if (result.type === 'error') {
@@ -1084,6 +1116,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     private beginDebuggerConfiguration(session: number): void {
+        this.cancelScheduledTask(this.debugConfiguration?.retryTimer);
+        this.cancelScheduledTask(this.debugConfiguration?.timeoutTimer);
         const state: DebugConfigurationState = {
             session,
             completed: false,

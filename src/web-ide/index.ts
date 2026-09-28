@@ -23,6 +23,7 @@ export type {
 } from './contracts/configuration'
 export type {
   IDEEditorModelNamespace,
+  IDELanguageToolingEdits,
   LanguageToolingProvider,
   LanguageToolingProviderComponentProps,
   LanguageToolingService,

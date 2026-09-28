@@ -10,6 +10,7 @@ import type * as monaco from 'monaco-editor'
 
 import type { ClangdClient } from './ClangdClient'
 import { isCppPath, toClangdUri } from './config'
+import { createRenameProvider, type RenameWorkspace } from './rename'
 import type {
     CompletionItem as LspCompletionItem,
     CompletionList,
@@ -206,16 +207,14 @@ class DocumentSync {
 
         const uri = toClangdUri(model.uri.path)
         this.client.notify('textDocument/didOpen', {
-            textDocument: { uri, languageId: 'cpp', version: 1, text: model.getValue() },
+            textDocument: { uri, languageId: 'cpp', version: model.getVersionId(), text: model.getValue() },
         })
 
         // didChange is authoritative for the open file. The ClangdContext
         // watchdog handles unopened files for transitive #includes.
-        let version = 1
         const sub = model.onDidChangeContent((e) => {
-            version++
             this.client.notify('textDocument/didChange', {
-                textDocument: { uri, version },
+                textDocument: { uri, version: model.getVersionId() },
                 contentChanges: e.changes.map((c) => ({
                     range: {
                         start: { line: c.range.startLineNumber - 1, character: c.range.startColumn - 1 },
@@ -259,6 +258,7 @@ function isCancellation(err: unknown): boolean {
 interface RegisterOptions {
     /** Monaco language IDs clangd should answer for. */
     languages: string[]
+    workspace?: RenameWorkspace
     modelNamespace?: IDEEditorModelNamespace
 }
 
@@ -274,8 +274,11 @@ export function registerClangdProviders(
     const modelUriForPath = (path: string) =>
         monacoNs.Uri.parse(opts.modelNamespace?.toUri(path) ?? path)
     disposables.push({ dispose: () => sync.dispose() })
+    const rename = opts.workspace ? createRenameProvider(monacoNs, client, opts.workspace, opts.modelNamespace) : undefined
+    if (rename) disposables.push(rename)
 
     for (const lang of opts.languages) {
+        if (rename) disposables.push(monacoNs.languages.registerRenameProvider(lang, rename.provider))
         disposables.push(monacoNs.languages.registerCompletionItemProvider(lang, {
             // Restricting to `. > :` avoids spurious requests inside
             // comments and strings.

@@ -48,6 +48,7 @@ export function ClangdProvider({
     disabled = false,
     supplementalFiles,
     workspace,
+    workspaceEdits,
     modelNamespace,
     publishService,
     configuration = DEFAULT_CONFIGURATION,
@@ -121,12 +122,17 @@ export function ClangdProvider({
         const disposable: IDisposable = registerClangdProviders(monaco, client, {
             languages: ['cpp', 'c'],
             modelNamespace,
+            workspace: workspace && workspaceEdits ? {
+                snapshot: () => workspace.snapshot(),
+                canWrite: workspaceEdits.canWrite,
+                write: workspaceEdits.write,
+            } : undefined,
         })
         return () => {
             disposable.dispose()
             clearClangdMarkers(monaco, modelNamespace)
         }
-    }, [client, modelNamespace, monaco])
+    }, [client, modelNamespace, monaco, workspace, workspaceEdits])
 
     // Workspace → clangd FS sweep for files Monaco doesn't have open
     // (headers, explorer creates/renames/deletes). Diff prev vs next so we

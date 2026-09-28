@@ -159,9 +159,9 @@ describe('instance-owned workspace controller', () => {
       ephemeral: true,
     }
 
-    await instance.workspace.initialize(options)
+    expect(await instance.workspace.initialize(options)).toEqual({ seeded: true })
     const revision = instance.workspace.revision
-    await instance.workspace.initialize(options)
+    expect(await instance.workspace.initialize(options)).toEqual({ seeded: true })
 
     expect(instance.workspace.revision).toBe(revision)
     expect(listener).toHaveBeenCalledTimes(1)

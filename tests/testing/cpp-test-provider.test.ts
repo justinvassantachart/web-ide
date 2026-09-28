@@ -7,6 +7,10 @@ import { cppTestProvider, CPP_TEST_HEADER_PATH, CPP_TEST_IMPL_PATH, CPP_TEST_RUN
 import { workspaceDigestV1 } from '../../src/web-ide/public/canonical-contract'
 import type { TestReportEventPayloadV2 } from '../../src/web-ide/contracts/testing'
 
+// These integration tests invoke the native compiler, sometimes twice. Allow
+// slower shared/Intel hosts time to compile without changing the assertions.
+const NATIVE_TEST_TIMEOUT_MS = 30_000
+
 async function native(files: Record<string,string>, select?: number[]) {
   const catalog = await cppTestProvider.discover({ files, workspaceDigest: await workspaceDigestV1(Object.fromEntries(Object.entries(files).filter(([path]) => path.startsWith('/workspace/')))) })
   const prepared = await cppTestProvider.prepareRun({ apiVersion: 2, kind: 'run_request', mode: 'run', workspaceDigest: catalog.workspaceDigest, catalogDigest: catalog.catalogDigest, selection: select ? { kind: 'tests', testIds: select.map(i => catalog.tests[i].id) } : { kind: 'all' } }, { files, runId: 'a'.repeat(32) })
@@ -58,7 +62,7 @@ PROVIDED_TEST("provided") { EXPECT(true); }`))
     expect(result.status).toBe(0)
     expect(result.events.filter(event => event.type === 'test_passed')).toHaveLength(2)
     expect(result.events.filter(event => event.type === 'test_discovered')).toHaveLength(2)
-  })
+  }, NATIVE_TEST_TIMEOUT_MS)
   it('unwinds first failure, protects assertion exceptions, catches unexpected errors, and continues', async () => {
     const result = await native(file(`
 #include <stdexcept>
@@ -73,7 +77,7 @@ STUDENT_TEST("after") { EXPECT(true); }`))
     expect(result.events.filter(event => event.type === 'test_errored')).toHaveLength(1)
     expect(result.events.filter(event => event.type === 'test_passed')).toHaveLength(1)
     expect(result.events.find(event => event.type === 'test_failed' && event.actual?.value === '3')).toMatchObject({ path: '/workspace/main.cpp', line: 5, actual: { expression: '3', value: '3' }, expected: { expression: '4', value: '4' } })
-  })
+  }, NATIVE_TEST_TIMEOUT_MS)
   it('selects stable same-line tests and replaces provisional inactive tests with runtime discovery', async () => {
     const files = file('#if 0\nSTUDENT_TEST("inactive") {}\n#endif\nSTUDENT_TEST("first") { EXPECT(false); } STUDENT_TEST("second") { EXPECT(true); }')
     const result = await native(files, [2])
@@ -83,7 +87,7 @@ STUDENT_TEST("after") { EXPECT(true); }`))
     expect(result.status).toBe(0)
     const stale = await native(files, [0])
     expect(stale.events.at(-1)).toMatchObject({ type: 'run_terminated', reason: 'selection_stale' })
-  })
+  }, NATIVE_TEST_TIMEOUT_MS)
   it('deduplicates header registrations, reports wrapper macros, and bounds difficult values', async () => {
     const result = await native({
       '/workspace/shared.h': '#include "webide_test.h"\nSTUDENT_TEST("header") {}',
@@ -94,14 +98,14 @@ STUDENT_TEST("after") { EXPECT(true); }`))
     expect(result.events.filter(event => event.type === 'test_discovered')).toHaveLength(2)
     const failure = result.events.find(event => event.type === 'test_failed') as Extract<TestReportEventPayloadV2,{ type: 'test_passed' | 'test_failed' | 'test_skipped' | 'test_errored' }>
     expect(failure.actual?.value.length).toBeLessThan(2200)
-  })
+  }, NATIVE_TEST_TIMEOUT_MS)
 })
 
 it('hides the global entrypoint while preserving class and namespace functions named main', async () => {
   const result = await native(file('struct Example { int main() { return 7; } };\nnamespace helper { int main() { return 8; } }\nextern "C" { int main() { return 9; } }\nSTUDENT_TEST("member main") { Example e; EXPECT_EQUAL(e.main(), 7); EXPECT_EQUAL(helper::main(), 8); }'))
   expect(result.status).toBe(0)
   expect(result.events.some(event => event.type === 'test_passed')).toBe(true)
-})
+}, NATIVE_TEST_TIMEOUT_MS)
 
 
 it('preserves untouched runtime support bytes while preparing tests', () => {
@@ -120,14 +124,14 @@ it('handles numeric digit separators and bounds long names while executing in so
   const discovered = result.events.filter(event => event.type === 'test_discovered')
   expect(discovered[0].descriptor.name).toBe('first')
   expect(discovered[1].descriptor.name.length).toBeLessThanOrEqual(1024)
-})
+}, NATIVE_TEST_TIMEOUT_MS)
 
 it('does not link a runtime-only assertion helper to an invented workspace file', async () => {
   const result = await native({ ...file('#include "helper.h"\nSTUDENT_TEST("helper") { checkHelper(); }'), '/sysroot/helper.h': '#line 1 "/helper.h"\n#include "webide_test.h"\ninline void checkHelper() { EXPECT(false); }' })
   const failed = result.events.find(event => event.type === 'test_failed')
   expect(failed).not.toHaveProperty('path')
   expect(failed).toHaveProperty('details', 'Runtime resource /sysroot/helper.h:2')
-})
+}, NATIVE_TEST_TIMEOUT_MS)
 
 
 it('does not reuse another test identity when an edit moves a declaration onto its old line', async () => {
