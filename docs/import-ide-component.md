@@ -219,13 +219,17 @@ optional and has its own worker and asset downloads; execution does not depend
 on enabling it.
 
 Starting in 0.7.1, this provider also supports **Rename Symbol**. Turn on
-**Enable clangd (reloads)** in the IDE settings, wait for the language service,
-place the cursor on a symbol, and press **F2** or select **Rename Symbol** from
-the editor's context menu. References in existing C/C++ workspace files,
-including unopened headers, update through the normal workspace saving path.
-The rename respects the host's `readOnly` setting and `mutationPolicy` and
-cannot modify another mounted IDE's files. A stale workspace or an edit to a
-protected file rejects the rename instead of applying the returned edits.
+**Enable clangd (reloads)** in the IDE settings. For a cross-file rename, open
+each relevant source file and header once in the current session and wait for
+the language tools to process them. Place the cursor on a symbol and press **F2**, or select
+**Rename Symbol** from the editor's context menu.
+
+Rename applies the semantic edits returned by clangd. Files that have never been
+opened may be missing from those results, so review the affected files before
+continuing. Changes save through the normal workspace path even when an affected
+file's tab is closed. The rename respects the host's `readOnly` setting and
+`mutationPolicy` and cannot modify another mounted IDE's files. A stale workspace
+or an edit to a protected file rejects the returned edits.
 
 See the [package exports](../README.md#package-surface),
 [plugin guide](../README.md#bring-your-own-runtime-or-plugin), and

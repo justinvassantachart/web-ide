@@ -65,14 +65,15 @@ const INITIALIZE_PARAMS = {
  * Boot a clangd worker, run the LSP handshake, seed initial files.
  * Caller owns the returned client and must dispose() it.
  *
- * writeFiles before await ready() works because the worker queues
- * main-thread messages and drains them once callMain pumps stdin.
+ * The worker installs its message listener after loading WebAssembly. Wait
+ * for readiness before seeding files, then initialize in the same FIFO queue
+ * so the first document parse can resolve unopened workspace headers.
  */
 export async function bootClangd(initialFiles: Record<string, string>): Promise<ClangdClient> {
     const client = new ClangdClient()
     try {
-        client.writeFiles(initialFiles)
         await client.ready()
+        client.writeFiles(initialFiles)
         await client.request('initialize', INITIALIZE_PARAMS)
         client.notify('initialized', {})
         return client
