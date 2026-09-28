@@ -14,8 +14,22 @@ only `dist`, `docs`, `README.md`, `LICENSE.md`, `THIRD_PARTY_LICENSES.txt` and
 
 | Version | Canonical release | Package download |
 | --- | --- | --- |
+| 0.7.0 | [`web-ide-v0.7.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.0) | [`web-ide-0.7.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/web-ide-0.7.0.tgz) |
 | 0.6.0 | [`web-ide-v0.6.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.6.0) | [`web-ide-0.6.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/web-ide-0.6.0.tgz) |
 | 0.5.0 | [`web-ide-v0.5.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.5.0) | `https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.5.0/web-ide-0.5.0.tgz` |
+
+`web-ide-0.7.0.tgz` — 632,710 bytes, SHA-256
+`3175f6b6991ddb95a68bbf6413b60b2faec5bb42e52f9deff454f77eaa9fdd86`, SHA-512
+integrity
+`sha512-NHGa67EPyjeHX2uWlGBCXW6w9ROn62mo+/gtQpKfJ+eBAXOoxEavYhVapQ3c5XeNVn8mVXl4bygRuAbh0/IwGQ==`.
+Published on 2026-09-27 from source commit
+`845108d6c08d044411b41c5b6de80ad0e7c5bf12`, annotated source tag
+[`web-ide-v0.7.0-source`](https://github.com/justinvassantachart/web-ide/tree/web-ide-v0.7.0-source).
+The downloaded package matches the size and SHA-256 recorded in its
+[published artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/artifact-manifest.json).
+This release adds shared C++/Python testing and the Testing V2 provider and
+session API migration. Its release page contains the source, dependency and
+license inventory, deterministic-build evidence, and validation records.
 
 `web-ide-0.6.0.tgz` — 603,744 bytes, SHA-256
 `a9e154d154f7903a0b1a13d89d92c3f38d1407dc9c1597baf48b7cad85671653`, SHA-512
@@ -102,3 +116,20 @@ candidate before publication. Historical release evidence remains bound to its
 original bytes. Each consuming application must verify its own exact package
 composition. The npm manifest remains `private: true`; no npm publication is
 configured.
+
+### Prepared 0.7.1 candidate — publication pending
+
+The final candidate comes from source commit
+[`28fee92135f45329404cdbf34377e0d0651a44e5`](https://github.com/justinvassantachart/web-ide/commit/28fee92135f45329404cdbf34377e0d0651a44e5),
+source tag `web-ide-v0.7.1-source-r3`. Its `web-ide-0.7.1.tgz` is 638,821 bytes,
+with SHA-256
+`6bb620fc9b2f1597581c27bcb8d2ba36a6ecbf1bd510f70e54482c7f819310dc`
+and SHA-512 integrity
+`sha512-CpxTNxDq2GJxuCddNQKrt1JzDDDFvSO7C68errEE5bKG2mTPZsBCGbGfcjqIuE4/5zbUUiBvhg4CphkgECAPEw==`.
+
+After publication, its intended public receipts are the
+[artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/artifact-manifest.json)
+and [validation summary](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/validation-summary.json).
+These candidate facts do not establish that the release or its receipts are
+public. Download verification must confirm that the published package matches
+these exact bytes before this version joins the canonical releases above.

@@ -4,7 +4,7 @@ web-ide is a browser IDE component for React applications. It provides a Monaco
 editor, virtual workspace, terminal, debugger, typed runtime events, workspace
 saving, and plugin APIs. The built-in runtime providers support C++ and Python.
 
-[Try the current demo](https://deploy-preview-16--nova-ide.netlify.app) · [Guides](docs/README.md) ·
+[Try web-ide](https://webide.org) · [Guides](docs/README.md) ·
 [Import IDE component](docs/import-ide-component.md) ·
 [Releases](https://github.com/justinvassantachart/web-ide/releases)
 
@@ -16,10 +16,9 @@ saving, and plugin APIs. The built-in runtime providers support C++ and Python.
   package and connect it to your React application.
 - [Self-hosting](docs/self-hosting.md): run and deploy the standalone example.
 
-The current demo link opens a deploy preview. The existing
-[hosted website](https://webide.org) adds lessons and classroom accounts. This
-repository contains the reusable IDE component and runnable examples; it does
-not contain those application services.
+The [hosted website](https://webide.org) provides the linked-list demo, lessons,
+and classroom accounts. This repository contains the reusable IDE component and
+runnable examples; it does not contain those application services.
 
 ## Package distribution
 
@@ -35,7 +34,7 @@ those published bytes.
 
 Version 0.7.1 preserves the 0.7 APIs and per-instance architecture while adding
 optional initial breakpoints, C++ symbol renaming, graph layout improvements,
-and safe source fallback for rejected optional precompiled headers.
+and an opt-in source retry before Debug execution when cached headers are rejected.
 
 Version 0.7.0 introduced built-in C++ and Python testing with selected-test debugging,
 frozen source snapshots, and shared result reporting. Hosts using the earlier

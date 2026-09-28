@@ -9,9 +9,10 @@ service or Firebase.
 
 The package is distributed through
 [web-ide releases](https://github.com/justinvassantachart/web-ide/releases), not
-through an npm registry publication. The testing example below requires `0.7.0` or later.
-This source prepares that release; the commands require its published immutable
-package and artifact manifest and fail until both are available.
+through an npm registry publication. The examples below use `0.7.1`, which
+retains the 0.7 testing APIs and adds the breakpoint and rename features described
+here. This source prepares that patch release; the commands require its published
+immutable package and artifact manifest and fail until both are available.
 `npm install web-ide` alone does not identify this project.
 
 Run these commands from an existing React/Vite application. React and React DOM
