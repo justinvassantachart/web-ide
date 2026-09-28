@@ -1,8 +1,8 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { withVerifiedPackedCandidate } from '../consumer/packed-candidate.mjs'
+import { packedFilenameFromReport, withVerifiedPackedCandidate } from '../consumer/packed-candidate.mjs'
 
 const repository = path.resolve(import.meta.dirname, '../..')
 const root = await mkdtemp(path.join(tmpdir(), 'web-ide-packed-viewer-'))
@@ -29,12 +29,18 @@ try {
     // Build/pack with the owning repository toolchain. The copied committed
     // consumer lock must already pin these bytes; no dynamic integrity waiver.
     run(['run', 'build:library'], repository)
-    run(['pack', '--ignore-scripts', '--silent', '--pack-destination', root], repository)
+    const packageManifest = JSON.parse(await readFile(path.join(repository, 'package.json'), 'utf8'))
+    const packed = spawnSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', root], {
+        cwd: repository, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'],
+        maxBuffer: 2 * 1024 * 1024,
+    })
+    if (packed.error || packed.status !== 0) throw new Error('Packed viewer npm pack failed', { cause: packed.error })
+    const candidateFilename = packedFilenameFromReport(packed.stdout, packageManifest)
     for (const name of ['package.json', 'package-lock.json', 'vite.config.ts']) {
         await cp(path.join(repository, 'tests/consumer', name), path.join(consumer, name))
     }
     for (const name of ['index.html', 'main.tsx']) await cp(path.join(import.meta.dirname, name), path.join(consumer, name))
-    await withVerifiedPackedCandidate({ candidatePath: path.join(root, 'web-ide-0.7.0.tgz'), consumerRoot: consumer }, async () => {
+    await withVerifiedPackedCandidate({ candidatePath: path.join(root, candidateFilename), consumerRoot: consumer }, async () => {
         run(['ci', '--ignore-scripts', '--no-fund', '--no-audit'])
         run(['exec', 'vite', '--', 'build'])
         server = spawn(process.execPath, [path.join(consumer, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', '4196', '--strictPort'],
