@@ -412,11 +412,15 @@ custom runtimes without a language backend.
 
 The C/C++ provider preserves lazy startup, completion, hover, signatures,
 definitions, symbols, diagnostics, and the existing clangd preference. Starting
-in 0.7.1, **Rename Symbol** (F2) also updates references across existing C/C++
-workspace files, including unopened headers. Changes use the workspace's normal
-saving path and respect `readOnly` and `mutationPolicy`; other IDE instances are
-unaffected. Turn on **Enable clangd (reloads)** in the IDE settings and wait for
-the language service before renaming.
+in 0.7.1, **Rename Symbol** (F2) can update references across C/C++ workspace files.
+Turn on **Enable clangd (reloads)** in the IDE settings, open each relevant source
+file and header once in the current session, and wait for the language tools.
+Rename applies the semantic edits returned by clangd; files that have never been opened
+may be missing from its results.
+
+Changes use the workspace's normal saving path, including affected files whose
+tabs are closed, and respect `readOnly` and `mutationPolicy`. Other IDE instances
+are unaffected.
 
 A read-only workspace disables backend startup. Provider effects own the worker,
 Monaco registrations, workspace synchronization, diagnostics, and teardown.
