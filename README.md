@@ -22,8 +22,8 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-Version 0.7.1 of the MIT-licensed component is available as an immutable
-[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1),
+Version 0.7.2 of the MIT-licensed component is available as an immutable
+[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.2),
 with its package and validation evidence published together.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
@@ -31,10 +31,9 @@ Use the exact release tarball and checksum in the
 dependency inventory, and validation records; newer source commits do not alter
 those published bytes.
 
-The 0.7.2 source candidate adds recognition of ANSI-colored compiler errors so
-compilation failures reach the public runtime failure event before completion.
-It uses the unchanged debugger engine. Its release must pass the full candidate
-and publication workflow before consumers adopt it.
+Version 0.7.2 recognizes ANSI-colored compiler errors so compilation failures
+reach the public runtime failure event before completion. It uses the unchanged
+debugger engine and preserves the 0.7 APIs.
 
 Version 0.7.1 preserves the 0.7 APIs and per-instance architecture while adding
 optional initial breakpoints, C++ symbol renaming, graph layout improvements,
