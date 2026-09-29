@@ -87,6 +87,14 @@ design, so those URLs must not be retired.
 
 ## Current release configuration
 
+The pending `0.7.2` source candidate recognizes colored compiler diagnostics
+without changing the runtime engine. Its configuration names source tag
+`web-ide-v0.7.2-source`, release tag `web-ide-v0.7.2`, and package
+`web-ide-0.7.2.tgz` on the same public release channel. Publication requires
+the four gates, finalization, and immutable upload/download verification.
+The 0.7.1 receipts below describe the existing published release.
+
+
 Web IDE `0.7.1` was published on 2026-09-28 as an immutable patch to the
 `0.7.0` release. Its version-specific
 configuration, manifest schema, evidence tools and fixtures name the public

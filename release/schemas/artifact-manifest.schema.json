@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.7.1-source-r3/release/schemas/artifact-manifest.schema.json",
+  "$id": "https://github.com/justinvassantachart/web-ide/blob/web-ide-v0.7.2-source/release/schemas/artifact-manifest.schema.json",
   "title": "Web IDE CS106B artifact manifest",
   "type": "object",
   "additionalProperties": false,
@@ -56,7 +56,7 @@
           "const": "web-ide"
         },
         "version": {
-          "const": "0.7.1"
+          "const": "0.7.2"
         },
         "private": {
           "const": true
@@ -160,7 +160,7 @@
           ],
           "properties": {
             "name": {
-              "const": "web-ide-v0.7.1-source-r3"
+              "const": "web-ide-v0.7.2-source"
             },
             "objectId": {
               "type": "string",
@@ -251,7 +251,7 @@
               "const": "source-archive"
             },
             "fileName": {
-              "const": "web-ide-0.7.1-source.tar.gz"
+              "const": "web-ide-0.7.2-source.tar.gz"
             },
             "size": {
               "type": "integer",
@@ -536,10 +536,10 @@
           "const": "justinvassantachart/web-ide"
         },
         "intendedTag": {
-          "const": "web-ide-v0.7.1"
+          "const": "web-ide-v0.7.2"
         },
         "intendedAssetFilename": {
-          "const": "web-ide-0.7.1.tgz"
+          "const": "web-ide-0.7.2.tgz"
         },
         "artifact": {
           "type": "object",
@@ -557,7 +557,7 @@
               "const": "package-tarball"
             },
             "fileName": {
-              "const": "web-ide-0.7.1.tgz"
+              "const": "web-ide-0.7.2.tgz"
             },
             "size": {
               "type": "integer",
@@ -1026,7 +1026,7 @@
                 "const": "cyclonedx-sbom"
               },
               "fileName": {
-                "const": "web-ide-0.7.1.cdx.json"
+                "const": "web-ide-0.7.2.cdx.json"
               },
               "size": {
                 "type": "integer",

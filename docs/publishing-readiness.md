@@ -1,12 +1,10 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.7.1` source candidate is
+Web IDE's source repository is public and its `0.7.2` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
 checkpoint does not configure an npm publication. The distribution path is an
 exact integrity-checked tarball attached to an immutable release in the owner's
-public `justinvassantachart/web-ide` repository. This patch retains the 0.7 Testing V2 and mount-scoped workbench architecture,
-while adding optional initial breakpoints, C++ symbol renaming, improved graph
-layout, and safe source fallback for rejected optional precompiled headers.
+public `justinvassantachart/web-ide` repository. This patch preserves the 0.7 APIs and the existing runtime engine while recognizing ANSI-colored compiler diagnostics before the runtime reports completion.
 The 0.7.0 release introduced shared C++ and Python testing, frozen execution
 snapshots, selected-test debugging, and authoritative test reports. Its migration
 from the earlier provider contract to Testing V2 remains in effect.
@@ -50,7 +48,7 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.7.1-source-r3` tag object peeled to that exact commit. The initial
+`web-ide-v0.7.2-source` tag object peeled to that exact commit. The initial
 `web-ide-v0.7.1-source` checkpoint is retained unchanged and did not produce a
 package release: a browser check found that asynchronous clangd startup could drop the initial
 workspace files. The retained `web-ide-v0.7.1-source-r2` checkpoint corrects
@@ -59,7 +57,8 @@ viewer gate exposed a launcher pinned to the previous package filename. The r3
 checkpoint selects the filename from validated npm pack output, keeps the exact
 consumer integrity check, and waits for real native visibility and settled
 initial layout in the browser lifecycle harness. Neither earlier checkpoint
-produced a package release. The previous
+produced a package release. The immutable `web-ide-v0.7.1-source-r3` tag
+produced the published 0.7.1 package and remains unchanged. The previous
 `web-ide-v0.7.0-source`, `web-ide-v0.6.0-source`, `web-ide-v0.5.0-source` and
 `web-ide-v0.4.0-source-r4` release identities remain
 unchanged. The initial
@@ -175,7 +174,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.7.1-source-r3` tag at that commit, and use an
+and push the annotated `web-ide-v0.7.2-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while
