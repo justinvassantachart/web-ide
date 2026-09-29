@@ -135,6 +135,74 @@ describe('built-in runtime providers', () => {
     expect(engineCreate).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['run', '\x1b[1m/main.cpp:2:33: \x1b[0m\x1b[1;31merror: \x1b[0mexpected semicolon', '/main.cpp:2:33: error: expected semicolon'],
+    ['debug', '\x1b[1mwasm-ld: \x1b[31merror:\x1b[0m undefined symbol: missing', 'wasm-ld: error: undefined symbol: missing'],
+    ['run', '\x1b[31m1 error generated.\x1b[0m', '1 error generated.'],
+  ] as const)('recognizes colored compiler output in %s without changing terminal output', async (mode, colored, plain) => {
+    const engine = new FakeEngine()
+    engineCreate.mockResolvedValueOnce(engine)
+    const session = createSession(cppRuntimeProvider)
+    const diagnostics = vi.fn()
+    const stderr: string[] = []
+    session.events.diagnostic.subscribe(diagnostics)
+    session.events.stderr.subscribe((text) => stderr.push(text))
+    await session.prepare({ files: { '/workspace/main.cpp': 'invalid' }, mode })
+    const running = session.start({ mode })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+
+    // The first terminal escape sequence is split across stream chunks.
+    engine.stderr.emit(colored.slice(0, 3))
+    engine.stderr.emit(colored.slice(3))
+    expect(diagnostics).not.toHaveBeenCalled()
+    engine.stderr.emit('\n')
+    expect(diagnostics).toHaveBeenCalledExactlyOnceWith({
+      message: plain, severity: 'error', phase: 'preparation', mode,
+    })
+    engine.stderr.emit('1 error generated.\n')
+    engine.complete(1)
+    await running
+
+    expect(diagnostics).toHaveBeenCalledExactlyOnceWith({
+      message: plain, severity: 'error', phase: 'preparation', mode,
+    })
+    expect(stderr.join('')).toBe(`${colored}\r\n1 error generated.\r\n`)
+  })
+
+  it('recognizes a colored final compiler line without a newline before publishing exit', async () => {
+    const engine = new FakeEngine()
+    engineCreate.mockResolvedValueOnce(engine)
+    const session = createSession(cppRuntimeProvider)
+    const events: string[] = []
+    session.events.diagnostic.subscribe(() => events.push('diagnostic'))
+    session.events.exit.subscribe(() => events.push('exit'))
+    await session.prepare({ files: { '/workspace/main.cpp': 'invalid' }, mode: 'run' })
+    const running = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.stderr.emit('\x1b[1m/main.cpp:1:1: \x1b[31mfatal error:\x1b[0m missing header')
+    engine.complete(1)
+    await running
+    expect(events).toEqual(['diagnostic', 'exit'])
+  })
+
+  it('does not turn colored warnings or user-program stderr into compilation failures', async () => {
+    const engine = new FakeEngine()
+    engineCreate.mockResolvedValueOnce(engine)
+    const session = createSession(cppRuntimeProvider)
+    const diagnostics = vi.fn()
+    session.events.diagnostic.subscribe(diagnostics)
+    await session.prepare({ files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' })
+    const running = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.stderr.emit('\x1b[1m/main.cpp:1:1: \x1b[35mwarning:\x1b[0m unused variable\n')
+    engine.stderr.emit('\x1b[31mapplication error: not a compiler diagnostic\x1b[0m\n')
+    engine.stdout.emit('Program started\n')
+    engine.stderr.emit('\x1b[1m/main.cpp:1:1: \x1b[31merror:\x1b[0m user text\n')
+    engine.complete(1)
+    await running
+    expect(diagnostics).not.toHaveBeenCalled()
+  })
+
   it('maps a C++ workspace and selects the C engine lazily', async () => {
     const engine = new FakeEngine()
     engineCreate.mockResolvedValueOnce(engine)
