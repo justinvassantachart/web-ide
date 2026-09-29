@@ -614,7 +614,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
         const lines = this.stderrLineBuf.split('\n');
         this.stderrLineBuf = lines.pop() ?? '';
         for (const raw of lines) {
-            const line = raw.replace(/\r$/, '');
+            // Clang colors both locations and severity labels. Normalize only
+            // the completed diagnostic line, so split escape sequences work
+            // and the terminal keeps the original colored stream.
+            // eslint-disable-next-line no-control-regex
+            const line = raw.replace(/\x1b\[[\d;:]*m/g, '').replace(/\r$/, '');
             if (pattern.test(line)) {
                 this.diagnosticEmitted = true;
                 this.onDiagnostic.emit({
