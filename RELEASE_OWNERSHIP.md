@@ -14,6 +14,7 @@ only `dist`, `docs`, `README.md`, `LICENSE.md`, `THIRD_PARTY_LICENSES.txt` and
 
 | Version | Canonical release | Package download |
 | --- | --- | --- |
+| 0.7.2 | [`web-ide-v0.7.2`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.2) | [`web-ide-0.7.2.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.2/web-ide-0.7.2.tgz) |
 | 0.7.1 | [`web-ide-v0.7.1`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1) | [`web-ide-0.7.1.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/web-ide-0.7.1.tgz) |
 | 0.7.0 | [`web-ide-v0.7.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.0) | [`web-ide-0.7.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/web-ide-0.7.0.tgz) |
 | 0.6.0 | [`web-ide-v0.6.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.6.0) | [`web-ide-0.6.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.6.0/web-ide-0.6.0.tgz) |
@@ -87,13 +88,30 @@ design, so those URLs must not be retired.
 
 ## Current release configuration
 
-The pending `0.7.2` source candidate recognizes colored compiler diagnostics
-without changing the runtime engine. Its configuration names source tag
-`web-ide-v0.7.2-source`, release tag `web-ide-v0.7.2`, and package
-`web-ide-0.7.2.tgz` on the same public release channel. Publication requires
-the four gates, finalization, and immutable upload/download verification.
-The 0.7.1 receipts below describe the existing published release.
+Web IDE `0.7.2` was published on 2026-09-29. It recognizes colored compiler
+diagnostics without changing the runtime engine. Its configuration names source
+tag `web-ide-v0.7.2-source`, release tag `web-ide-v0.7.2`, and package
+`web-ide-0.7.2.tgz` on the same public release channel. The four source-bound
+gates passed: full production validation (528 unit/integration tests, 21
+production-browser checks, and 12 packed-viewer checks), exact-candidate
+consumer, production audit, and full audit. Both audits reported zero known
+vulnerabilities. The finalizer independently rebuilt and verified the complete
+evidence set; all 18 published assets were downloaded anonymously and matched
+exactly. GitHub reports the release immutable, and `gh release verify` passed.
 
+The published package comes from source commit
+[`0da3867c47f10042baf09a101042bac462f3b4f6`](https://github.com/justinvassantachart/web-ide/commit/0da3867c47f10042baf09a101042bac462f3b4f6).
+The package is 638,883 bytes, with SHA-256
+`b297d067cf5edc8a515316539c33efdd0bad803d7054fa4ff9ac3e7e9fec48f8`
+and SHA-512 integrity
+`sha512-onmdKqVRqKNan9U4y6PVAbKjJCKi3v+Wu83l1tUJHk3itJr5OffSff6aWgkoGPUTPCTsxhS6dO5NOCvD4skGiA==`.
+The [artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.2/artifact-manifest.json)
+has SHA-256
+`8b440fb65407f8d45c34ad73650aef9493e1b5ab267051bf6ac6d52e1a6dfad6`.
+Immutable release `399447766` targets that exact source commit. Consumer-specific
+compatibility evidence remains separate from the public package release.
+
+### Previous 0.7.1 release
 
 Web IDE `0.7.1` was published on 2026-09-28 as an immutable patch to the
 `0.7.0` release. Its version-specific
