@@ -13,13 +13,14 @@ interface.
 Open the [linked-list workspace](https://webide.org/ide?example=linked-list).
 Ask learners to predict the list's values, links, and final sum before running it.
 
-1. Click **Debug**. A new linked-list workspace starts with a breakpoint at the
-   first executable statement. If it has been removed, click the gutter beside
-   that statement to restore it.
-2. Use **Step Over** to execute one statement at a time. Watch the **Graph**
-   panel as each node is allocated and the links are assigned.
-3. Compare the current pointer and running total with the prediction. Expand
-   variables to inspect their fields.
+1. Click **Debug**. A new linked-list workspace starts with a breakpoint at
+   line 13, `middle->next = tail;`. Existing workspaces keep their saved
+   breakpoints; click the gutter beside line 13 to add it if needed.
+2. At line 13, execution pauses before the assignment. All three nodes exist,
+   and `head->next` already points to `middle`. Click **Step Over** to connect
+   `middle` to `tail`, and watch the new link appear in the **Graph** panel.
+3. Keep stepping through the loop. Compare the current pointer and running
+   total with the prediction. Expand variables to inspect their fields.
 4. Continue to the end and compare the terminal output with the prediction.
 5. Change a value or a link and run again. Stop the debugger before changing
    breakpoints for a new C++ run.
