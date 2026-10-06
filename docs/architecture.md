@@ -44,6 +44,8 @@ exact candidate/final artifact directory. Replacement compares the prior
 directory's complete inventory around backup and retains the prior directory
 at a named recovery path if publication cannot complete;
 finalization independently rebuilds and reparses the candidate before closure.
+Declaration output uses exact `vite-plugin-dts@5.1.2` with per-file types; its
+optional API Extractor/Vue integrations are not installed or selected.
 The npm package remains private and is not published to npm. New general
 releases use independently verified immutable assets in the public Web IDE
 repository; Hamilton retains separately reviewed maintenance artifacts based on
