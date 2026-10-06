@@ -22,8 +22,8 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-Version 0.7.2 of the MIT-licensed component is available as an immutable
-[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.2),
+Version 0.7.3 of the MIT-licensed component is available as an immutable
+[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.3),
 with its package and validation evidence published together.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
@@ -31,9 +31,9 @@ Use the exact release tarball and checksum in the
 dependency inventory, and validation records; newer source commits do not alter
 those published bytes.
 
-The 0.7.3 source candidate extends the existing optional host byte device to
-Python and retains the cumulative engine fixes. See the [accepted scope](docs/python-host-device.md);
-release verification remains required before publication.
+Version 0.7.3 extends the existing optional host byte device to Python and
+retains the cumulative engine fixes. The exact release passed the production
+and packed-consumer gates; see the [accepted scope](docs/python-host-device.md).
 
 Version 0.7.2 recognizes ANSI-colored compiler errors so compilation failures
 reach the public runtime failure event before completion. It uses the unchanged

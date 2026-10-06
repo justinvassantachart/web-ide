@@ -14,6 +14,7 @@ only `dist`, `docs`, `README.md`, `LICENSE.md`, `THIRD_PARTY_LICENSES.txt` and
 
 | Version | Canonical release | Package download |
 | --- | --- | --- |
+| 0.7.3 | [`web-ide-v0.7.3`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.3) | [`web-ide-0.7.3.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.3/web-ide-0.7.3.tgz) |
 | 0.7.2 | [`web-ide-v0.7.2`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.2) | [`web-ide-0.7.2.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.2/web-ide-0.7.2.tgz) |
 | 0.7.1 | [`web-ide-v0.7.1`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.1) | [`web-ide-0.7.1.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.1/web-ide-0.7.1.tgz) |
 | 0.7.0 | [`web-ide-v0.7.0`](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.0) | [`web-ide-0.7.0.tgz`](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.0/web-ide-0.7.0.tgz) |
@@ -87,6 +88,43 @@ Hamilton application additionally pins `web-ide` 0.3.1 from that repository by
 design, so those URLs must not be retired.
 
 ## Current release configuration
+
+Web IDE `0.7.3` was published on 2026-10-06. It extends the optional host byte
+device to Python through the existing public runtime session contract, using
+exact engine `debugger-sh@0.3.15-webide.0.7.3.1`. It preserves the 0.7 testing
+APIs and per-instance lifecycle. No host channels or runtime host-service RPC
+were enabled. The [accepted scope](docs/python-host-device.md) also records the
+narrow dependency security updates required for clean release audits.
+
+All four source-bound gates passed: production validation (535 unit/integration
+tests, 21 production-browser checks, and 12 packed-viewer checks), the exact
+packed consumer, production audit, and full audit. Both audits reported zero
+known vulnerabilities. Separate packed-consumer Chromium coverage exercised
+C++ and Python Run/Debug byte devices, queued terminal input, large exchanges,
+two simultaneous Python sessions, Stop/restart/disposal, and device absence.
+The finalizer independently rebuilt and verified the complete evidence set;
+all 18 published assets were downloaded anonymously and matched exactly.
+GitHub reports the release immutable; release and package-asset attestation
+verification both passed.
+
+The package comes from source commit
+[`1674fa386d44547fbbf43375672ef85228d3d31b`](https://github.com/justinvassantachart/web-ide/commit/1674fa386d44547fbbf43375672ef85228d3d31b),
+tree `55563bff77e3dc3801ae9ca7b520720157236511`, and annotated source tag
+`web-ide-v0.7.3-source` (tag object
+`6aba9c34acd09835bf1ecfb0cd4c7268658f55c6`). The package is 640,719 bytes,
+with SHA-256
+`28525f36a6f360f82878534e9342b12c6d9718e6775963a9786a7c3c27dd32eb`
+and SHA-512 integrity
+`sha512-hdENNvie/FVno6tsLbIWdtclX1UxabNE3wEKxhXzySaJnJXc0sylVeYT++D55ZpyHAPJYis5AEcWIkBupKE3cw==`.
+The [artifact manifest](https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.3/artifact-manifest.json)
+has SHA-256
+`1b443e4c843542b6196c2129233d59da4688dcc5bb9393dc2f54ef7bd251fef7`.
+Immutable release `405027620` targets that source commit; package asset
+`616322960` and manifest asset `616322880` identify the verified downloads.
+Consumer-specific compatibility evidence remains separate from the public
+package release. Historical releases and their source tags are unchanged.
+
+### Previous 0.7.2 release
 
 Web IDE `0.7.2` was published on 2026-09-29. It recognizes colored compiler
 diagnostics without changing the runtime engine. Its configuration names source
