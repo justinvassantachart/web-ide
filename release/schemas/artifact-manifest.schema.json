@@ -71,7 +71,7 @@
         },
         "dependencies": {
           "const": {
-            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz"
+            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.7.3.1/debugger-sh-0.3.15-webide.0.7.3.1.tgz"
           }
         },
         "peerDependencies": {
@@ -737,7 +737,7 @@
               "const": "debugger-sh"
             },
             "version": {
-              "const": "0.3.15-webide.0.5.0.2"
+              "const": "0.3.15-webide.0.7.3.1"
             },
             "registryPublished": {
               "const": false
@@ -762,7 +762,7 @@
                   "pattern": "^[a-f0-9]{40}$"
                 },
                 "acceptedBaseCommit": {
-                  "const": "e2599efdff8c097defc490744a109f22df73ffa5"
+                  "const": "760fed1ed5851491b3e283b11b21e570196d7763"
                 },
                 "upstreamRepository": {
                   "const": "https://github.com/debugger-sh/engine"
@@ -842,13 +842,13 @@
                   "const": "justinvassantachart/engine"
                 },
                 "tag": {
-                  "const": "debugger-sh-v0.3.15-webide.0.5.0.2"
+                  "const": "debugger-sh-v0.3.15-webide.0.7.3.1"
                 },
                 "assetFilename": {
-                  "const": "debugger-sh-0.3.15-webide.0.5.0.2.tgz"
+                  "const": "debugger-sh-0.3.15-webide.0.7.3.1.tgz"
                 },
                 "url": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.7.3.1/debugger-sh-0.3.15-webide.0.7.3.1.tgz"
                 },
                 "size": {
                   "type": "integer",
@@ -874,10 +874,10 @@
               ],
               "properties": {
                 "version": {
-                  "const": "0.3.15-webide.0.5.0.2"
+                  "const": "0.3.15-webide.0.7.3.1"
                 },
                 "resolved": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.7.3.1/debugger-sh-0.3.15-webide.0.7.3.1.tgz"
                 },
                 "integrity": {
                   "type": "string",

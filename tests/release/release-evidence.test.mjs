@@ -155,7 +155,7 @@ function runtimeLock(overrides = {}) {
 }
 
 const FORK_ENGINE_URL = 'https://github.com/justinvassantachart/engine/releases/download'
-  + '/debugger-sh-v0.3.15-webide.0.5.0.2/debugger-sh-0.3.15-webide.0.5.0.2.tgz'
+  + '/debugger-sh-v0.3.15-webide.0.7.3.1/debugger-sh-0.3.15-webide.0.7.3.1.tgz'
 const FORK_ENGINE_INTEGRITY = `sha512-${Buffer.alloc(64, 7).toString('base64')}`
 
 function forkInputFixture(overrides = {}) {
@@ -165,7 +165,7 @@ function forkInputFixture(overrides = {}) {
     status: 'final',
     engine: {
       name: 'debugger-sh',
-      version: '0.3.15-webide.0.5.0.2',
+      version: '0.3.15-webide.0.7.3.1',
       registryPublished: false,
       upstream: {
         repository: 'https://github.com/debugger-sh/engine',
@@ -175,7 +175,7 @@ function forkInputFixture(overrides = {}) {
       source: {
         repository: 'https://github.com/justinvassantachart/engine',
         commit: 'b7236bda9c8fef31cd771fe770c2145f11ac0682',
-        acceptedBaseCommit: 'e2599efdff8c097defc490744a109f22df73ffa5',
+        acceptedBaseCommit: '760fed1ed5851491b3e283b11b21e570196d7763',
       },
       build: {
         kind: 'embedded-wasm-library-build',
@@ -190,8 +190,8 @@ function forkInputFixture(overrides = {}) {
       distribution: {
         mechanism: 'public-github-release-asset',
         repository: 'justinvassantachart/engine',
-        tag: 'debugger-sh-v0.3.15-webide.0.5.0.2',
-        assetFilename: 'debugger-sh-0.3.15-webide.0.5.0.2.tgz',
+        tag: 'debugger-sh-v0.3.15-webide.0.7.3.1',
+        assetFilename: 'debugger-sh-0.3.15-webide.0.7.3.1.tgz',
         url: FORK_ENGINE_URL,
         size: 27818347,
         sha256: 'a'.repeat(64),
@@ -215,7 +215,7 @@ function forkInputFixture(overrides = {}) {
 
 function forkEngineLockNode() {
   return {
-    version: '0.3.15-webide.0.5.0.2',
+    version: '0.3.15-webide.0.7.3.1',
     resolved: FORK_ENGINE_URL,
     integrity: FORK_ENGINE_INTEGRITY,
     license: 'MIT',
@@ -561,6 +561,17 @@ describe('committed exact-candidate consumer fixture', () => {
     expect(committed.engine.source.commit).toBe('cf7fcdd0972f014caff0171edc57e2f34b18a691')
     expect(committed.engine.source.acceptedBaseCommit)
       .toBe('760fed1ed5851491b3e283b11b21e570196d7763')
+    const schema = await readJSON(path.join(repositoryRoot, 'release/schemas/artifact-manifest.schema.json'))
+    const runtime = schema.properties.runtime.properties.engine.properties
+    expect(schema.properties.package.properties.dependencies.const)
+      .toEqual({ 'debugger-sh': committed.engine.distribution.url })
+    expect(runtime.version.const).toBe(committed.engine.version)
+    expect(runtime.source.properties.acceptedBaseCommit.const).toBe(committed.engine.source.acceptedBaseCommit)
+    for (const field of ['tag', 'assetFilename', 'url']) {
+      expect(runtime.distribution.properties[field].const).toBe(committed.engine.distribution[field])
+    }
+    expect(runtime.lock.properties.version.const).toBe(committed.engine.version)
+    expect(runtime.lock.properties.resolved.const).toBe(committed.engine.distribution.url)
     const lock = await readJSON(path.join(repositoryRoot, 'tests/consumer/package-lock.json'))
     await expect(validateCommittedConsumerFixture(
       lock.packages['node_modules/web-ide'].integrity,
@@ -596,7 +607,7 @@ describe('committed exact-candidate consumer fixture', () => {
     const cases = []
     const registryEngine = structuredClone(lock)
     registryEngine.packages[ENGINE_LOCK_PATH].resolved
-      = 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.5.0.2.tgz'
+      = 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.7.3.1.tgz'
     cases.push([manifest, registryEngine])
     const driftedEngine = structuredClone(lock)
     driftedEngine.packages[ENGINE_LOCK_PATH].integrity = `sha512-${Buffer.alloc(64, 9).toString('base64')}`
@@ -1449,14 +1460,14 @@ describe('committed fork engine input', () => {
         distribution: {
           ...record.engine.distribution,
           url: 'https://github.com/justinvassantachart/engine/releases/latest/download'
-            + '/debugger-sh-0.3.15-webide.0.5.0.2.tgz',
+            + '/debugger-sh-0.3.15-webide.0.7.3.1.tgz',
         },
       }],
       ['registry URL', {
         ...record.engine,
         distribution: {
           ...record.engine.distribution,
-          url: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.5.0.2.tgz',
+          url: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.7.3.1.tgz',
         },
       }],
       ['remote engine WebAssembly', {
@@ -1555,9 +1566,9 @@ describe('SBOM and license gates', () => {
     }
     const result = await generateCycloneDx(sbomInput)
     const engine = result.components.find((component) => component.name === 'debugger-sh')
-    expect(engine.version).toBe('0.3.15-webide.0.5.0.2')
+    expect(engine.version).toBe('0.3.15-webide.0.7.3.1')
     expect(engine.purl).toBe(
-      `pkg:npm/debugger-sh@0.3.15-webide.0.5.0.2?download_url=${encodeURIComponent(FORK_ENGINE_URL)}`,
+      `pkg:npm/debugger-sh@0.3.15-webide.0.7.3.1?download_url=${encodeURIComponent(FORK_ENGINE_URL)}`,
     )
     expect(engine.externalReferences).toEqual([
       { type: 'distribution', url: FORK_ENGINE_URL },
@@ -1940,7 +1951,7 @@ describe('artifact manifest', () => {
     expect(manifest.runtime).not.toHaveProperty('debuggerSh')
     expect(manifest.runtime.engine).toMatchObject({
       name: 'debugger-sh',
-      version: '0.3.15-webide.0.5.0.2',
+      version: '0.3.15-webide.0.7.3.1',
       registryPublished: false,
       distribution: { mechanism: 'public-github-release-asset', url: FORK_ENGINE_URL },
       lock: { resolved: FORK_ENGINE_URL, integrity: FORK_ENGINE_INTEGRITY },
@@ -1949,7 +1960,7 @@ describe('artifact manifest', () => {
         wasmLoadedAtRuntime: false,
         remotelyFetched: false,
       },
-      source: { acceptedBaseCommit: 'e2599efdff8c097defc490744a109f22df73ffa5' },
+      source: { acceptedBaseCommit: '760fed1ed5851491b3e283b11b21e570196d7763' },
     })
     expect(manifest.package.dependencies).toEqual({ 'debugger-sh': FORK_ENGINE_URL })
     for (const drifted of [
