@@ -322,7 +322,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
 
     registerHostDevice(opener: RuntimeHostDeviceOpener): Disposable {
         if (this.disposed) throw new Error('Cannot register a host device on a disposed runtime session');
-        if (this.profile.engineLanguage !== 'c') {
+        if (this.profile.engineLanguage !== 'c' && this.profile.engineLanguage !== 'python') {
             throw new Error(`Runtime provider "${this.id}" does not support host devices`);
         }
         if (typeof opener !== 'function') throw new TypeError('Host device opener must be a function');

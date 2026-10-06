@@ -238,7 +238,7 @@ export interface RuntimeSession {
   /** Registers one instance-scoped service; absent means unsupported. */
   registerHostService?(service: RuntimeHostServiceV1): Disposable
   /**
-   * Registers one instance-scoped byte-device opener while idle. Built-in C/C++ only;
+   * Registers one instance-scoped byte-device opener while idle. Built-in C/C++ and Python;
    * an engine lacking the device fails explicitly when it is loaded. Disposal removes
    * future registration; an active run retains its captured opener until run cleanup.
    */

@@ -1,3 +1,4 @@
+import { mountHostDeviceConsumer } from './host-device'
 import { createRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
@@ -134,6 +135,9 @@ const host: WebIDEHost = {
   },
 }
 
+if (new URLSearchParams(location.search).has('host-device')) {
+  mountHostDeviceConsumer()
+} else {
 initWebIDETheme()
 createRoot(document.getElementById('root')!).render(
   <WebIDEHostProvider host={host}>
@@ -142,3 +146,5 @@ createRoot(document.getElementById('root')!).render(
     </main>
   </WebIDEHostProvider>,
 )
+
+}

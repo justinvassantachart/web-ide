@@ -41,7 +41,7 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.7.2-source` tag, or a toolchain mismatch. The initial
+`web-ide-v0.7.3-source` tag, or a toolchain mismatch. The initial
 `web-ide-v0.7.1-source` checkpoint remains unchanged; its package was withheld
 after a clangd worker startup ordering defect was found. The retained
 `web-ide-v0.7.1-source-r2` checkpoint fixed that ordering, but was withheld when
@@ -100,7 +100,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.7.2.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.7.3.tgz \
   npm run test:consumer
 ```
 
@@ -289,7 +289,7 @@ changes.
 
 The built-in browser providers target exactly one pinned engine build.
 Web IDE 0.7.1 selects the exact immutable
-`debugger-sh@0.3.15-webide.0.5.0.2` fork release asset recorded in
+`debugger-sh@0.3.15-webide.0.7.3.1` fork release asset recorded in
 `release/engine-fork-input.json`. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
@@ -318,3 +318,13 @@ focus emulation and requires observed hidden/freeze/resume/visible events; a
 synthetic event or a page still reporting visible fails. This test requires a
 desktop display (or a virtual X display on Linux). No production viewer policy
 may depend on a background timer running on schedule.
+
+## Host byte-device consumer
+
+`WEB_IDE_HOST_DEVICE_BROWSER=1 npm run test:consumer` additionally runs the
+production-built, clean-installed public package in Chromium. It exercises
+C/C++ and Python Run/Debug with 131,109-byte bidirectional transfers, independent
+queued terminal input and stderr, stepping, two concurrent Python sessions,
+Stop/restart, awaited disposal, stale handles, and omitted-device sessions.
+The same seven lifecycle cases run for both built-in providers; these retain
+negative duplicate/active/disposed registration and older-engine cases.

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { verifyHostDeviceBrowser } from './host-device-browser.mjs'
 import { withVerifiedPackedCandidate } from './packed-candidate.mjs'
 import { validateConsumerFixtureValues } from '../../scripts/release/consumer-fixture.mjs'
 import { loadEngineForkInput } from '../../scripts/release/engine-fork-input.mjs'
@@ -164,7 +165,7 @@ try {
   )
   await withVerifiedPackedCandidate(
     { candidatePath: candidateTarball, consumerRoot: temporaryConsumer },
-    () => {
+    async () => {
       if (!run(npmExecutable, ['ci', '--ignore-scripts', '--no-fund', '--no-audit'])) {
         process.exitCode ||= 1
       } else if (!verifySingleReactIdentity()) {
@@ -173,6 +174,8 @@ try {
         process.exitCode ||= 1
       } else if (!run(npmExecutable, ['run', 'build'])) {
         process.exitCode ||= 1
+      } else if (process.env.WEB_IDE_HOST_DEVICE_BROWSER === '1') {
+        await verifyHostDeviceBrowser(temporaryConsumer, npmEnvironment)
       }
     },
   )
