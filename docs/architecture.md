@@ -47,11 +47,20 @@ finalization independently rebuilds and reparses the candidate before closure.
 The npm package remains private and is not published to npm. New general
 releases use independently verified immutable assets in the public Web IDE
 repository; Hamilton retains separately reviewed maintenance artifacts based on
-its older runtime. The current exact engine dependency contains a five-line
-empty-stdin-read correction on the preceding C++ engine baseline. Its source,
-build and embedded Wasm identities are bound by `release/engine-fork-input.json`.
+its older runtime. The current exact engine dependency retains C++ exceptions,
+precompiled inputs,
+and the empty-stdin-read correction, and exposes the existing host byte device
+to Python. Its source, build and embedded Wasm identities are bound by
+`release/engine-fork-input.json`.
 
 ## Stable contracts
+
+The built-in C/C++ and Python sessions expose one optional host byte-device
+opener per instance. The cumulative engine creates a distinct device for each
+run, captures its opener, and aborts/cleans it before settlement. Hosts own
+framing and interpretation; terminal streams remain independent. Registration
+is idle-only, engines without the device fail explicitly, and no separate
+host-service capability is enabled. See [the accepted language extension](python-host-device.md).
 
 `RuntimeProvider` selects and lazily creates a session per mount.
 `RuntimeSession` owns prepare/start/stop/debug operations and typed event

@@ -15,7 +15,15 @@ function registerBytes(session: root.RuntimeSession, opener: root.RuntimeHostDev
 }
 const byteOpener: root.RuntimeHostDeviceOpener = (device: root.RuntimeHostDevice) => {
   const unsubscribe = device.onData((bytes) => { void bytes.byteLength })
+  void device.write(new Uint8Array([1, 2, 3]))
   void device.signal.aborted
   return unsubscribe
 }
 void [registerBytes, byteOpener]
+
+for (const provider of [runtimes.cppRuntimeProvider, runtimes.pythonRuntimeProvider]) {
+  const session = provider.createSession()
+  const registration = registerBytes(session, byteOpener)
+  registration.dispose()
+  session.dispose?.()
+}

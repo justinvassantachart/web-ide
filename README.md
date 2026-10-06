@@ -31,6 +31,10 @@ Use the exact release tarball and checksum in the
 dependency inventory, and validation records; newer source commits do not alter
 those published bytes.
 
+The 0.7.3 source candidate extends the existing optional host byte device to
+Python and retains the cumulative engine fixes. See the [accepted scope](docs/python-host-device.md);
+release verification remains required before publication.
+
 Version 0.7.2 recognizes ANSI-colored compiler errors so compilation failures
 reach the public runtime failure event before completion. It uses the unchanged
 debugger engine and preserves the 0.7 APIs.
@@ -316,7 +320,7 @@ credentials. See
 `src/web-ide/contracts/runtime.ts` and the contract tests under
 `tests/contracts` for the exact lifecycle.
 
-The built-in C/C++ session also exposes optional `registerHostDevice(opener)` for
+The built-in C/C++ and Python sessions expose optional `registerHostDevice(opener)` for
 engines with a public `hostDevice` byte transport. The exported
 `RuntimeHostDevice` and `RuntimeHostDeviceOpener` types are structural: the device
 provides an abort signal, `onData(listener)` returning an unsubscribe function,
@@ -326,9 +330,10 @@ opens and cleans it up separately for every run. Hosts own byte framing and rend
 
 Register at most one opener on an idle session. Disposing its registration removes
 it from future runs; an active run keeps its captured opener until it ends or is
-stopped. Session disposal stops and awaits active run cleanup. Python rejects this
-registration. Engines without the device fail explicitly when loaded; omitting
-the registration preserves the existing run path and requires no dependency change.
+stopped. Session disposal stops and awaits active run cleanup. The byte device
+is separate from terminal stdin/stdout and supports both Run and Debug. Engines
+without the device fail explicitly when loaded; omitting the registration
+preserves the existing run path.
 
 Rendered panels and sidebar activities receive one `IDEExecutionController`
 using the same prepare/start/stop/restart path as toolbar commands. Its

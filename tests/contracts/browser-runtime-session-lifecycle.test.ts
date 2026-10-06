@@ -202,17 +202,30 @@ function byteDeviceEngine() {
   return { engine, devices }
 }
 
-describe('optional public byte device registration', () => {
-  it('is lazy, C/C++ only, unique and rejects invalid or disposed registrations', async () => {
+describe.each([
+  { language: 'C/C++', provider: cppRuntimeProvider, file: '/workspace/main.cpp', source: 'int main() { return 0; }' },
+  { language: 'Python', provider: pythonRuntimeProvider, file: '/workspace/main.py', source: 'print("hello")' },
+])('optional public byte device registration: $language', ({ provider, file, source }) => {
+  const workspace = { [file]: source }
+  function createSession(): RuntimeSession {
+    const session = provider.createSession()
+    sessions.push(session)
+    return session
+  }
+  async function beginRun(session: RuntimeSession, engine: FakeEngine, mode: RuntimeExecutionMode) {
+    await session.prepare({ files: workspace, mode })
+    const running = session.start({ mode })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalled())
+    return { running }
+  }
+  it('is lazy, unique and rejects invalid or disposed registrations', async () => {
     const session = createSession()
     const registration = session.registerHostDevice!(() => {})
     expect(engineCreate).not.toHaveBeenCalled()
     expect(() => session.registerHostDevice!(() => {})).toThrow('already registered')
     registration.dispose()
     expect(() => session.registerHostDevice!(null as unknown as RuntimeHostDeviceOpener)).toThrow('must be a function')
-    const python = pythonRuntimeProvider.createSession()
-    sessions.push(python)
-    expect(() => python.registerHostDevice!(() => {})).toThrow('does not support host devices')
+    expect(provider.capabilities.hostChannels).not.toBe(true)
     await session.disposeAndWait!()
     expect(() => session.registerHostDevice!(() => {})).toThrow('disposed')
   })
