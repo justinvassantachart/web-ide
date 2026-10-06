@@ -9,10 +9,11 @@ service or Firebase.
 
 The package is distributed through
 [web-ide releases](https://github.com/justinvassantachart/web-ide/releases), not
-through an npm registry publication. The examples below use `0.7.2`, which
-retains the 0.7 testing APIs and breakpoint/rename features while fixing colored
-compiler-error reporting. The commands download its published immutable package and verify it
-against the release's artifact manifest before installation.
+through an npm registry publication. The examples below use `0.7.3`, which
+retains the 0.7 testing APIs and breakpoint/rename features while extending the
+optional host byte device to Python. The commands download its published
+immutable package and verify it against the release's artifact manifest before
+installation.
 `npm install web-ide` alone does not identify this project.
 
 Run these commands from an existing React/Vite application. React and React DOM
@@ -21,28 +22,28 @@ must satisfy `^18.3.0 || ^19.0.0`.
 ```sh
 mkdir -p vendor
 curl --fail --location \
-  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.2/web-ide-0.7.2.tgz \
-  --output vendor/web-ide-0.7.2.tgz
+  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.3/web-ide-0.7.3.tgz \
+  --output vendor/web-ide-0.7.3.tgz
 curl --fail --location \
-  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.2/artifact-manifest.json \
-  --output vendor/web-ide-0.7.2-manifest.json
+  https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.7.3/artifact-manifest.json \
+  --output vendor/web-ide-0.7.3-manifest.json
 node --input-type=module <<'JS'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-const manifest = JSON.parse(readFileSync('vendor/web-ide-0.7.2-manifest.json', 'utf8'))
-assert.equal(manifest.package.version, '0.7.2')
+const manifest = JSON.parse(readFileSync('vendor/web-ide-0.7.3-manifest.json', 'utf8'))
+assert.equal(manifest.package.version, '0.7.3')
 assert.equal(manifest.distribution.repository, 'justinvassantachart/web-ide')
-assert.equal(manifest.distribution.intendedTag, 'web-ide-v0.7.2')
+assert.equal(manifest.distribution.intendedTag, 'web-ide-v0.7.3')
 const artifact = manifest.distribution.artifact
-assert.equal(artifact.fileName, 'web-ide-0.7.2.tgz')
-const bytes = readFileSync('vendor/web-ide-0.7.2.tgz')
+assert.equal(artifact.fileName, 'web-ide-0.7.3.tgz')
+const bytes = readFileSync('vendor/web-ide-0.7.3.tgz')
 assert.equal(bytes.length, artifact.size)
 assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256)
 assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), artifact.sha512Integrity)
-console.log('Verified WebIDE 0.7.2 package bytes')
+console.log('Verified WebIDE 0.7.3 package bytes')
 JS
-npm install --save-exact ./vendor/web-ide-0.7.2.tgz
+npm install --save-exact ./vendor/web-ide-0.7.3.tgz
 npm install --save-dev vite-plugin-wasm buffer@6.0.3 events@3.3.0 path-browserify@1.0.1 process@0.11.10 stream-browserify@3.0.0
 ```
 
