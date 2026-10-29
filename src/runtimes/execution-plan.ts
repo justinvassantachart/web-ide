@@ -5,7 +5,7 @@ import { normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
 export function buildRuntimeExecutionPlan(plan: RuntimeExecutionPlan): RuntimeExecutionPlan {
   const binaryFiles = Object.fromEntries(Object.entries(plan.binaryFiles ?? {}).map(([path, bytes]) => {
     if (!(bytes instanceof Uint8Array)) throw new TypeError(`Binary input must be bytes: ${path}`)
-    return [path, bytes.slice()]
+    return [path, new Uint8Array(bytes)]
   }))
   const snapshot: RuntimeExecutionPlan = {
     files: Object.freeze(normalizeRuntimeFiles(plan.files)),
@@ -22,7 +22,7 @@ export function buildRuntimeExecutionPlan(plan: RuntimeExecutionPlan): RuntimeEx
   }
   if (plan.binaryFiles !== undefined) Object.defineProperty(snapshot, 'binaryFiles', {
     enumerable: true,
-    get: () => Object.freeze(Object.fromEntries(Object.entries(binaryFiles).map(([path, bytes]) => [path, bytes.slice()]))),
+    get: () => Object.freeze(Object.fromEntries(Object.entries(binaryFiles).map(([path, bytes]) => [path, new Uint8Array(bytes)]))),
   })
   return Object.freeze(snapshot)
 }

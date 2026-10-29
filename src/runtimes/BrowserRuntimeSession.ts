@@ -581,7 +581,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
             if (Object.hasOwn(nextFileMap, relative) || Object.hasOwn(nextBinaryFiles, `/${relative}`)) {
                 throw new TypeError(`Binary input collides with an execution file: ${path}`);
             }
-            nextBinaryFiles[`/${relative}`] = bytes.slice();
+            nextBinaryFiles[`/${relative}`] = new Uint8Array(bytes);
         }
         buildRuntimeFileTree({ ...nextFileMap, ...Object.fromEntries(
             Object.keys(nextBinaryFiles).map(path => [path.slice(1), '']),

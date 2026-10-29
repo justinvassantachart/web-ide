@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Buffer as BrowserBuffer } from 'buffer/index.js'
 
 const engineCreate = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>())
 vi.mock('debugger-sh', () => ({ Engine: { create: engineCreate } }))
@@ -42,6 +43,14 @@ const input = (): RuntimeExecutionPlan => ({
   cppArtifacts: { sources: ['/workspace/main.cpp'], archives: ['/sysroot/support.a'] },
 })
 const sessions: RuntimeSession[] = []
+class AliasingBytes extends Uint8Array {}
+Object.defineProperty(AliasingBytes.prototype, 'slice', {
+  value(this: AliasingBytes) { return this },
+})
+const byteInputs = [
+  ['browser Buffer', () => BrowserBuffer.from([1, 2, 3])],
+  ['slice-overriding subclass', () => new AliasingBytes([1, 2, 3])],
+] as const
 function session() {
   const value = createCppRuntimeProvider({ cpp: { scope, objectCache: true, retainWorker: true, cacheCompilerModule: true } }).createSession()
   sessions.push(value)
@@ -51,6 +60,17 @@ beforeEach(() => engineCreate.mockReset())
 afterEach(async () => { for (const value of sessions.splice(0)) await value.disposeAndWait?.() })
 
 describe('owned pure execution plans', () => {
+  it.each(byteInputs)('owns %s inputs and every exposed binary snapshot', (_name, createBytes) => {
+    const bytes = createBytes()
+    const frozen = buildRuntimeExecutionPlan({ ...input(), binaryFiles: { '/sysroot/support.a': bytes } })
+    bytes[0] = 9
+    const exposed = frozen.binaryFiles!['/sysroot/support.a']
+    exposed[1] = 9
+    expect([...frozen.binaryFiles!['/sysroot/support.a']]).toEqual([1, 2, 3])
+    expect(exposed.buffer).not.toBe(bytes.buffer)
+    expect(frozen.binaryFiles!['/sysroot/support.a'].buffer).not.toBe(exposed.buffer)
+  })
+
   it('preserves omitted optional fields for provider trust-boundary validation', () => {
     const frozen = buildRuntimeExecutionPlan({ files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' })
     expect(Object.hasOwn(frozen, 'sourceAliases')).toBe(false)
@@ -88,6 +108,21 @@ describe('owned pure execution plans', () => {
 })
 
 describe('compile-only runtime warmup', () => {
+  it.each(byteInputs)('captures %s bytes before asynchronous engine initialization', async (_name, createBytes) => {
+    const loading = deferred<unknown>()
+    engineCreate.mockReturnValue(loading.promise)
+    const engine = new Engine()
+    const runtime = session()
+    const bytes = createBytes()
+    const warming = runtime.warmup!({ ...input(), binaryFiles: { '/sysroot/support.a': bytes } })
+    bytes[0] = 9
+    loading.resolve(engine)
+    await vi.waitFor(() => expect(engine.compile).toHaveBeenCalledOnce())
+    expect(engine.binaryFiles).toEqual({ '/support.a': new Uint8Array([1, 2, 3]) })
+    engine.pending.resolve({ type: 'completed', exitCode: 0 })
+    expect((await warming).status).toBe('completed')
+  })
+
   it('exposes fresh owned backend statistics only for an initialized configured session', async () => {
     const engine = new Engine()
     engineCreate.mockResolvedValue(engine)
