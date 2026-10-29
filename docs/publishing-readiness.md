@@ -28,7 +28,7 @@ configuration alone does not establish publication or downstream compatibility.
   semantic version, and MIT source license without changing the export map or
   React peer ranges.
 - The runtime engine pin selects the published
-  `0.3.15-webide.0.8.1.1` fork, adding scoped C++ object caching, immutable
+  `0.3.15-webide.0.8.1.2` fork, adding scoped C++ object caching, immutable
   compiler code retention, compile-only preparation and owned timing statistics.
   These features remain off for the standard provider. The fork retains the
   cumulative debugger formatter and C++/Python host-device fixes. Its exact

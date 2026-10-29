@@ -290,7 +290,7 @@ changes.
 
 The built-in browser providers target exactly one pinned engine build.
 The Web IDE 0.8.1 candidate selects the exact
-`debugger-sh@0.3.15-webide.0.8.1.1` fork artifact recorded in
+`debugger-sh@0.3.15-webide.0.8.1.2` fork artifact recorded in
 `release/engine-fork-input.json`; its public GitHub release asset is bound by
 the recorded exact size and hashes. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream

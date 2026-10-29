@@ -71,7 +71,7 @@
         },
         "dependencies": {
           "const": {
-            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.1/debugger-sh-0.3.15-webide.0.8.1.1.tgz"
+            "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.2/debugger-sh-0.3.15-webide.0.8.1.2.tgz"
           }
         },
         "peerDependencies": {
@@ -737,7 +737,7 @@
               "const": "debugger-sh"
             },
             "version": {
-              "const": "0.3.15-webide.0.8.1.1"
+              "const": "0.3.15-webide.0.8.1.2"
             },
             "registryPublished": {
               "const": false
@@ -842,13 +842,13 @@
                   "const": "justinvassantachart/engine"
                 },
                 "tag": {
-                  "const": "debugger-sh-v0.3.15-webide.0.8.1.1"
+                  "const": "debugger-sh-v0.3.15-webide.0.8.1.2"
                 },
                 "assetFilename": {
-                  "const": "debugger-sh-0.3.15-webide.0.8.1.1.tgz"
+                  "const": "debugger-sh-0.3.15-webide.0.8.1.2.tgz"
                 },
                 "url": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.1/debugger-sh-0.3.15-webide.0.8.1.1.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.2/debugger-sh-0.3.15-webide.0.8.1.2.tgz"
                 },
                 "size": {
                   "type": "integer",
@@ -874,10 +874,10 @@
               ],
               "properties": {
                 "version": {
-                  "const": "0.3.15-webide.0.8.1.1"
+                  "const": "0.3.15-webide.0.8.1.2"
                 },
                 "resolved": {
-                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.1/debugger-sh-0.3.15-webide.0.8.1.1.tgz"
+                  "const": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.2/debugger-sh-0.3.15-webide.0.8.1.2.tgz"
                 },
                 "integrity": {
                   "type": "string",

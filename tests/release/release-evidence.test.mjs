@@ -155,7 +155,7 @@ function runtimeLock(overrides = {}) {
 }
 
 const FORK_ENGINE_URL = 'https://github.com/justinvassantachart/engine/releases/download'
-  + '/debugger-sh-v0.3.15-webide.0.8.1.1/debugger-sh-0.3.15-webide.0.8.1.1.tgz'
+  + '/debugger-sh-v0.3.15-webide.0.8.1.2/debugger-sh-0.3.15-webide.0.8.1.2.tgz'
 const FORK_ENGINE_INTEGRITY = `sha512-${Buffer.alloc(64, 7).toString('base64')}`
 
 function forkInputFixture(overrides = {}) {
@@ -165,7 +165,7 @@ function forkInputFixture(overrides = {}) {
     status: 'final',
     engine: {
       name: 'debugger-sh',
-      version: '0.3.15-webide.0.8.1.1',
+      version: '0.3.15-webide.0.8.1.2',
       registryPublished: false,
       upstream: {
         repository: 'https://github.com/debugger-sh/engine',
@@ -190,8 +190,8 @@ function forkInputFixture(overrides = {}) {
       distribution: {
         mechanism: 'public-github-release-asset',
         repository: 'justinvassantachart/engine',
-        tag: 'debugger-sh-v0.3.15-webide.0.8.1.1',
-        assetFilename: 'debugger-sh-0.3.15-webide.0.8.1.1.tgz',
+        tag: 'debugger-sh-v0.3.15-webide.0.8.1.2',
+        assetFilename: 'debugger-sh-0.3.15-webide.0.8.1.2.tgz',
         url: FORK_ENGINE_URL,
         size: 27818347,
         sha256: 'a'.repeat(64),
@@ -215,7 +215,7 @@ function forkInputFixture(overrides = {}) {
 
 function forkEngineLockNode() {
   return {
-    version: '0.3.15-webide.0.8.1.1',
+    version: '0.3.15-webide.0.8.1.2',
     resolved: FORK_ENGINE_URL,
     integrity: FORK_ENGINE_INTEGRITY,
     license: 'MIT',
@@ -557,8 +557,8 @@ describe('committed exact-candidate consumer fixture', () => {
   it('binds the committed consumer graph to the exact fork engine artifact', async () => {
     const committed = await loadEngineForkInput()
     expect(committed.status).toBe('final')
-    expect(committed.engine.distribution.url).toBe('https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.1/debugger-sh-0.3.15-webide.0.8.1.1.tgz')
-    expect(committed.engine.source.commit).toBe('ad840922c909932eadc2f630b5e9355f2293e90b')
+    expect(committed.engine.distribution.url).toBe('https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.1.2/debugger-sh-0.3.15-webide.0.8.1.2.tgz')
+    expect(committed.engine.source.commit).toBe('8f0fea39f8b1f3950e6a05efd6c1da6c2106672d')
     expect(committed.engine.source.acceptedBaseCommit)
       .toBe('3f01766f83bc77fc1017c3fed81af20a16d4227a')
     const schema = await readJSON(path.join(repositoryRoot, 'release/schemas/artifact-manifest.schema.json'))
@@ -607,7 +607,7 @@ describe('committed exact-candidate consumer fixture', () => {
     const cases = []
     const registryEngine = structuredClone(lock)
     registryEngine.packages[ENGINE_LOCK_PATH].resolved
-      = 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.8.1.1.tgz'
+      = 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.8.1.2.tgz'
     cases.push([manifest, registryEngine])
     const driftedEngine = structuredClone(lock)
     driftedEngine.packages[ENGINE_LOCK_PATH].integrity = `sha512-${Buffer.alloc(64, 9).toString('base64')}`
@@ -1460,14 +1460,14 @@ describe('committed fork engine input', () => {
         distribution: {
           ...record.engine.distribution,
           url: 'https://github.com/justinvassantachart/engine/releases/latest/download'
-            + '/debugger-sh-0.3.15-webide.0.8.1.1.tgz',
+            + '/debugger-sh-0.3.15-webide.0.8.1.2.tgz',
         },
       }],
       ['registry URL', {
         ...record.engine,
         distribution: {
           ...record.engine.distribution,
-          url: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.8.1.1.tgz',
+          url: 'https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.3.15-webide.0.8.1.2.tgz',
         },
       }],
       ['remote engine WebAssembly', {
@@ -1566,9 +1566,9 @@ describe('SBOM and license gates', () => {
     }
     const result = await generateCycloneDx(sbomInput)
     const engine = result.components.find((component) => component.name === 'debugger-sh')
-    expect(engine.version).toBe('0.3.15-webide.0.8.1.1')
+    expect(engine.version).toBe('0.3.15-webide.0.8.1.2')
     expect(engine.purl).toBe(
-      `pkg:npm/debugger-sh@0.3.15-webide.0.8.1.1?download_url=${encodeURIComponent(FORK_ENGINE_URL)}`,
+      `pkg:npm/debugger-sh@0.3.15-webide.0.8.1.2?download_url=${encodeURIComponent(FORK_ENGINE_URL)}`,
     )
     expect(engine.externalReferences).toEqual([
       { type: 'distribution', url: FORK_ENGINE_URL },
@@ -1951,7 +1951,7 @@ describe('artifact manifest', () => {
     expect(manifest.runtime).not.toHaveProperty('debuggerSh')
     expect(manifest.runtime.engine).toMatchObject({
       name: 'debugger-sh',
-      version: '0.3.15-webide.0.8.1.1',
+      version: '0.3.15-webide.0.8.1.2',
       registryPublished: false,
       distribution: { mechanism: 'public-github-release-asset', url: FORK_ENGINE_URL },
       lock: { resolved: FORK_ENGINE_URL, integrity: FORK_ENGINE_INTEGRITY },
