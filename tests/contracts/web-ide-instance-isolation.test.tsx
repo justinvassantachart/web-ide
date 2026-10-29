@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { StrictMode, createRef, useLayoutEffect } from 'react'
+import { StrictMode, createRef, useLayoutEffect, type Ref } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -543,6 +543,33 @@ describe('same-realm WebIDE instance isolation', () => {
     await act(async () => { releaseForeground(plan); await foreground })
     expect(engine.run).toHaveBeenCalledOnce()
     expect(engine.compile).not.toHaveBeenCalled()
+  })
+
+  it('drains the first StrictMode session when the host shuts down from ref cleanup before bridge attachment', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const dispose = vi.fn()
+    const warmup = vi.fn<NonNullable<RuntimeSession['warmup']>>(async () => ({ status: 'completed', diagnostics: [] }))
+    const runtime = createRuntimeProvider(dispose)
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), { warmup, cancelWarmupAndWait: async () => {} })
+    let current: WebIDEInstanceHandle | null = null
+    const retirements: Promise<void>[] = []
+    const attached = (handle: WebIDEInstanceHandle | null) => {
+      if (current) retirements.push(current.shutdownRuntime())
+      current = handle
+    }
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    await act(async () => { root?.render(<StrictMode><WebIDEHostMount configuration={configuration(runtime)} host={host('strict-ref', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={attached} /></StrictMode>) })
+    await act(async () => { await Promise.all(retirements) })
+    let result!: RuntimeWarmupResult
+    await act(async () => { result = await current!.warmup!() })
+    expect(result.status).toBe('completed')
+    expect(warmup).toHaveBeenCalledOnce()
+    expect(dispose).toHaveBeenCalledOnce()
+    await act(async () => { await harness.executions.get('strict-ref')!.start('run') })
+    expect(harness.runtimeSessions.at(-1)!.start).toHaveBeenCalledOnce()
   })
 
   it.each(['complete', 'suspend'] as const)('guards selected Testing V2 preparation before executePrepared (%s)', async action => {
@@ -1518,7 +1545,7 @@ function WebIDEHostMount({
 }: {
   configuration: WebIDEConfiguration
   host: WebIDEHost
-  instanceRef: ReturnType<typeof createRef<WebIDEInstanceHandle>>
+  instanceRef: Ref<WebIDEInstanceHandle>
 }) {
   return (
     <WebIDEHostProvider host={selectedHost}>

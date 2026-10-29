@@ -19,17 +19,20 @@ export function EngineProvider({
     // is disposed instead of being abandoned by a discarded state initializer.
     useEffect(() => {
         const nextEngine = createSession();
+        const dispose = (): Promise<void> => {
+            if (nextEngine.disposeAndWait) return nextEngine.disposeAndWait().then(() => {});
+            if (nextEngine.dispose) nextEngine.dispose();
+            else nextEngine.stop({ reason: 'teardown' });
+            return Promise.resolve();
+        };
+        // Register effect ownership before refs can retire this mount. The bridge
+        // attaches later, and StrictMode must distinguish this session from its replacement.
+        runtimeController?.beginRuntime(nextEngine, dispose);
         // Effect ownership is intentional: constructing in a render/state
         // initializer lets StrictMode discard a session without cleanup.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setEngine(nextEngine);
         return () => {
-            const dispose = (): Promise<void> => {
-                if (nextEngine.disposeAndWait) return nextEngine.disposeAndWait().then(() => {});
-                if (nextEngine.dispose) nextEngine.dispose();
-                else nextEngine.stop({ reason: 'teardown' });
-                return Promise.resolve();
-            };
             try {
                 const drain = runtimeController?.retireRuntime(nextEngine, dispose) ?? dispose();
                 void drain.catch((error: unknown) => console.warn('[web-ide] runtime cleanup failed', error));

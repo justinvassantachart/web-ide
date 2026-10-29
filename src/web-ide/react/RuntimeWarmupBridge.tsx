@@ -4,6 +4,7 @@ import { useRunPipelineCoordinator } from '@/components/layout/run-pipeline-cont
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { prepareWorkbenchExecution } from '@/testing/test-execution'
 import { buildRuntimeExecutionPlan } from '@/runtimes/execution-plan'
+import { notifyRuntimeForegroundIntent } from '@/runtimes/foreground-intent'
 import { mergeExecutionResourceFiles } from '../core/workspace-resources'
 import type { WebIDEInstanceController } from '../core/instance-handle'
 import type { RuntimeWarmupResult } from '../contracts/runtime'
@@ -29,7 +30,10 @@ export function RuntimeWarmupBridge({ controller }: { controller: WebIDEInstance
     }
     const detachActivity = coordinator.attachActivity(foreground => {
       const release = controller.acquireRuntimeActivity(foreground)
-      if (release && foreground) foregroundIntent?.abort()
+      if (release && foreground) {
+        notifyRuntimeForegroundIntent(runtime)
+        foregroundIntent?.abort()
+      }
       return release
     })
     const detach = controller.attachRuntimeWarmup({

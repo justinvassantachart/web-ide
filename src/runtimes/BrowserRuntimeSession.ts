@@ -1,4 +1,5 @@
 import { EventEmitter } from '@/lib/event-emitter';
+import { registerRuntimeForegroundIntent } from './foreground-intent';
 // debugger-sh is imported lazily inside ensureEngine(). Importing it at
 // module load fires off ~80 MB of cross-origin prefetches for llvm.core.wasm
 // and llvm-resources.tar.gz from fabioibanez.github.io, inlines an
@@ -367,6 +368,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         engine?: EngineType;
     };
     private preparationGeneration = 0;
+    private foregroundIntentGeneration = 0;
+    private readonly detachForegroundIntent: () => void;
     private warmupState?: WarmupState;
     private readonly profile: BrowserRuntimeSessionProfile;
     private readonly hostServices = new Map<string, HostServiceRegistration>();
@@ -374,6 +377,13 @@ export class BrowserRuntimeSession implements RuntimeSession {
 
     constructor(profile: BrowserRuntimeSessionProfile) {
         this.profile = profile;
+        this.detachForegroundIntent = registerRuntimeForegroundIntent(this, () => {
+            if (this.disposed || this.suspended) return;
+            this.foregroundIntentGeneration++;
+            this.abortReleases();
+            const preparation = this.compilerPreparation;
+            if (preparation && this.capabilities.compileOnlyJoin === 1) preparation.claimed = true;
+        });
         this.id = profile.id;
         this.languageIds = profile.languageIds;
         this.capabilities = profile.capabilities;
@@ -2144,9 +2154,10 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     stopAndWait(options?: RuntimeStopOptions): Promise<RuntimeOutcome> {
-        const reseed = options?.reason === 'user' && this.running && !this.currentIsDebug
+        const reseed = options?.reason === 'user' && this.running && !this.currentIsDebug && !this.streamInterceptor
             && this.profile.preserveCompilerOnCancel && this.profile.eagerCompilerReseedAfterStop;
         const generation = ++this.preparationGeneration;
+        const foregroundIntent = this.foregroundIntentGeneration;
         this.finishForeground();
         const warmup = this.warmupState;
         const preparation = this.compilerPreparation;
@@ -2160,7 +2171,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (reseed) void drained.then(() => {
             // One queued maintenance job; foreground work before dispatch takes priority.
             if (this.disposed || this.suspended || generation !== this.preparationGeneration
-                || this.releases.size || this.foregroundActivity || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+                || foregroundIntent !== this.foregroundIntentGeneration || this.releases.size || this.foregroundActivity || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
             void this.prepareCompilerFor('post-stop').then(result => {
                 if (result.status === 'failed') this.reportWarmupFailure(result);
             });
@@ -2209,6 +2220,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
     disposeAndWait(): Promise<RuntimeOutcome> {
         if (this.disposalPromise) return this.disposalPromise;
         this.disposed = true;
+        this.detachForegroundIntent();
         this.abortReleases();
         this.preparationGeneration++;
         this.finishForeground();

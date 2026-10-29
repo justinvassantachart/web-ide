@@ -4,6 +4,7 @@ import type { RuntimeExecutionPlan, RuntimeSession } from '../../src/web-ide/con
 const create = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<unknown>>())
 vi.mock('debugger-sh', () => ({ Engine: { create } }))
 import { createCppRuntimeProvider } from '../../src/runtimes/providers'
+import { notifyRuntimeForegroundIntent } from '../../src/runtimes/foreground-intent'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -225,6 +226,26 @@ describe('compiler lifecycle and foreground ownership', () => {
     await preparing
     expect(engine.prepareCompiler).not.toHaveBeenCalled()
     sessions.splice(sessions.indexOf(runtime), 1)
+  })
+
+  it.each(['new-foreground', 'test-workflow'] as const)('does not reseed after Stop when %s owns the intent', async reason => {
+    const engine = new Engine()
+    const activeRun = deferred<Result>()
+    engine.run.mockReturnValueOnce(activeRun.promise)
+    engine.cancelCurrentOperation.mockImplementation(async () => { activeRun.resolve({ type: 'stopped' }) })
+    create.mockResolvedValue(engine)
+    const runtime = session({ eager: true })
+    const prepared = plan()
+    if (reason === 'test-workflow') prepared.streamInterceptor = { push: (_stream, text) => text, finish: () => '' }
+    await runtime.prepare(prepared)
+    const running = runtime.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledOnce())
+    const stopped = runtime.stopAndWait!({ reason: 'user' })
+    if (reason === 'new-foreground') notifyRuntimeForegroundIntent(runtime)
+    await stopped
+    await running
+    await Promise.resolve()
+    expect(engine.prepareCompiler).not.toHaveBeenCalled()
   })
 
   it('post-Stop reseeding prepares once and an immediate Run joins it', async () => {

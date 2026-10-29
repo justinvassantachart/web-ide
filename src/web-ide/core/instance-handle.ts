@@ -60,6 +60,7 @@ export interface WebIDEInstanceController {
   /** Returns a token-scoped detach function so a stale mount cannot detach a replacement. */
   attachWorkspaceLifecycle(lifecycle: WorkspaceInstanceLifecycle): () => void
   acquireRuntimeActivity(foreground: boolean): (() => void) | undefined
+  beginRuntime(identity: object, dispose: () => Promise<void>): void
   retireRuntime(identity: object, dispose: () => Promise<void>): Promise<void>
   attachRuntimeWarmup(lifecycle: {
     identity?: object
@@ -83,6 +84,7 @@ export function createWebIDEInstanceController(
   let lifecycleToken: object | undefined
   let runtimeWarmup: Parameters<WebIDEInstanceController['attachRuntimeWarmup']>[0] | undefined
   let runtimeIdentity: object | undefined
+  let runtimeDisposer: (() => Promise<void>) | undefined
   let shutdown: Promise<void> | undefined
   let suspension: Promise<void> | undefined
   let suspended = false
@@ -115,6 +117,25 @@ export function createWebIDEInstanceController(
       activityWaiters.add(done)
       signal?.addEventListener('abort', done, { once: true })
     })
+  }
+
+  const beginRuntime = (identity: object, dispose?: () => Promise<void>): void => {
+    if (runtimeIdentity === identity) {
+      if (dispose) runtimeDisposer = dispose
+      return
+    }
+    if (runtimeIdentity !== undefined) {
+      if (shutdown) {
+        const prior = { ready: false, drain: shutdown }
+        predecessor = prior
+        void prior.drain.then(() => { prior.ready = true }, () => {})
+      }
+      shutdown = undefined
+      suspension = undefined
+      suspended = false
+    }
+    runtimeIdentity = identity
+    runtimeDisposer = dispose
   }
 
   const persistedFiles = (): WorkspaceFiles => {
@@ -165,7 +186,7 @@ export function createWebIDEInstanceController(
       const lifecycle = runtimeWarmup
       // Fence the coordinator/session synchronously, before waiting for transform cleanup.
       let drain: Promise<void>
-      try { drain = lifecycle?.shutdown?.() ?? lifecycle?.cancel() ?? Promise.resolve() }
+      try { drain = lifecycle?.shutdown?.() ?? runtimeDisposer?.() ?? lifecycle?.cancel() ?? Promise.resolve() }
       catch (error) { drain = Promise.reject(error) }
       shutdown = Promise.allSettled([drain, drainActivities(), predecessor?.drain]).then(results => {
         const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
@@ -300,9 +321,10 @@ export function createWebIDEInstanceController(
   return {
     handle,
     acquireRuntimeActivity,
+    beginRuntime,
     retireRuntime(identity, dispose) {
       let drain: Promise<void>
-      try { drain = runtimeWarmup?.identity === identity ? handle.shutdownRuntime() : dispose() }
+      try { drain = runtimeIdentity === identity ? handle.shutdownRuntime() : dispose() }
       catch (error) { drain = Promise.reject(error) }
       const previous = predecessor?.drain
       const retirement = { ready: false, drain: Promise.all([previous, drain]).then(() => {}) }
@@ -323,19 +345,7 @@ export function createWebIDEInstanceController(
     attachRuntimeWarmup(lifecycle) {
       // StrictMode may reuse the public ref while EngineProvider creates a new session.
       // Only a different actual session identity may start a new attachment lifetime.
-      if (lifecycle.identity && runtimeIdentity !== lifecycle.identity) {
-        if (runtimeIdentity !== undefined) {
-          if (shutdown) {
-            const prior = { ready: false, drain: shutdown }
-            predecessor = prior
-            void prior.drain.then(() => { prior.ready = true }, () => {})
-          }
-          shutdown = undefined
-          suspension = undefined
-          suspended = false
-        }
-        runtimeIdentity = lifecycle.identity
-      }
+      if (lifecycle.identity) beginRuntime(lifecycle.identity)
       runtimeWarmup = lifecycle
       if (shutdown) {
         // A permanent close before the first session attachment is still final.
