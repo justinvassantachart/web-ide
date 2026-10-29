@@ -17,6 +17,7 @@ accounts, lessons, and assignment management are application features outside
 the component.
 
 For developers, see [Architecture](architecture.md), [Testing](testing.md),
+[scoped C++ runtime warmup](cpp-runtime-warmup.md),
 [the API overview](../README.md#package-surface), and
 [release verification](publishing-readiness.md). Published packages and their
 checksums are available in [Releases](https://github.com/justinvassantachart/web-ide/releases).

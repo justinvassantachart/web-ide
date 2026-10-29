@@ -9,6 +9,7 @@ import {
 } from './panel-layout'
 import type { WorkbenchInstance } from '../react/workbench-instance-context'
 import { normalizePublicWorkspacePath } from './workspace-controller'
+import type { RuntimeWarmupResult } from '../contracts/runtime'
 
 function snapshot(
   panelLayout: PanelLayoutController,
@@ -58,6 +59,11 @@ export interface WebIDEInstanceController {
   readonly handle: WebIDEInstanceHandle
   /** Returns a token-scoped detach function so a stale mount cannot detach a replacement. */
   attachWorkspaceLifecycle(lifecycle: WorkspaceInstanceLifecycle): () => void
+  attachRuntimeWarmup(lifecycle: {
+    warmup(): Promise<RuntimeWarmupResult>
+    cancel(): Promise<void>
+    compilationStatistics?(): unknown
+  }): () => void
 }
 
 /** Creates the stable public ref object for one Web IDE mount. */
@@ -67,6 +73,7 @@ export function createWebIDEInstanceController(
 ): WebIDEInstanceController {
   let workspaceLifecycle: WorkspaceInstanceLifecycle | undefined
   let lifecycleToken: object | undefined
+  let runtimeWarmup: Parameters<WebIDEInstanceController['attachRuntimeWarmup']>[0] | undefined
 
   const persistedFiles = (): WorkspaceFiles => {
     return Object.freeze({ ...instance.workspace.persistedFiles() })
@@ -106,8 +113,15 @@ export function createWebIDEInstanceController(
     flushWorkspace() {
       return workspaceLifecycle?.flush(persistedFiles()) ?? Promise.resolve()
     },
-    close() {
-      return workspaceLifecycle?.close(persistedFiles()) ?? Promise.resolve()
+    async close() {
+      await runtimeWarmup?.cancel()
+      await workspaceLifecycle?.close(persistedFiles())
+    },
+    warmup: () => runtimeWarmup?.warmup() ?? Promise.resolve({ status: 'skipped', diagnostics: [], reason: 'runtime-unavailable' }),
+    cancelWarmup: () => runtimeWarmup?.cancel() ?? Promise.resolve(),
+    compilationStatistics: () => {
+      const statistics = runtimeWarmup?.compilationStatistics?.()
+      return statistics === undefined ? undefined : structuredClone(statistics)
     },
     ensureFilesOpen(paths, primaryPath) {
       let canonicalPaths: string[]
@@ -152,6 +166,7 @@ export function createWebIDEInstanceController(
       return true
     },
     reset(options) {
+      void runtimeWarmup?.cancel()
       const breakpointFiles = new Set(Array.from(
         options?.breakpointFiles ?? [],
         normalizePublicWorkspacePath,
@@ -191,6 +206,13 @@ export function createWebIDEInstanceController(
         if (lifecycleToken !== token) return
         workspaceLifecycle = undefined
         lifecycleToken = undefined
+      }
+    },
+    attachRuntimeWarmup(lifecycle) {
+      runtimeWarmup = lifecycle
+      return () => {
+        if (runtimeWarmup !== lifecycle) return
+        runtimeWarmup = undefined
       }
     },
   }
