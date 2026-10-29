@@ -4,7 +4,8 @@ import { EventEmitter } from '@/lib/event-emitter';
 // and llvm-resources.tar.gz from fabioibanez.github.io, inlines an
 // 8.6 MB wasm asset, and materialises the worker blob URL — all before
 // the user has even pressed Run. Deferring keeps page-open cost flat.
-import type { DirNode, Engine as EngineType, Lang } from 'debugger-sh';
+import type { DirNode, Engine as EngineType, EngineOptions, Lang } from 'debugger-sh';
+import { buildRuntimeExecutionPlan, runtimeExecutionPlansEqual } from './execution-plan';
 import {
     canonicalRuntimeFilePath,
     normalizeRuntimeFiles,
@@ -23,6 +24,7 @@ import type {
     RuntimeHostServiceV1,
     RuntimeSession,
     RuntimeStartRequest,
+    RuntimeWarmupResult,
 } from '@/web-ide/contracts/runtime';
 import type { Disposable } from '@/web-ide/core/disposable';
 import { validateRuntimeHostServiceV1 } from './host-service';
@@ -94,6 +96,27 @@ interface BreakpointConfigurationChange {
     readonly nextLines: number[];
 }
 
+interface BrowserExecutionPlan {
+    plan: RuntimeExecutionPlan;
+    fileTree: DirNode;
+    binaryFiles: Record<string, Uint8Array>;
+    cppArtifacts?: ArtifactEngine['cppArtifacts'];
+    runtimePathByWorkspacePath: Map<string, string>;
+    workspacePathByRuntimePath: Map<string, string>;
+    userRuntimePaths: Set<string>;
+}
+
+interface WarmupState {
+    plan: RuntimeExecutionPlan;
+    promise: Promise<RuntimeWarmupResult>;
+    engine?: EngineType;
+    cancelled: boolean;
+    output: string;
+    truncated: boolean;
+    stdout: TextDecoder;
+    stderr: TextDecoder;
+}
+
 interface BrowserRuntimeSessionProfile {
     readonly id: string;
     readonly languageIds: readonly string[];
@@ -119,6 +142,7 @@ interface BrowserRuntimeSessionProfile {
     readonly resetAdapterAfterBreakpointClear?: boolean;
     /** Guard adapters whose resume transport has a bounded breakpoint payload. */
     readonly maxBreakpointConfigurationBytes?: number;
+    readonly engineOptions?: EngineOptions;
 }
 
 function emptyDirectory(): DirNode {
@@ -317,6 +341,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private readonly scheduledTasks = new Set<ScheduledTask>();
     private debugConfiguration: DebugConfigurationState | null = null;
     private disposed = false;
+    private preparationGeneration = 0;
+    private warmupState?: WarmupState;
     private readonly profile: BrowserRuntimeSessionProfile;
     private readonly hostServices = new Map<string, HostServiceRegistration>();
     private hostDeviceRegistration?: HostDeviceRegistration;
@@ -486,133 +512,229 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private static readonly STACK_TRACE_RETRY_MS = 50;
     private static readonly STACK_TRACE_MAX_ATTEMPTS = 2;
 
-    async prepare({
-        files,
-        mode,
-        entrypoint,
-        streamInterceptor,
-        sourceAliases = {},
-        binaryFiles = {},
-        cppArtifacts,
-    }: RuntimeExecutionPlan): Promise<RuntimePreparationResult> {
-        if (this.disposed) {
-            throw new Error('Cannot prepare a disposed runtime session');
-        }
+    private buildPlan(input: RuntimeExecutionPlan): BrowserExecutionPlan {
+        const plan = buildRuntimeExecutionPlan(input);
+        const { files, mode, entrypoint, sourceAliases = {}, binaryFiles = {}, cppArtifacts } = plan;
         if (mode === 'debug' && !this.capabilities.debug) {
-            return {
-                success: false,
-                errors: [`Runtime provider "${this.id}" does not support debugging`],
-            };
+            throw new Error(`Runtime provider "${this.id}" does not support debugging`);
         }
-
-        let nextFileMap: Record<string, string>;
-        let nextRuntimeFileTree: DirNode;
         const nextBinaryFiles: Record<string, Uint8Array> = Object.create(null);
         let nextCppArtifacts: ArtifactEngine['cppArtifacts'];
         const nextRuntimePathByWorkspacePath = new Map<string, string>();
         const nextWorkspacePathByRuntimePath = new Map<string, string>();
         const nextUserRuntimePaths = new Set<string>();
-        try {
-            const normalizedFiles = normalizeRuntimeFiles(files);
-            nextFileMap = Object.create(null) as Record<string, string>;
-            for (const [canonicalPath, content] of Object.entries(normalizedFiles)) {
-                const relativePath = runtimeRelativeFilePath(canonicalPath);
-                nextFileMap[relativePath] = content;
-                nextRuntimePathByWorkspacePath.set(canonicalPath, `/${relativePath}`);
-                nextWorkspacePathByRuntimePath.set(relativePath, canonicalPath);
-                if (canonicalPath.startsWith('/workspace/')) {
-                    nextUserRuntimePaths.add(relativePath);
-                }
+        const normalizedFiles = normalizeRuntimeFiles(files);
+        const nextFileMap = Object.create(null) as Record<string, string>;
+        for (const [canonicalPath, content] of Object.entries(normalizedFiles)) {
+            const relativePath = runtimeRelativeFilePath(canonicalPath);
+            nextFileMap[relativePath] = content;
+            nextRuntimePathByWorkspacePath.set(canonicalPath, `/${relativePath}`);
+            nextWorkspacePathByRuntimePath.set(relativePath, canonicalPath);
+            if (canonicalPath.startsWith('/workspace/')) {
+                nextUserRuntimePaths.add(relativePath);
             }
+        }
 
-            const aliasedTargets = new Set<string>();
-            for (const [staged, original] of Object.entries(sourceAliases)) {
-                const stagedPath = canonicalBreakpointPath(staged);
-                const originalPath = canonicalBreakpointPath(original);
-                if (stagedPath !== staged || originalPath !== original || stagedPath === originalPath
-                    || !Object.hasOwn(normalizedFiles, stagedPath) || aliasedTargets.has(originalPath)) {
-                    throw new TypeError('Invalid or ambiguous runtime source alias');
-                }
-                aliasedTargets.add(originalPath);
-                const relative = runtimeRelativeFilePath(stagedPath);
-                nextRuntimePathByWorkspacePath.set(originalPath, `/${relative}`);
-                nextWorkspacePathByRuntimePath.set(relative, originalPath);
-                nextUserRuntimePaths.add(relative);
+        const aliasedTargets = new Set<string>();
+        for (const [staged, original] of Object.entries(sourceAliases)) {
+            const stagedPath = canonicalBreakpointPath(staged);
+            const originalPath = canonicalBreakpointPath(original);
+            if (stagedPath !== staged || originalPath !== original || stagedPath === originalPath
+                || !Object.hasOwn(normalizedFiles, stagedPath) || aliasedTargets.has(originalPath)) {
+                throw new TypeError('Invalid or ambiguous runtime source alias');
             }
+            aliasedTargets.add(originalPath);
+            const relative = runtimeRelativeFilePath(stagedPath);
+            nextRuntimePathByWorkspacePath.set(originalPath, `/${relative}`);
+            nextWorkspacePathByRuntimePath.set(relative, originalPath);
+            nextUserRuntimePaths.add(relative);
+        }
 
-            const canonicalEntrypoint = entrypoint === undefined
-                ? undefined
-                : canonicalRuntimeFilePath(entrypoint);
-            if (canonicalEntrypoint && this.profile.defaultEntrypoint) {
-                const sourcePath = runtimeRelativeFilePath(canonicalEntrypoint);
-                const source = nextFileMap[sourcePath];
-                if (source === undefined) {
-                    throw new TypeError(`Runtime entrypoint "${entrypoint}" was not found in the workspace`);
-                }
-                if (sourcePath !== this.profile.defaultEntrypoint) {
-                    if (Object.hasOwn(nextFileMap, this.profile.defaultEntrypoint)) {
-                        throw new TypeError(
-                            `Runtime entrypoint "${entrypoint}" cannot be selected while the workspace also contains "${this.profile.defaultEntrypoint}"; stage the original file under an ephemeral path before selecting an alternate entrypoint`,
-                        );
-                    }
-                    nextFileMap[this.profile.defaultEntrypoint] =
-                        this.profile.createEntrypointLauncher?.(`/${sourcePath}`) ?? source;
-                }
+        const canonicalEntrypoint = entrypoint === undefined
+            ? undefined
+            : canonicalRuntimeFilePath(entrypoint);
+        if (canonicalEntrypoint && this.profile.defaultEntrypoint) {
+            const sourcePath = runtimeRelativeFilePath(canonicalEntrypoint);
+            const source = nextFileMap[sourcePath];
+            if (source === undefined) {
+                throw new TypeError(`Runtime entrypoint "${entrypoint}" was not found in the workspace`);
             }
+            if (sourcePath !== this.profile.defaultEntrypoint) {
+                if (Object.hasOwn(nextFileMap, this.profile.defaultEntrypoint)) {
+                    throw new TypeError(
+                        `Runtime entrypoint "${entrypoint}" cannot be selected while the workspace also contains "${this.profile.defaultEntrypoint}"; stage the original file under an ephemeral path before selecting an alternate entrypoint`,
+                    );
+                }
+                nextFileMap[this.profile.defaultEntrypoint] =
+                    this.profile.createEntrypointLauncher?.(`/${sourcePath}`) ?? source;
+            }
+        }
 
-            nextRuntimeFileTree = buildRuntimeFileTree(nextFileMap);
-            if ((cppArtifacts || Object.keys(binaryFiles).length) && this.profile.engineLanguage !== 'c') {
-                throw new TypeError('Binary build inputs require C/C++');
+        const nextRuntimeFileTree = buildRuntimeFileTree(nextFileMap);
+        if ((cppArtifacts || Object.keys(binaryFiles).length) && this.profile.engineLanguage !== 'c') {
+            throw new TypeError('Binary build inputs require C/C++');
+        }
+        const artifactPath = (path: string) => `/${runtimeRelativeFilePath(path)}`;
+        for (const [path, bytes] of Object.entries(binaryFiles)) {
+            const relative = runtimeRelativeFilePath(path);
+            if (!(bytes instanceof Uint8Array)) throw new TypeError(`Binary input must be bytes: ${path}`);
+            if (Object.hasOwn(nextFileMap, relative) || Object.hasOwn(nextBinaryFiles, `/${relative}`)) {
+                throw new TypeError(`Binary input collides with an execution file: ${path}`);
             }
-            const artifactPath = (path: string) => `/${runtimeRelativeFilePath(path)}`;
-            for (const [path, bytes] of Object.entries(binaryFiles)) {
-                const relative = runtimeRelativeFilePath(path);
-                if (!(bytes instanceof Uint8Array)) throw new TypeError(`Binary input must be bytes: ${path}`);
-                if (Object.hasOwn(nextFileMap, relative) || Object.hasOwn(nextBinaryFiles, `/${relative}`)) {
-                    throw new TypeError(`Binary input collides with an execution file: ${path}`);
-                }
-                nextBinaryFiles[`/${relative}`] = bytes.slice();
-            }
-            buildRuntimeFileTree({ ...nextFileMap, ...Object.fromEntries(
-                Object.keys(nextBinaryFiles).map(path => [path.slice(1), '']),
-            ) });
-            if (cppArtifacts) {
-                nextCppArtifacts = {
-                    sources: cppArtifacts.sources?.map(artifactPath),
-                    archives: cppArtifacts.archives?.map(artifactPath),
-                    precompiledHeader: cppArtifacts.precompiledHeader === undefined
-                        ? undefined : artifactPath(cppArtifacts.precompiledHeader),
-                };
-            }
-        } catch (error) {
-            return {
-                success: false,
-                errors: [error instanceof Error ? error.message : String(error)],
+            nextBinaryFiles[`/${relative}`] = new Uint8Array(bytes);
+        }
+        buildRuntimeFileTree({ ...nextFileMap, ...Object.fromEntries(
+            Object.keys(nextBinaryFiles).map(path => [path.slice(1), '']),
+        ) });
+        if (cppArtifacts) {
+            nextCppArtifacts = {
+                sources: cppArtifacts.sources?.map(artifactPath),
+                archives: cppArtifacts.archives?.map(artifactPath),
+                precompiledHeader: cppArtifacts.precompiledHeader === undefined
+                    ? undefined : artifactPath(cppArtifacts.precompiledHeader),
             };
         }
+        return {
+            plan,
+            fileTree: nextRuntimeFileTree,
+            binaryFiles: nextBinaryFiles,
+            cppArtifacts: nextCppArtifacts,
+            runtimePathByWorkspacePath: nextRuntimePathByWorkspacePath,
+            workspacePathByRuntimePath: nextWorkspacePathByRuntimePath,
+            userRuntimePaths: nextUserRuntimePaths,
+        };
+    }
 
+    async prepare(input: RuntimeExecutionPlan): Promise<RuntimePreparationResult> {
+        if (this.disposed) throw new Error('Cannot prepare a disposed runtime session');
+        const generation = ++this.preparationGeneration;
+        let next: BrowserExecutionPlan;
+        try { next = this.buildPlan(input); }
+        catch (error) { return { success: false, errors: [error instanceof Error ? error.message : String(error)] }; }
+        const background = this.warmupState;
+        if (background) {
+            if (next.plan.mode === 'run' && !next.plan.streamInterceptor && runtimeExecutionPlansEqual(next.plan, background.plan)) {
+                await background.promise;
+            } else await this.cancelWarmupAndWait();
+        }
+        const current = () => !this.disposed && generation === this.preparationGeneration;
+        if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
         this.flushStreamInterceptor();
-        this.streamInterceptor = streamInterceptor;
+        if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
+        this.streamInterceptor = next.plan.streamInterceptor;
         this.onClearTerminal.emit();
-        this.emitStream(
-            'stdout',
-            '\x1b[1;34mInitializing execution environment...\x1b[0m\r\n',
-        );
+        if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
+        this.emitStream('stdout', '\x1b[1;34mInitializing execution environment...\x1b[0m\r\n');
+        if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
         this.runtimePathByWorkspacePath.clear();
-        for (const [path, runtimePath] of nextRuntimePathByWorkspacePath) {
-            this.runtimePathByWorkspacePath.set(path, runtimePath);
-        }
+        for (const [path, runtimePath] of next.runtimePathByWorkspacePath) this.runtimePathByWorkspacePath.set(path, runtimePath);
         this.workspacePathByRuntimePath.clear();
-        for (const [runtimePath, path] of nextWorkspacePathByRuntimePath) {
-            this.workspacePathByRuntimePath.set(runtimePath, path);
-        }
+        for (const [runtimePath, path] of next.workspacePathByRuntimePath) this.workspacePathByRuntimePath.set(runtimePath, path);
         this.userRuntimePaths.clear();
-        for (const runtimePath of nextUserRuntimePaths) this.userRuntimePaths.add(runtimePath);
-        this.runtimeFileTree = nextRuntimeFileTree;
-        this.runtimeBinaryFiles = nextBinaryFiles;
-        this.runtimeCppArtifacts = nextCppArtifacts;
-        this.pchFallbackAllowed = cppArtifacts?.fallbackToSource === true;
+        for (const runtimePath of next.userRuntimePaths) this.userRuntimePaths.add(runtimePath);
+        this.runtimeFileTree = next.fileTree;
+        this.runtimeBinaryFiles = next.binaryFiles;
+        this.runtimeCppArtifacts = next.cppArtifacts;
+        this.pchFallbackAllowed = next.plan.cppArtifacts?.fallbackToSource === true;
         return { success: true, errors: [] };
+    }
+
+    warmup(input: RuntimeExecutionPlan): Promise<RuntimeWarmupResult> {
+        const skipped = (reason: string): Promise<RuntimeWarmupResult> => Promise.resolve({ status: 'skipped', diagnostics: [], reason });
+        if (this.disposed) return skipped('disposed');
+        if (this.profile.engineLanguage !== 'c' || !this.profile.engineOptions?.cpp?.objectCache) return skipped('disabled');
+        if (input.mode !== 'run' || input.streamInterceptor) return skipped('unsupported-workflow');
+        if (this.running || this.currentRun || (this.activeSettlement && !this.activeSettlement.settled)) return skipped('foreground-active');
+        let built: BrowserExecutionPlan;
+        try { built = this.buildPlan(input); }
+        catch (error) {
+            const result: RuntimeWarmupResult = { status: 'failed', diagnostics: [error instanceof Error ? error.message : String(error)] };
+            this.reportWarmupFailure(result);
+            return Promise.resolve(result);
+        }
+        if (this.warmupState) {
+            return runtimeExecutionPlansEqual(built.plan, this.warmupState.plan) ? this.warmupState.promise : skipped('warmup-active');
+        }
+        let resolve!: (result: RuntimeWarmupResult) => void;
+        const state: WarmupState = {
+            plan: built.plan,
+            promise: new Promise<RuntimeWarmupResult>(done => { resolve = done; }),
+            cancelled: false,
+            output: '',
+            truncated: false,
+            stdout: new TextDecoder(),
+            stderr: new TextDecoder(),
+        };
+        this.warmupState = state;
+        void this.compileWarmup(state, built).then(resolve, error => resolve({
+            status: state.cancelled || this.disposed ? 'cancelled' : 'failed',
+            diagnostics: [],
+            reason: error instanceof Error ? error.message : String(error),
+        }));
+        return state.promise;
+    }
+
+    cancelWarmupAndWait(): Promise<void> {
+        const state = this.warmupState;
+        if (!state) return Promise.resolve();
+        state.cancelled = true;
+        try { state.engine?.stop(); } catch { /* the compile result still drains */ }
+        return state.promise.then(() => {});
+    }
+
+    compilationStatistics(): unknown {
+        if (this.disposed || this.profile.engineLanguage !== 'c' || !this.profile.engineOptions?.cpp || !this.engine) return undefined;
+        return structuredClone(this.engine.cacheStats);
+    }
+
+    private captureWarmup(stream: 'stdout' | 'stderr', bytes: Uint8Array): boolean {
+        const state = this.warmupState;
+        if (!state || state.engine !== this.engine) return false;
+        const text = state[stream].decode(bytes, { stream: true });
+        const available = 65_536 - state.output.length;
+        state.output += text.slice(0, available);
+        if (text.length > available) state.truncated = true;
+        return true;
+    }
+
+    private async compileWarmup(state: WarmupState, built: BrowserExecutionPlan): Promise<RuntimeWarmupResult> {
+        let result: RuntimeWarmupResult;
+        try {
+            const engine = await this.ensureEngine();
+            if (state.cancelled || this.disposed || this.warmupState !== state) return { status: 'cancelled', diagnostics: [] };
+            state.engine = engine;
+            engine.fs = built.fileTree;
+            engine.binaryFiles = built.binaryFiles;
+            engine.cppArtifacts = built.cppArtifacts;
+            engine.debugger.enabled = false;
+            const outcome = await engine.compile();
+            const tail = state.stdout.decode() + state.stderr.decode();
+            state.output += tail.slice(0, 65_536 - state.output.length);
+            const diagnostics = state.output ? [state.output + (state.truncated ? '\n[Warmup diagnostics truncated]' : '')] : [];
+            if (state.cancelled || this.disposed) {
+                result = { status: 'cancelled', diagnostics: [] };
+            } else if (outcome.type === 'completed' && outcome.exitCode === 0) {
+                result = { status: 'completed', diagnostics, statistics: engine.cacheStats };
+            } else {
+                const reason = outcome.type === 'error' ? outcome.error.message
+                    : outcome.type === 'completed' ? `Compiler exited ${outcome.exitCode}` : 'Compiler stopped';
+                result = { status: 'failed', diagnostics, reason, statistics: engine.cacheStats };
+            }
+        } catch (error) {
+            result = state.cancelled || this.disposed ? { status: 'cancelled', diagnostics: [] }
+                : { status: 'failed', diagnostics: state.output ? [state.output] : [], reason: error instanceof Error ? error.message : String(error) };
+        } finally {
+            if (this.warmupState === state) this.warmupState = undefined;
+        }
+        if (result.status === 'failed') this.reportWarmupFailure(result);
+        return result;
+    }
+
+    private reportWarmupFailure(result: RuntimeWarmupResult): void {
+        if (this.disposed) return;
+        try {
+            this.onDiagnostic.emit({ message: `Initial compilation warmup failed: ${result.reason ?? result.diagnostics.join('\n')}`, severity: 'warning', phase: 'preparation', mode: 'run' });
+        } catch { /* A background diagnostic callback cannot block foreground execution. */ }
     }
 
     private scanForCompileError(text: string) {
@@ -856,7 +978,9 @@ export class BrowserRuntimeSession implements RuntimeSession {
             const token = {};
             this.engineInitToken = token;
             const initialization = import('debugger-sh').then(({ Engine }) =>
-                Engine.create(this.profile.engineLanguage as Lang),
+                this.profile.engineOptions
+                    ? Engine.create(this.profile.engineLanguage as Lang, this.profile.engineOptions)
+                    : Engine.create(this.profile.engineLanguage as Lang),
             );
             const adoption = initialization.then((engine) => {
                 // dispose() cannot cancel Engine.create(), so reject its
@@ -899,6 +1023,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private attachListeners(engine: EngineType) {
         engine.stdout.on('data', (chunk: Uint8Array) => {
             if (this.disposed || this.engine !== engine) return;
+            if (this.captureWarmup('stdout', chunk)) return;
+            if (!this.running) return;
             // First user-program stdout byte means compile already succeeded.
             this.inCompilePhase = false;
             const text = this.stdoutDecoder.decode(chunk, { stream: true });
@@ -906,6 +1032,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         });
         engine.stderr.on('data', (chunk: Uint8Array) => {
             if (this.disposed || this.engine !== engine) return;
+            if (this.captureWarmup('stderr', chunk)) return;
+            if (!this.running) return;
             const text = this.stderrDecoder.decode(chunk, { stream: true });
             if (this.inCompilePhase && this.pchFallbackAllowed) {
                 this.pchCompilerOutput = (this.pchCompilerOutput + text).slice(-16_384);
@@ -990,6 +1118,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         let runPromise: Promise<EngineRunResult> | null = null;
         let outcome: RuntimeOutcome = { type: 'stopped' };
         try {
+            await this.cancelWarmupAndWait();
+            if (!this.isSessionCurrent(session)) return;
             // Cancel any in-flight run on the shared engine, then await its
             // settlement so Engine.run() doesn't short-circuit to the stale
             // promise on its next call.
@@ -1803,11 +1933,19 @@ export class BrowserRuntimeSession implements RuntimeSession {
     stop(): void {
         // Preserve the 0.1 void API while new consumers can await the exact
         // same per-start settlement through stopAndWait().
-        void this.requestStop();
+        void this.stopAndWait();
     }
 
     stopAndWait(): Promise<RuntimeOutcome> {
-        return this.requestStop();
+        this.preparationGeneration++;
+        const warmup = this.warmupState;
+        const draining = this.cancelWarmupAndWait();
+        const unsettled = this.activeSettlement && !this.activeSettlement.settled;
+        const settlement = this.requestStop();
+        if (!unsettled && !warmup && this.profile.engineOptions?.cpp) {
+            try { this.engine?.stop(); } catch { /* ignore */ }
+        }
+        return warmup ? draining.then(() => settlement) : settlement;
     }
 
     private assertDebuggingSupported(): void {
@@ -1827,16 +1965,20 @@ export class BrowserRuntimeSession implements RuntimeSession {
             this.activeSettlement && !this.activeSettlement.settled,
         );
         const initialization = this.engineInit;
+        const hadWarmup = Boolean(this.warmupState);
         this.disposed = true;
         this.breakpointOverlays.clear();
         this.breakpointClearTombstones.clear();
+        const warmup = this.cancelWarmupAndWait();
+        this.preparationGeneration++;
         const settlement = this.requestStop();
-        if (!hadUnsettledStart) {
+        if (!hadUnsettledStart && !hadWarmup) {
             try { this.engine?.stop(); } catch { /* ignore */ }
         }
 
         this.disposalPromise = (async () => {
             const outcome = await settlement;
+            await warmup;
             if (initialization) {
                 try { await initialization; } catch { /* disposal rejects adoption */ }
             }
@@ -1846,6 +1988,21 @@ export class BrowserRuntimeSession implements RuntimeSession {
             if (this.engine) this.releaseEngineHostDevice(this.engine);
             this.hostServices.clear();
             this.hostDeviceRegistration = undefined;
+            this.runtimeFileTree = emptyDirectory();
+            this.runtimeBinaryFiles = {};
+            this.runtimeCppArtifacts = undefined;
+            this.runtimePathByWorkspacePath.clear();
+            this.workspacePathByRuntimePath.clear();
+            this.userRuntimePaths.clear();
+            this.streamInterceptor = undefined;
+            if (this.engine) {
+                this.engine.fs = emptyDirectory();
+                if ('binaryFiles' in this.engine) {
+                    const artifacts = this.engine as ArtifactEngine;
+                    artifacts.binaryFiles = {};
+                    artifacts.cppArtifacts = undefined;
+                }
+            }
             this.engine = null;
             this.engineInit = null;
             this.engineInitToken = null;

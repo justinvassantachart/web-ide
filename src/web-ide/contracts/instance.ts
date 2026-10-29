@@ -1,4 +1,4 @@
-import type { MemorySnapshot, StackFrame } from './runtime'
+import type { MemorySnapshot, RuntimeWarmupResult, StackFrame } from './runtime'
 import type { WorkspaceFiles } from './host'
 import type {
   IDEWorkspaceExternalApplication,
@@ -64,6 +64,12 @@ export interface WebIDEInstanceHandle {
    * retryable and never disposes the adapter before persistence succeeds.
    */
   close(): Promise<void>
+  /** One host-requested compile-only attempt from the current owned execution snapshot. */
+  warmup?(): Promise<RuntimeWarmupResult>
+  /** Cancels and drains background compilation without starting foreground execution. */
+  cancelWarmup?(): Promise<void>
+  /** Owned, backend-specific foreground/warmup compilation statistics when supported. */
+  compilationStatistics?(): unknown
   /** Opens every existing path and focuses `primaryPath` last. */
   ensureFilesOpen(paths: readonly string[], primaryPath?: string): boolean
   reset(options?: IDEInstanceResetOptions): void

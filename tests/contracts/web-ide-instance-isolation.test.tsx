@@ -10,6 +10,8 @@ import type {
   RuntimeEventChannels,
   RuntimeProvider,
   RuntimeSession,
+  RuntimeWarmupResult,
+  RuntimeExecutionPlan,
   WebIDEConfiguration,
   WebIDEHost,
   WebIDEInstanceHandle,
@@ -24,6 +26,7 @@ import { createCppClangdProvider } from '../../src/clangd/plugin'
 import type { CppCompileProfileV1 } from '../../src/web-ide/contracts/cpp'
 import { testingPlugin } from '../../src/web-ide/plugins/testing'
 import { coreWorkbenchPlugin } from '../../src/web-ide/plugins/core-workbench'
+import { useRunPipelineCoordinator, type RunPipelineCoordinator } from '../../src/components/layout/run-pipeline-context'
 import {
   bootstrapWorkspace as bootstrapLegacyWorkspace,
   getAllFiles as getLegacyWorkspaceFiles,
@@ -32,6 +35,7 @@ import {
 
 const harness = vi.hoisted(() => ({
   instances: new Map<string, unknown>(),
+  coordinators: new Map<string, RunPipelineCoordinator>(),
   contributionFeeds: new Map<string, IDEPanelServices['workspace'][]>(),
   models: new Map<string, {
     uri: { authority: string; path: string; toString(): string }
@@ -249,13 +253,15 @@ function captureFeed(key: string, workspace: IDEPanelServices['workspace']) {
 
 function CapturePanel({ workspace }: IDEPanelServices) {
   const instance = useWorkbenchInstance()
+  const coordinator = useRunPipelineCoordinator()
   const workspaceId = useWebIDEHost()?.workspace?.id ?? 'standalone'
   useLayoutEffect(() => {
     harness.instances.set(workspaceId, instance)
+    harness.coordinators.set(workspaceId, coordinator)
     return () => {
       if (harness.instances.get(workspaceId) === instance) harness.instances.delete(workspaceId)
     }
-  }, [instance, workspaceId])
+  }, [coordinator, instance, workspaceId])
   useLayoutEffect(() => { captureFeed(`panel:${workspaceId}`, workspace) })
   return <div data-instance-capture={workspaceId} />
 }
@@ -478,6 +484,7 @@ afterEach(async () => {
   mountedContainer?.remove()
   mountedContainer = undefined
   harness.instances.clear()
+  harness.coordinators.clear()
   harness.contributionFeeds.clear()
   harness.models.clear()
   harness.runtimeSessions.length = 0
@@ -489,6 +496,76 @@ afterEach(async () => {
 })
 
 describe('same-realm WebIDE instance isolation', () => {
+  it.each(['resolve', 'reject'] as const)('a foreground transition supersedes delayed initial warmup even after foreground settles (%s)', async outcome => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    let resolvePlan!: (plan: RuntimeExecutionPlan) => void
+    let rejectPlan!: (error: Error) => void
+    const transform = new Promise<RuntimeExecutionPlan>((resolve, reject) => { resolvePlan = resolve; rejectPlan = reject })
+    const tests = mountedTestingV2Provider()
+    tests.provider.prepareExecution = vi.fn(() => transform)
+    const warmup = vi.fn<NonNullable<RuntimeSession['warmup']>>(async () => ({ status: 'completed', diagnostics: [] }))
+    const runtime = createRuntimeProvider(vi.fn())
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), { warmup, cancelWarmupAndWait: async () => {} })
+    const base = configuration(runtime)
+    const config = { ...base, testProvider: tests.provider.id, plugins: [...base.plugins, { id: 'warmup.transform', contributes: { testProviders: [tests.provider] } }] }
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    await act(async () => { root?.render(<WebIDEHostMount configuration={config} host={host('delayed-warmup', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={reference} />) })
+    await act(async () => { await vi.waitFor(() => expect(reference.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('int main() {}')) })
+    let task!: Promise<RuntimeWarmupResult>
+    await act(async () => { task = reference.current!.warmup!(); await Promise.resolve() })
+    expect(tests.provider.prepareExecution).toHaveBeenCalledOnce()
+    // The foreground request can finish before the pure background transform resolves.
+    harness.coordinators.get('delayed-warmup')!.beginTransition()
+    await act(async () => {
+      if (outcome === 'resolve') resolvePlan({ files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' })
+      else rejectPlan(new Error('Stale provider rejection'))
+    })
+    expect((await task).status).toBe('cancelled')
+    expect(warmup).not.toHaveBeenCalled()
+    expect((await reference.current!.warmup!()).status).toBe('skipped')
+    expect(tests.provider.prepareExecution).toHaveBeenCalledOnce()
+  })
+
+  it('captures execution-only resources for one host warmup and cancels on edits without foreground events', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    let settle!: (result: RuntimeWarmupResult) => void
+    const background = new Promise<RuntimeWarmupResult>(resolve => { settle = resolve })
+    const warmup = vi.fn<NonNullable<RuntimeSession['warmup']>>(() => background)
+    const statistics = { latest: { cache: { hits: 5 }, compilerModule: { hits: 2 } } }
+    const cancel = vi.fn(async () => { settle({ status: 'cancelled', diagnostics: [] }) })
+    const runtime = createRuntimeProvider(vi.fn())
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), { warmup, cancelWarmupAndWait: cancel, compilationStatistics: () => statistics })
+    const config = configuration(runtime)
+    config.plugins = [...config.plugins, { id: 'warmup.resources', contributes: { resources: [{ id: 'headers', scope: 'execution-only', files: { '/sysroot/include/warmup.h': '#define VALUE 1' } }] } }]
+    const events = { emit: vi.fn() }
+    const selectedHost = { ...host('warmup-workspace', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() }), events }
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    await act(async () => { root?.render(<WebIDEHostMount configuration={config} host={selectedHost} instanceRef={reference} />) })
+    await act(async () => { await vi.waitFor(() => expect(reference.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('int main() {}')) })
+    events.emit.mockClear()
+    let task!: Promise<RuntimeWarmupResult>
+    await act(async () => { task = reference.current!.warmup!(); await Promise.resolve() })
+    expect(warmup).toHaveBeenCalledOnce()
+    expect(reference.current!.compilationStatistics!()).toEqual(statistics)
+    expect(warmup.mock.calls[0][0].files).toMatchObject({ '/workspace/main.cpp': 'int main() {}', '/sysroot/include/warmup.h': '#define VALUE 1' })
+    expect(reference.current!.persistedFiles()).not.toHaveProperty('/sysroot/include/warmup.h')
+    expect(events.emit).not.toHaveBeenCalled()
+    const instance = harness.instances.get('warmup-workspace') as WorkbenchInstance
+    expect(instance.executionStore.getState()).toMatchObject({ isRunning: false, isCompiling: false })
+    await act(async () => { instance.workspace.writeLocal('/workspace/main.cpp', 'int main() { return 2; }') })
+    expect(cancel).toHaveBeenCalled()
+    expect((await task).status).toBe('cancelled')
+    expect(warmup).toHaveBeenCalledOnce()
+  })
+
   it('separates overlapping workspace, store, debug, model, feed, and persistence state', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true

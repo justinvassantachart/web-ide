@@ -99,6 +99,7 @@ export type {
   RuntimeDiagnostic,
   RuntimeExecutionMode,
   RuntimeExecutionPlan,
+  RuntimeWarmupResult,
   RuntimeEventChannels,
   RuntimeHostChannelLimitsV1,
   RuntimeHostChannelV1,

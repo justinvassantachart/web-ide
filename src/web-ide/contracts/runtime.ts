@@ -9,6 +9,15 @@ export interface RuntimePreparationResult {
   errors: string[]
 }
 
+/** A requested, compile-only background attempt; it never publishes terminal/run events. */
+export interface RuntimeWarmupResult {
+  readonly status: 'completed' | 'cancelled' | 'skipped' | 'failed'
+  readonly diagnostics: readonly string[]
+  readonly reason?: string
+  /** Provider-specific structured cache/timing receipt; source contents are excluded. */
+  readonly statistics?: unknown
+}
+
 export interface VariableNode {
   /** Immutable identity scoped to one runtime pause, when supported. */
   debugRef?: DebugValueRef
@@ -229,6 +238,12 @@ export interface RuntimeSession {
   readDebugChildren?(value: DebugValueRef, page: DebugPageRequest): Promise<DebugChildPage>
 
   prepare(plan: RuntimeExecutionPlan): Promise<RuntimePreparationResult>
+  /** Host-requested Run-profile compilation only; providers also implement cancelWarmupAndWait. */
+  warmup?(plan: RuntimeExecutionPlan): Promise<RuntimeWarmupResult>
+  /** Cancels and drains background compilation before a workspace/scope replacement. */
+  cancelWarmupAndWait?(): Promise<void>
+  /** Owned, backend-specific compilation counters/timings; undefined when disabled or unavailable. */
+  compilationStatistics?(): unknown
   start(request: RuntimeStartRequest): Promise<void>
   stop(): void
   /** Waits for the latest start request without changing its state. */

@@ -37,6 +37,45 @@ beforeEach(async () => {
 })
 
 describe('public Web IDE instance facade', () => {
+  it('exposes host-requested warmup and drains it before closing persistence', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    const calls: string[] = []
+    const cancel = vi.fn(async () => { calls.push('cancel') })
+    const warmup = vi.fn(async () => ({ status: 'completed' as const, diagnostics: [], statistics: { entries: 1 } }))
+    const detach = controller.attachRuntimeWarmup({ warmup, cancel })
+    controller.attachWorkspaceLifecycle({ flush: async () => {}, close: async () => { calls.push('close') } })
+    expect(await controller.handle.warmup!()).toMatchObject({ status: 'completed', statistics: { entries: 1 } })
+    expect(warmup).toHaveBeenCalledOnce()
+    await controller.handle.close()
+    expect(calls).toEqual(['cancel', 'close'])
+    detach()
+    expect(await controller.handle.warmup!()).toMatchObject({ status: 'skipped' })
+  })
+
+  it('a stale warmup bridge detach cannot remove a replacement bridge', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    const old = controller.attachRuntimeWarmup({ warmup: async () => ({ status: 'failed', diagnostics: [] }), cancel: async () => {} })
+    controller.attachRuntimeWarmup({ warmup: async () => ({ status: 'completed', diagnostics: [] }), cancel: async () => {} })
+    old()
+    expect((await controller.handle.warmup!()).status).toBe('completed')
+  })
+
+  it('reads owned backend statistics through the active runtime bridge', () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    expect(controller.handle.compilationStatistics!()).toBeUndefined()
+    const statistics = { latest: { cache: { hits: 5 }, compilerModule: { hits: 2 } } }
+    const detach = controller.attachRuntimeWarmup({
+      warmup: async () => ({ status: 'completed', diagnostics: [] }),
+      cancel: async () => {},
+      compilationStatistics: () => statistics,
+    })
+    const first = controller.handle.compilationStatistics!() as typeof statistics
+    first.latest.cache.hits = 99
+    expect(controller.handle.compilationStatistics!()).toEqual(statistics)
+    detach()
+    expect(controller.handle.compilationStatistics!()).toBeUndefined()
+  })
+
   it('opens host-requested files without exposing or stealing store focus', () => {
     expect(
       webIDEInstanceHandle.ensureFilesOpen(Object.keys(files), '/workspace/main.cpp'),

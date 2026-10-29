@@ -21,6 +21,7 @@ import type {
   LanguageToolingService,
 } from './contracts/language-tooling'
 import type { WebIDEInstanceHandle } from './contracts/instance'
+import { RuntimeWarmupBridge } from './react/RuntimeWarmupBridge'
 import { WebIDEConfigurationContext } from './react/configuration-context'
 import { InstanceHandleBridge } from './react/InstanceHandleBridge'
 import { useWebIDEHost } from './react/host-context'
@@ -189,6 +190,7 @@ function WebIDEWorkspaceMount({
               createSession={createRuntimeSession!}
             >
               <RunPipelineCoordinatorProvider>
+                <RuntimeWarmupBridge controller={instanceController} />
                 {testProvider && isTestProviderV2(testProvider) && (
                   <TestingV2Mount provider={testProvider} />
                 )}

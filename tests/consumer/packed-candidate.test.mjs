@@ -13,7 +13,7 @@ import {
 const temporaryRoots = []
 
 describe('npm pack candidate filename', () => {
-  it.each(['0.7.1', '0.8.0-preview.1'])('selects the reported artifact for %s without a previous version pin', (version) => {
+  it.each(['0.7.1', '0.8.1-preview.1'])('selects the reported artifact for %s without a previous version pin', (version) => {
     const current = { name: 'web-ide', version }
     const filename = `web-ide-${version}.tgz`
     expect(packedFilenameFromReport(JSON.stringify([{ ...current, filename }]), current)).toBe(filename)
