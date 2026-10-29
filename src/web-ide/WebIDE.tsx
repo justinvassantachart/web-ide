@@ -35,6 +35,7 @@ import { resolveLanguageToolingProvider } from './core/language-tooling'
 import { createRuntimeSessionFactory } from './core/runtime-provider'
 import { createWebIDEInstanceController } from './core/instance-handle'
 import { SourcePresentationProvider } from './react/source-presentation-context'
+import { DebugPresentationProvider } from './react/DebugPresentationProvider'
 import { RunPipelineCoordinatorProvider } from '@/components/layout/RunPipelineCoordinator'
 import { resolveWebIDEInitialLayout } from './core/initial-layout'
 import { createPanelLayoutController } from './core/panel-layout'
@@ -197,7 +198,7 @@ function WebIDEWorkspaceMount({
                     provider={languageToolingProvider}
                     supplementalFiles={testProvider?.editorSupportFiles}
                   >
-                    <WorkbenchLayout />
+                    <DebugPresentationProvider><WorkbenchLayout /></DebugPresentationProvider>
                   </LanguageToolingMount>
                 </SourcePresentationProvider>
               </RunPipelineCoordinatorProvider>

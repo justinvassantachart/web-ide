@@ -15,7 +15,6 @@ import type {
     DrawCommand,
     VariableNode,
     StackFrame,
-    HeapAllocation,
     RuntimeExecutionPlan,
     RuntimeBreakpointMap,
     RuntimePreparationResult,
@@ -27,12 +26,15 @@ import type {
 } from '@/web-ide/contracts/runtime';
 import type { Disposable } from '@/web-ide/core/disposable';
 import { validateRuntimeHostServiceV1 } from './host-service';
+import { DebugValueCapture } from './debug-values';
+import type { DebugChildPage, DebugPageRequest, DebugValueRef } from '../web-ide/contracts/debug-presentation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 type EngineRunResult = Awaited<ReturnType<EngineType['run']>>;
 type RuntimeErrorOutcome = Extract<RuntimeOutcome, { type: 'error' }>;
 const pchRejectionPattern = /(?:fatal )?error:[^\r\n]*(?:precompiled header|PCH file|AST file)/i;
+let nextDebugInstance = 0;
 
 interface DapResponse {
     type?: string;
@@ -225,6 +227,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
     public readonly onClearTerminal = new EventEmitter<void>();
     public readonly onCanvasDraw = new EventEmitter<DrawCommand[]>();
     public readonly onDebugPaused = new EventEmitter<DebugPauseState>();
+    public readonly onDebugSnapshotUpdated = new EventEmitter<DebugPauseState>();
     public readonly onDebugResumed = new EventEmitter<void>();
     public readonly onExit = new EventEmitter<number>();
     public readonly onDiagnostic = new EventEmitter<{
@@ -240,6 +243,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         terminalClear: this.onClearTerminal,
         graphicsDraw: this.onCanvasDraw,
         debugPaused: this.onDebugPaused,
+        debugSnapshotUpdated: this.onDebugSnapshotUpdated,
         debugResumed: this.onDebugResumed,
         exit: this.onExit,
         diagnostic: this.onDiagnostic,
@@ -279,6 +283,10 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private readonly breakpointClearTombstones = new Set<string>();
     private running = false;
     private debugPaused = false;
+    private pauseGeneration = 0;
+    private readonly debugInstance = ++nextDebugInstance;
+    private debugCapture?: DebugValueCapture;
+    private debugSnapshot?: DebugPauseState;
     private breakpointsDirty = false;
     private breakpointAdapterResetPending = false;
     private readonly runtimePathByWorkspacePath = new Map<string, string>();
@@ -932,7 +940,10 @@ export class BrowserRuntimeSession implements RuntimeSession {
                     // stack synchronously from this callback re-enters that
                     // borrow and traps the adapter. Let the event dispatch
                     // unwind before issuing stackTrace/scopes/variables.
-                    this.scheduleStackTrace(session, m.body, 1, 0);
+                    this.pauseGeneration += 1;
+                    this.debugCapture = undefined;
+                    this.debugSnapshot = undefined;
+                    this.scheduleStackTrace(session, m.body, 1, 0, this.pauseGeneration);
                     break;
                 case 'continued':
                     // Built-ins synthesize this after a successful command
@@ -1299,41 +1310,34 @@ export class BrowserRuntimeSession implements RuntimeSession {
         return this.workspacePathByRuntimePath.get(key) ?? null;
     }
 
-    // Ceiling on children fetched per variables request. Values like vector
-    // sizes and pointer targets are read from raw debuggee memory and can be
-    // garbage (uninitialized/destroyed locals), so an unbounded request can
-    // ask the synchronous Rust adapter for millions of children and stall
-    // the main thread. 100 is plenty for the variables panel.
-    private static readonly MAX_CHILDREN = 100;
-    // Struct-member recursion guard for the same reason: garbage memory can
-    // produce arbitrarily deep member chains.
-    private static readonly MAX_DEPTH = 8;
-    // A Python pause can expose thousands of eagerly snapshotted container
-    // nodes. Bound total synchronous DAP work across every frame and scope so
-    // one pause cannot monopolize the browser's main thread.
-    private static readonly MAX_VARIABLE_NODES_PER_PAUSE = 1_000;
-    private static readonly MAX_VARIABLE_REQUESTS_PER_PAUSE = 250;
     private static readonly MAX_STACK_FRAMES_PER_PAUSE = 100;
 
-    private dapVariables(
-        variablesReference: number,
-        budget: { nodes: number; requests: number },
-    ): Any[] {
-        const remaining = BrowserRuntimeSession.MAX_VARIABLE_NODES_PER_PAUSE - budget.nodes;
-        if (
-            remaining <= 0
-            || budget.requests >= BrowserRuntimeSession.MAX_VARIABLE_REQUESTS_PER_PAUSE
-        ) return [];
-        budget.requests += 1;
-        const res = this.dapSend('variables', {
-            variablesReference,
-            start: 0,
-            count: Math.min(BrowserRuntimeSession.MAX_CHILDREN, remaining),
+    readDebugValue(value: DebugValueRef): Readonly<VariableNode> | undefined {
+        return this.debugCapture?.read(value);
+    }
+
+    readDebugChildren(value: DebugValueRef, page: DebugPageRequest): Promise<DebugChildPage> {
+        return this.debugCapture?.readChildren(value, page) ?? Promise.resolve({
+            children: [], start: page.start, complete: false,
+            availability: 'unavailable', message: 'This stop is no longer active.',
         });
-        const variables: Any[] = res?.body?.variables ?? [];
-        const accepted = variables.slice(0, remaining);
-        budget.nodes += accepted.length;
-        return accepted;
+    }
+
+    private publishDebugRevision(capture: DebugValueCapture): void {
+        if (this.debugCapture !== capture || !this.debugSnapshot || !this.debugPaused) return;
+        const callStack = this.debugSnapshot.callStack.map((frame) => ({
+            ...frame,
+            variables: frame.variables.map((value) => capture.read(value.debugRef!) ?? value),
+        }));
+        this.debugSnapshot = {
+            ...this.debugSnapshot,
+            debugSnapshot: { id: capture.id, revision: capture.revision },
+            callStack,
+            memorySnapshot: this.debugSnapshot.memorySnapshot
+                ? { frames: callStack, heapAllocations: [] }
+                : null,
+        };
+        this.onDebugSnapshotUpdated.emit(this.debugSnapshot);
     }
 
     // True when a stack-frame source path is one of the files the user can
@@ -1349,9 +1353,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
         body: Any,
         attempt: number,
         delay: number,
+        pause: number,
     ): void {
         this.scheduleForSession(session, () => {
-            if (this.handleStopped(session, body)) return;
+            if (pause !== this.pauseGeneration) return;
+            if (this.handleStopped(session, body, pause)) return;
             if (
                 this.isSessionActive(session) &&
                 attempt < BrowserRuntimeSession.STACK_TRACE_MAX_ATTEMPTS
@@ -1361,13 +1367,14 @@ export class BrowserRuntimeSession implements RuntimeSession {
                     body,
                     attempt + 1,
                     BrowserRuntimeSession.STACK_TRACE_RETRY_MS,
+                    pause,
                 );
             }
         }, delay);
     }
 
     /** Returns false only when stackTrace can be retried for this session. */
-    private handleStopped(session: number, body: Any): boolean {
+    private handleStopped(session: number, body: Any, pause: number): boolean {
         if (!this.isSessionActive(session)) return true;
         const threadId = body?.threadId ?? 1;
         this.activeThreadId = threadId;
@@ -1399,190 +1406,42 @@ export class BrowserRuntimeSession implements RuntimeSession {
             ? rawFrames.filter((frame) => this.isUserSource(frame?.source?.path))
             : rawFrames).slice(0, BrowserRuntimeSession.MAX_STACK_FRAMES_PER_PAUSE);
 
+        const supportsMemoryVisualization = this.capabilities.memoryVisualization === true;
+        const capture = new DebugValueCapture(
+            `${this.id}:${this.debugInstance}:${session}:${pause}`,
+            supportsMemoryVisualization,
+            () => this.isSessionActive(session) && this.debugPaused && this.pauseGeneration === pause,
+            (variablesReference, page) => this.dapSend('variables', { variablesReference, ...page }),
+            () => this.publishDebugRevision(capture),
+        );
+        this.debugCapture = capture;
         const callStack: StackFrame[] = [];
-        const heapAllocations = new Map<number, HeapAllocation>();
-
-        const stackAddrs = new Set<number>();
-        const heapQueue: { ptr: number; typeStr: string; variablesReference: number; valueStr?: string }[] = [];
-        const visitedRefs = new Set<number>();
-        const variableBudget = { nodes: 0, requests: 0 };
-
-        const supportsMemoryVisualization =
-            this.capabilities.memoryVisualization === true;
-        const parseAddr = (v: Any) => supportsMemoryVisualization
-            ? this.parseHexAddress(v.memoryReference)
-            : 0;
-
-        const processVariable = (v: Any, isHeap: boolean, depth = 0): VariableNode => {
-            const addr = parseAddr(v);
-            const typeStr: string = v.type ?? '';
-            // Match pointer logic including references
-            const isPointer = supportsMemoryVisualization
-                && (typeStr.includes('*') || typeStr.includes('&'));
-            const variablesReference = v.variablesReference ?? 0;
-            const hasChildren = variablesReference > 0;
-
-            if (!isHeap && addr > 0) {
-                stackAddrs.add(addr);
-            }
-
-            let members: VariableNode[] | undefined;
-            let pointsTo: number | undefined;
-
-            if (isPointer) {
-                if (hasChildren) {
-                    // The engine returns the pointer's own storage address in `value`,
-                    // not the target. Dereference through children to get the actual target.
-                    const dapVars = this.dapVariables(variablesReference, variableBudget);
-                    if (dapVars.length > 0) {
-                        pointsTo = parseAddr(dapVars[0]);
-                    }
-
-                    if (pointsTo && pointsTo > 0 && !visitedRefs.has(variablesReference)) {
-                        visitedRefs.add(variablesReference);
-                        heapQueue.push({
-                            ptr: pointsTo,
-                            typeStr: typeStr.replace(/[*&]\s*$/, '').trim() || 'unknown',
-                            variablesReference,
-                            valueStr: v.value ?? ''
-                        });
-                    }
-                }
-            } else if (hasChildren && depth < BrowserRuntimeSession.MAX_DEPTH && !visitedRefs.has(variablesReference)) {
-                visitedRefs.add(variablesReference);
-                const dapVars = this.dapVariables(variablesReference, variableBudget);
-                members = dapVars.map((child) => processVariable(child, isHeap, depth + 1));
-            }
-
-            // For pointers `v.value` is the variable's own storage address (debugger-sh
-            // deviation from DAP), so never display it — fall back to 0x0 when we can't
-            // dereference through children (NULL or undereferenceable).
-            let displayValue = String(v.value ?? '');
-            if (isPointer) {
-                displayValue = pointsTo && pointsTo > 0 ? `0x${pointsTo.toString(16)}` : '0x0';
-            }
-
-            const variable: VariableNode = {
-                name: v.name ?? '',
-                type: typeStr,
-                value: displayValue,
-                isStruct: !isPointer && hasChildren,
-                members,
-            };
-            if (supportsMemoryVisualization) {
-                variable.rawValue = pointsTo ?? addr;
-                variable.address = addr;
-                variable.size = 4;
-                variable.isPointer = isPointer;
-                variable.pointsTo = pointsTo;
-                variable.pointeeType = isPointer
-                    ? typeStr.replace(/[*&]\s*$/, '').trim()
-                    : typeStr;
-            }
-            return variable;
-        };
-
-        // Phase 1: Walk stack synchronously and gather actual memory footprints
-        for (let i = 0; i < frames.length; i++) {
-            const f = frames[i];
-            const scopesRes = this.dapSend('scopes', { frameId: f.id });
+        for (const [index, frame] of frames.entries()) {
+            if (!this.isSessionActive(session) || !this.debugPaused || pause !== this.pauseGeneration) return true;
+            const scopes = this.dapSend('scopes', { frameId: frame.id });
             const variables: VariableNode[] = [];
-
-            for (const scope of scopesRes?.body?.scopes ?? []) {
-                for (const v of this.dapVariables(scope.variablesReference, variableBudget)) {
-                    variables.push(processVariable(v, false));
-                }
+            for (const scope of scopes?.body?.scopes ?? []) {
+                variables.push(...capture.captureScope(scope.variablesReference));
             }
-
-            const frame: StackFrame = {
-                id: String(f.id),
-                funcName: f.name ?? 'unknown',
-                file: this.toWorkspacePath(f.source?.path) ?? undefined,
-                line: f.line ?? 0,
-                variables,
-                isActive: i === 0,
-            };
-            if (supportsMemoryVisualization) frame.sp = 0;
-            callStack.push(frame);
-        }
-
-        // Phase 2: Walk the dynamic pointer relationships to generate objects!
-
-        // debugger-sh's wasm runtime lays memory out as: null page / data (low)
-        // → stack → heap (high). Anything at or below the highest stack-resident
-        // variable cannot be a heap allocation — it's a wild/uninit pointer that
-        // the DAP engine cheerfully dereferenced. Without a malloc tracker this
-        // is the cleanest signal we have for separating real allocations from
-        // garbage (e.g. uninit `Node*` reading bytes that decode as 0xfffc8).
-        const stackCeiling = Math.max(...stackAddrs);
-        const isAboveStack = (addr: number) => addr > stackCeiling;
-
-        let heapNodeCount = 0;
-        const MAX_HEAP_NODES = 200;
-
-        while (heapQueue.length > 0 && heapNodeCount < MAX_HEAP_NODES) {
-            const item = heapQueue.shift()!;
-
-            if (!isAboveStack(item.ptr)) continue;
-            if (heapAllocations.has(item.ptr)) continue;
-
-            heapNodeCount++;
-
-            let dapVars: Any[] = this.dapVariables(item.variablesReference, variableBudget);
-
-            // Some DAP implementations return a single element named "*varname" when requesting variables of a pointer.
-            // In this case we unwrap it so the properties are top-level on the heap node.
-            if (dapVars.length === 1 && (dapVars[0].name?.startsWith('*') || (item.valueStr && item.valueStr.includes(dapVars[0].value)))) {
-                const derefVar = dapVars[0];
-                if (derefVar.variablesReference > 0) {
-                    const inner = this.dapVariables(derefVar.variablesReference, variableBudget);
-                    if (inner.length > 0) {
-                        dapVars = inner;
-                    }
-                }
-            }
-
-            const members = dapVars.map((child: Any) => processVariable(child, true));
-
-            heapAllocations.set(item.ptr, {
-                ptr: item.ptr,
-                size: 4,
-                typeName: item.typeStr,
-                label: `0x${item.ptr.toString(16).padStart(6, '0')}`,
-                members,
+            callStack.push({
+                id: String(frame.id), funcName: frame.name ?? 'unknown',
+                file: this.toWorkspacePath(frame.source?.path) ?? undefined,
+                line: frame.line ?? 0, variables, isActive: index === 0,
             });
         }
-
-        const topFrame = callStack[0];
-        const file = this.toWorkspacePath(frames[0]?.source?.path);
-
-        if (!this.isSessionActive(session)) return true;
-        this.onDebugPaused.emit({
-            line: topFrame?.line ?? null,
-            func: topFrame?.funcName ?? null,
-            file,
+        if (!this.isSessionActive(session) || !this.debugPaused || pause !== this.pauseGeneration) return true;
+        this.debugSnapshot = {
+            debugSnapshot: { id: capture.id, revision: capture.revision },
+            line: callStack[0]?.line ?? null,
+            func: callStack[0]?.funcName ?? null,
+            file: this.toWorkspacePath(frames[0]?.source?.path),
             callStack,
-            memorySnapshot: supportsMemoryVisualization
-                ? {
-                    frames: callStack,
-                    heapAllocations: Array.from(heapAllocations.values()),
-                }
-                : null,
+            // DAP provides object addresses, not allocation ownership or sizes.
+            memorySnapshot: supportsMemoryVisualization ? { frames: callStack, heapAllocations: [] } : null,
             nextKnownTypes: {},
-        });
+        };
+        this.onDebugPaused.emit(this.debugSnapshot);
         return true;
-    }
-
-    private parseHexAddress(ref: unknown): number {
-        if (typeof ref !== 'string' || ref.length === 0) return 0;
-        // Allows graceful extraction of pointers embedded in DAP display texts
-        const match = ref.match(/0x[0-9a-fA-F]+/);
-        if (match) {
-            const n = Number(match[0]);
-            return Number.isFinite(n) ? n : 0;
-        }
-        const n = Number(ref);
-        return Number.isFinite(n) ? n : 0;
     }
 
     private normalizeBreakpointOverlay(

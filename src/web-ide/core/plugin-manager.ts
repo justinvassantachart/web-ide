@@ -13,6 +13,7 @@ import type {
 import type { RuntimeProvider } from '../contracts/runtime'
 import type { TestProviderContribution } from '../contracts/testing'
 import type { LanguageToolingProvider } from '../contracts/language-tooling'
+import type { DebugValueFormatter } from '../contracts/debug-presentation'
 import { ContributionRegistry } from './contribution-registry'
 import {
   DisposableStore,
@@ -38,6 +39,7 @@ export class IDEPluginManager implements Disposable {
   readonly runtimeProviders = new ContributionRegistry<RuntimeProvider>()
   readonly testProviders = new ContributionRegistry<TestProviderContribution>()
   readonly languageToolingProviders = new ContributionRegistry<LanguageToolingProvider>()
+  readonly debugFormatters = new ContributionRegistry<DebugValueFormatter>()
 
   private readonly plugins: readonly IDEPlugin[]
   private readonly staticRegistrations = new DisposableStore()
@@ -125,6 +127,7 @@ export class IDEPluginManager implements Disposable {
     disposeSafely(this.staticRegistrations)
     disposeSafely(this.testProviders)
     disposeSafely(this.languageToolingProviders)
+    disposeSafely(this.debugFormatters)
     disposeSafely(this.runtimeProviders)
     disposeSafely(this.resources)
     disposeSafely(this.panels)
@@ -167,6 +170,9 @@ export class IDEPluginManager implements Disposable {
     for (const provider of plugin.contributes?.languageToolingProviders ?? []) {
       this.staticRegistrations.add(this.languageToolingProviders.register(provider))
     }
+    for (const formatter of plugin.contributes?.debugFormatters ?? []) {
+      this.staticRegistrations.add(this.debugFormatters.register(formatter))
+    }
   }
 
   private createPluginContext(
@@ -184,6 +190,7 @@ export class IDEPluginManager implements Disposable {
         this.languageToolingProviders,
         scope,
       ),
+      debugFormatters: this.createRegistrar(this.debugFormatters, scope),
       runtime: services.runtime,
       register: (disposable) => scope.add(disposable),
     }
@@ -203,6 +210,7 @@ export class IDEPluginManager implements Disposable {
       this.staticRegistrations,
       this.testProviders,
       this.languageToolingProviders,
+      this.debugFormatters,
       this.runtimeProviders,
       this.resources,
       this.panels,

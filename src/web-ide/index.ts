@@ -143,3 +143,15 @@ export type {
   TestSelectionV2,
 } from './contracts/testing'
 export type { Disposable, DisposableLike } from './core/disposable'
+export type {
+  DebugAvailability,
+  DebugChildPage,
+  DebugChildrenInfo,
+  DebugFormatContext,
+  DebugPageRequest,
+  DebugPresentation,
+  DebugPresentationChild,
+  DebugValueFormatter,
+  DebugValueRef,
+} from './contracts/debug-presentation'
+export { DebugPresentationService } from './core/debug-presentation'

@@ -8,6 +8,7 @@ import type { RuntimeProvider, RuntimeSession } from './runtime'
 import type { TestProviderContribution } from './testing'
 import type { LanguageToolingProvider } from './language-tooling'
 import type { Disposable, DisposableLike } from '../core/disposable'
+import type { DebugValueFormatter } from './debug-presentation'
 
 export interface IDEContributionRegistrar<T> {
   register(contribution: T): Disposable
@@ -21,6 +22,7 @@ export interface IDEPluginContributions {
   runtimeProviders?: readonly RuntimeProvider[]
   testProviders?: readonly TestProviderContribution[]
   languageToolingProviders?: readonly LanguageToolingProvider[]
+  debugFormatters?: readonly DebugValueFormatter[]
 }
 
 export interface IDEPluginActivationServices {
@@ -36,6 +38,7 @@ export interface IDEPluginContext {
   readonly runtimeProviders: IDEContributionRegistrar<RuntimeProvider>
   readonly testProviders: IDEContributionRegistrar<TestProviderContribution>
   readonly languageToolingProviders: IDEContributionRegistrar<LanguageToolingProvider>
+  readonly debugFormatters: IDEContributionRegistrar<DebugValueFormatter>
   /** Available when activated by <WebIDE>; optional for headless tooling. */
   readonly runtime?: RuntimeSession
   /** Registers timers/listeners/resources for automatic plugin deactivation. */

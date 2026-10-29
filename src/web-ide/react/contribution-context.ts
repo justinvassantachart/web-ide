@@ -8,6 +8,7 @@ import type {
 import type { RuntimeProvider } from '../contracts/runtime'
 import type { TestProviderContribution } from '../contracts/testing'
 import type { LanguageToolingProvider } from '../contracts/language-tooling'
+import type { DebugValueFormatter } from '../contracts/debug-presentation'
 import type { ContributionRegistry } from '../core/contribution-registry'
 
 export interface IDEContributionServices {
@@ -18,6 +19,7 @@ export interface IDEContributionServices {
   runtimeProviders: ContributionRegistry<RuntimeProvider>
   testProviders: ContributionRegistry<TestProviderContribution>
   languageToolingProviders: ContributionRegistry<LanguageToolingProvider>
+  debugFormatters: ContributionRegistry<DebugValueFormatter>
 }
 
 export const IDEContributionContext = createContext<IDEContributionServices | null>(null)
