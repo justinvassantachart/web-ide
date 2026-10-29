@@ -95,6 +95,8 @@ export class DebugPresentationService implements Disposable {
   present(ref: DebugValueRef, page = firstPage, mode: 'pretty' | 'raw' = 'pretty'): Promise<DebugPresentation> {
     page = boundedDebugPage(page)
     const key = this.key(ref, page, mode)
+    const cached = this.results.get(key)
+    if (cached) return Promise.resolve(cached)
     const existing = this.pending.get(key)
     if (existing) return existing
     const epoch = this.epoch
@@ -144,6 +146,8 @@ export class DebugPresentationService implements Disposable {
         this.notify()
       }
       return immutable
+    }).finally(() => {
+      if (this.pending.get(key) === promise) this.pending.delete(key)
     })
     this.retain(this.pending, key, promise, 1000)
     return promise
@@ -162,12 +166,15 @@ export class DebugPresentationService implements Disposable {
       return ordinal >= page.start && ordinal < page.start + page.count
     })
     const expected = total === undefined ? page.count : Math.max(0, Math.min(page.count, total - page.start))
-    const complete = page.count === 0 || children.length === expected && (total !== undefined || value.childrenInfo?.complete === true)
+    // Page coverage is independent of whether the overall collection is complete.
+    const complete = page.count === 0 || children.length === expected
     if (complete || value.availability === 'unavailable' || page.count === 0) {
       return { children, start: page.start, total, complete, availability: value.availability === 'unavailable' ? 'unavailable' : complete ? 'available' : 'partial' }
     }
     if (!live || epoch !== this.epoch || !value.debugRef || !this.runtime.readDebugChildren) {
-      return { children, start: page.start, total, complete: false, availability: 'partial', message: 'These children were not captured at this stop.' }
+      return { children, start: page.start, total, complete: false, availability: 'partial',
+        message: total === undefined ? 'Only captured children are available; the total is unknown.'
+          : 'This child range was not fully captured at this stop.' }
     }
     const key = `${epoch}:${ref}:${page.start}:${page.count}`
     let pending = this.pages.get(key)

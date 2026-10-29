@@ -52,6 +52,8 @@ export interface StackFrame {
   /** Native stack pointer, when reported by the runtime. */
   sp?: number
   variables: VariableNode[]
+  /** Explains an unavailable or bounded scope capture; absent for normal scopes. */
+  variablesMessage?: string
   isActive: boolean
 }
 

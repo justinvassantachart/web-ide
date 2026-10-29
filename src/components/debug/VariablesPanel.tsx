@@ -74,7 +74,8 @@ export function VariablesPanel() {
             )}
 
             <div className="flex-1 min-h-0 overflow-y-auto py-1">
-                <Scope title="Locals" empty="No variables in scope">
+                {selectedFrame?.variablesMessage && <div className="px-3 py-1 text-xs text-muted-foreground" role="status">{selectedFrame.variablesMessage}</div>}
+                <Scope title="Locals" empty={selectedFrame?.variablesMessage ? 'No variables were captured.' : 'No variables in scope'}>
                     {selectedFrame?.variables.map((v, index) => (
                         <VariableRow
                             key={`${v.name}-${index}`}

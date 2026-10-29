@@ -11,7 +11,7 @@ import { DebugPresentationToggle } from './DebugPresentationToggle'
 import { useDebugPresentationService } from '@/web-ide/react/debug-presentation-state'
 import { placeStackFrames, placeHeapNodes, rowsToHeight, type Point } from './graph-layout'
 
-function StackFrameNode({ data }: { data: { id: string; label: string; isActive: boolean; variables: MemoryValue[] } }) {
+function StackFrameNode({ data }: { data: { id: string; label: string; isActive: boolean; variables: MemoryValue[]; variablesMessage?: string } }) {
     const updateNodeInternals = useUpdateNodeInternals()
     useLayoutEffect(() => { updateNodeInternals(data.id) }, [data, updateNodeInternals])
     return (
@@ -23,10 +23,11 @@ function StackFrameNode({ data }: { data: { id: string; label: string; isActive:
             </div>
             <div className="flex flex-col w-full" role="tree" aria-label={`${data.label} values`}>
                 {data.variables.length === 0 ? (
-                    <div className="p-2 text-xs text-muted-foreground italic text-center">No variables</div>
+                    <div className="p-2 text-xs text-muted-foreground italic text-center">{data.variablesMessage ?? 'No variables'}</div>
                 ) : data.variables.map((variable, index) => {
                     return <VariableRow key={variable.debugRef ?? `${data.id}.${index}`} variable={variable} depth={0} graph />
                 })}
+                {data.variables.length > 0 && data.variablesMessage && <div role="status" className="p-2 text-xs text-muted-foreground">{data.variablesMessage}</div>}
             </div>
             <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
             <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
@@ -156,9 +157,18 @@ export function MemoryVisualizer() {
         const rawEdges: Edge[] = []
         const reversedFrames = [...snapshot.frames].reverse()
 
-        // Only visible, captured addresses participate in physical pointer edges.
+        // Only visible, captured addresses participate in pointer/reference edges.
         // Logical container membership is rendered as indented rows in each card.
         const addressMap = new Map<number, { nodeId: string; handleId: string }>()
+        // A reference's first field can share its caller object's address.
+        // Register all frame roots before expanded fields can claim that address.
+        for (const frame of snapshot.frames) {
+            for (const value of frame.variables) {
+                if (value.address !== undefined && value.address > 0 && !addressMap.has(value.address)) {
+                    addressMap.set(value.address, { nodeId: frame.id, handleId: `${service.getRef(value)}-target` })
+                }
+            }
+        }
         const visible = new Map<string, MemoryValue[]>()
         const collect = (values: MemoryValue[], id: string, depth = 0, seen = new Set<string>()) => {
             const rows = visible.get(id) ?? []
@@ -192,7 +202,7 @@ export function MemoryVisualizer() {
         }
         const extractEdges = (id: string, active: boolean) => {
             for (const value of visible.get(id) ?? []) {
-                if (!value.isPointer || !value.pointsTo) continue
+                if ((!value.isPointer && value.typeKind !== 'reference') || !value.pointsTo) continue
                 const target = addressMap.get(value.pointsTo)
                 if (!target) continue
                 const sourceHandle = service.getRef(value)
@@ -209,7 +219,8 @@ export function MemoryVisualizer() {
             rawNodes.push({
                 id: frameData.id, type: 'stackFrame', position: { x: 0, y: 0 },
                 draggable: false,
-                data: { id: frameData.id, label: `${frameData.funcName}()`, isActive: frameData.isActive, variables: frameData.variables },
+                data: { id: frameData.id, label: `${frameData.funcName}()`, isActive: frameData.isActive,
+                    variables: frameData.variables, variablesMessage: frameData.variablesMessage },
             })
             extractEdges(frameData.id, frameData.isActive)
         })

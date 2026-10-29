@@ -60,7 +60,7 @@ export function VariableRow({ variable, depth, label, detail, graph = false, anc
                 <span className={`ml-auto min-w-0 max-w-[55%] shrink-0 text-right truncate ${valueClass}`} title={value}>{value.slice(0, 512)}</span>
                 {graph && variable.address !== undefined && variable.address > 0 && <Handle type="target" position={Position.Left}
                     id={`${ref}-target`} className="!w-1 !h-1 !bg-transparent !border-0 !left-0 !opacity-0" />}
-                {graph && variable.isPointer && variable.pointsTo !== undefined && variable.pointsTo !== 0 && <Handle type="source"
+                {graph && (variable.isPointer || variable.typeKind === 'reference') && variable.pointsTo !== undefined && variable.pointsTo !== 0 && <Handle type="source"
                     position={Position.Right} id={ref} className="!w-2 !h-2 !bg-primary !border-0 !-right-1" />}
             </button>
             {detail && <div className="px-6 text-[10px] font-mono text-muted-foreground">{detail}</div>}

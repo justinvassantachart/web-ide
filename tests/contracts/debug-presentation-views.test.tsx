@@ -158,3 +158,50 @@ it('stops at an incomplete page and counts only captured values', async () => {
   expect(container.textContent).not.toContain('Load more values')
   expect(container.textContent).not.toContain('Showing 200')
 })
+
+it('offers all captured pages from an older provider while keeping its total unknown', async () => {
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const instance = createWorkbenchInstance()
+  const list: VariableNode = { name: 'legacy', type: 'OldList', value: '{...}', isStruct: true,
+    members: Array.from({ length: 205 }, (_, index) => scalar(String(index), index)) }
+  const snapshot = pause('legacy', 0, [list])
+  instance.debugStore.getState().pushHistoryState(snapshot)
+  const service = new DebugPresentationService({} as RuntimeSession, [])
+  service.setSnapshot(snapshot, false)
+  disposals.push(() => service.dispose(), () => instance.workspace.dispose())
+  const container = document.createElement('div')
+  root = createRoot(container)
+  await act(async () => {
+    root!.render(<WorkbenchInstanceContext.Provider value={instance}><DebugPresentationContext.Provider value={service}>
+      <VariablesPanel />
+    </DebugPresentationContext.Provider></WorkbenchInstanceContext.Provider>)
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  await click(container, 'Expand legacy')
+  expect(container.textContent).toContain('100 captured')
+  await click(container, 'Load more values')
+  expect(container.textContent).toContain('200 captured')
+  await click(container, 'Load more values')
+  expect(container.textContent).toContain('205 captured')
+  expect(container.textContent).toContain('the total is unknown')
+  expect(container.textContent).not.toContain('not captured')
+  expect(container.textContent).not.toContain('Load more values')
+})
+
+it('does not present an unavailable scope as having no variables', async () => {
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const instance = createWorkbenchInstance()
+  const snapshot = pause('limited')
+  snapshot.callStack[0].variablesMessage = 'Variables unavailable or inspection limit reached.'
+  instance.debugStore.getState().pushHistoryState(snapshot)
+  const service = new DebugPresentationService({} as RuntimeSession, [])
+  service.setSnapshot(snapshot, false)
+  disposals.push(() => service.dispose(), () => instance.workspace.dispose())
+  const container = document.createElement('div')
+  root = createRoot(container)
+  await act(async () => root!.render(<WorkbenchInstanceContext.Provider value={instance}>
+    <DebugPresentationContext.Provider value={service}><VariablesPanel /></DebugPresentationContext.Provider>
+  </WorkbenchInstanceContext.Provider>))
+  expect(container.textContent).toContain('Variables unavailable or inspection limit reached.')
+  expect(container.textContent).not.toContain('No variables in scope')
+})

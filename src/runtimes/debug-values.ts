@@ -60,6 +60,7 @@ export class DebugValueCapture {
   private nodes = 0
   private requests = 0
   revision = 0
+  lastScopeMessage?: string
 
   constructor(
     id: string, nativeMemory: boolean, active: () => boolean,
@@ -72,10 +73,28 @@ export class DebugValueCapture {
     this.updated = updated
   }
 
-  captureScope(handle: number): VariableNode[] {
+  captureScope(handle: number, eager = true): VariableNode[] {
+    this.lastScopeMessage = undefined
+    const limit = Math.min(100, 1000 - this.nodes)
     const result = this.request(handle, { start: 0, count: 100 })
-    if (!result) return []
-    return result.map((value, index) => this.capture(value, 0, index)).map((ref) => this.read(ref)!)
+    if (!result) {
+      this.lastScopeMessage = 'Variables unavailable or inspection limit reached.'
+      return []
+    }
+    if (result.length === limit) this.lastScopeMessage = `Scope capture is limited to ${limit} variables.`
+    return result.map((value, index) => this.capture(value, 0, index, eager)).map((ref) => this.read(ref)!)
+  }
+
+  /** Reserve roots in every frame before container children consume the budget. */
+  expandValues(values: readonly VariableNode[]): void {
+    for (const value of values) {
+      const record = value.debugRef && this.values.get(value.debugRef)
+      if (record && record.handle > 0 && !this.pageComplete(record, { start: 0, count: 100 })) {
+        this.expanding.add(record.handle)
+        this.load(record, { start: 0, count: 100 })
+        this.expanding.delete(record.handle)
+      }
+    }
   }
 
   read(ref: DebugValueRef): VariableNode | undefined {
@@ -126,7 +145,7 @@ export class DebugValueCapture {
     return pending
   }
 
-  private capture(raw: DapVariable, depth: number, ordinal: number): DebugValueRef {
+  private capture(raw: DapVariable, depth: number, ordinal: number, eager = true): DebugValueRef {
     const ref = `${this.id}:v${++this.nextRef}` as DebugValueRef
     const handle = count(raw.variablesReference) ?? 0
     const indexed = count(raw.indexedVariables)
@@ -146,11 +165,15 @@ export class DebugValueCapture {
       if (node.isPointer) {
         node.pointsTo = address(value)
         node.pointeeType = type.replace(/\*\s*(?:(?:const|volatile)\s*)*$/, '').trim()
+      } else if (typeKind === 'reference' && value.startsWith('@')) {
+        // Native compound references display @<referent address>. Scalar and
+        // pointer-valued references display values, which are not alias targets.
+        node.pointsTo = address(value.slice(1))
       }
     }
     const record: CapturedValue = { value: node, handle, depth, total, children: new Map() }
     this.values.set(ref, record)
-    if (handle > 0 && depth < 8 && !this.expanding.has(handle)) {
+    if (eager && handle > 0 && depth < 8 && !this.expanding.has(handle)) {
       this.expanding.add(handle)
       this.load(record, { start: 0, count: 100 })
       this.expanding.delete(handle)

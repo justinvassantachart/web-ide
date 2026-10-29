@@ -36,6 +36,33 @@ describe('pause-scoped raw values', () => {
     expect(p).not.toHaveProperty('size')
   })
 
+  it('preserves explicit reference targets from native DAP without confusing values with addresses', () => {
+    // Recorded debugger-sh referential fixture: cref has its own storage,
+    // displays the Compound referent's address, and exposes its public members.
+    const variables: DapVariable[] = [
+      { name: 'c', type: 'Compound', value: '@0xffff0', memoryReference: '0xffff0', variablesReference: 2, indexedVariables: 0, namedVariables: 2 },
+      { name: 'cref', type: 'Compound&', value: '@0xffff0', memoryReference: '0xfffec', variablesReference: 3, indexedVariables: 0, namedVariables: 2 },
+      { name: 'lref', type: 'long&', value: '1', memoryReference: '0xfffe0', variablesReference: 0, indexedVariables: 0, namedVariables: 0 },
+      // These displays do not supply the address of the referenced object.
+      { name: 'pointerRef', type: 'int*&', value: '0xffff0', variablesReference: 0 },
+      { name: 'unavailable', type: 'Compound&', value: '<unavailable>', variablesReference: 0 },
+      { name: 'malformed', type: 'Compound&', value: '@0xffff0 trailing text', variablesReference: 0 },
+      { name: 'pointerElements', type: 'Vector<int*>', value: '@0xffff0', variablesReference: 0 },
+    ]
+    const children: DapVariable[] = [
+      { name: 'a', type: 'long', value: '1', memoryReference: '0xffff0', variablesReference: 0 },
+      { name: 'b', type: 'long', value: '2', memoryReference: '0xffff4', variablesReference: 0 },
+    ]
+    const capture = new DebugValueCapture('references', true, () => true,
+      handle => ({ success: true, body: { variables: handle === 1 ? variables : children } }), () => {})
+    const [compound, reference, ...nonlinks] = capture.captureScope(1)
+    expect(reference).toMatchObject({ typeKind: 'reference', isPointer: false, isStruct: true,
+      value: '@0xffff0', address: 0xfffec, pointsTo: compound.address })
+    expect(reference.members).toMatchObject([{ name: 'a', value: '1' }, { name: 'b', value: '2' }])
+    expect(compound.pointsTo).toBeUndefined()
+    for (const value of nonlinks) expect(value.pointsTo, value.name).toBeUndefined()
+  })
+
   it('captures 100 of 101, deduplicates a later page and keeps the old revision immutable', async () => {
     const { capture, root, send, updated } = fixture()
     expect(root.childrenInfo).toEqual({ total: 101, loaded: 100, complete: false })
@@ -123,5 +150,34 @@ describe('pause-scoped raw values', () => {
     expect(await capture.readChildren(value.debugRef!, { start: 0, count: 100 })).toMatchObject({ complete: false, availability: 'partial' })
     await capture.readChildren(value.debugRef!, { start: 0, count: 100 })
     expect(updated).not.toHaveBeenCalled()
+  })
+
+  it('reserves caller variables before repeated container references exhaust the child budget', () => {
+    const send = vi.fn((handle: number, page: { start: number; count: number }) => ({
+      success: true, body: { variables: handle >= 100
+        ? [{ name: 'visited', type: 'Grid<bool>&', value: '@0x1000', variablesReference: handle - 99, namedVariables: 100 },
+          { name: 'depth', type: 'int', value: handle - 100, variablesReference: 0 }]
+        : Array.from({ length: page.count }, (_, i) => ({ name: `[${i}]`, type: 'bool', value: 'true', variablesReference: 0 })) },
+    }))
+    const capture = new DebugValueCapture('recursive', true, () => true, send, () => {})
+    const frames = Array.from({ length: 12 }, (_, i) => capture.captureScope(100 + i, false))
+    expect(frames.map(values => values.map(value => value.name))).toEqual(Array.from({ length: 12 }, () => ['visited', 'depth']))
+    capture.expandValues(frames.flat())
+    for (const [index, values] of frames.entries()) {
+      expect(capture.read(values[1].debugRef!)?.value).toBe(String(index))
+    }
+    expect(capture.read(frames.at(-1)![0].debugRef!)?.availability).toBe('partial')
+    expect(send.mock.calls).toHaveLength(22)
+    expect(send.mock.calls.every(([, page]) => page.count <= 100)).toBe(true)
+  })
+
+  it('distinguishes failed or limited scopes from an empty scope', () => {
+    const capture = new DebugValueCapture('limited', true, () => true, handle => handle === 1
+      ? { success: true, body: { variables: [] } }
+      : { success: false }, () => {})
+    expect(capture.captureScope(1)).toEqual([])
+    expect(capture.lastScopeMessage).toBeUndefined()
+    expect(capture.captureScope(2)).toEqual([])
+    expect(capture.lastScopeMessage).toContain('unavailable')
   })
 })

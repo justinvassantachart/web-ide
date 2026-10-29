@@ -28,6 +28,49 @@ describe('shared debug presentations', () => {
     service.dispose()
   })
 
+  it('pages all captured legacy members without claiming a known collection total', async () => {
+    const legacy: VariableNode = { name: 'items', type: 'LegacyList', value: '{...}', isStruct: true,
+      members: Array.from({ length: 205 }, (_, index) => ({ name: String(index), type: 'int', value: String(index) })) }
+    const service = new DebugPresentationService({} as RuntimeSession, [])
+    service.setSnapshot(snapshot(legacy), false)
+    const ref = service.getRef(legacy)
+    for (const start of [0, 100]) {
+      const page = await service.present(ref, { start, count: 100 })
+      expect(page).toMatchObject({ start, total: undefined, complete: true, availability: 'available' })
+      expect(page.children).toHaveLength(100)
+      expect(page.message).toBeUndefined()
+    }
+    const last = await service.present(ref, { start: 200, count: 100 })
+    expect(last).toMatchObject({ start: 200, total: undefined, complete: false, availability: 'partial',
+      message: expect.stringContaining('total is unknown') })
+    expect(last.children.map(value => value.label)).toEqual(['200', '201', '202', '203', '204'])
+    expect(service.readValue(ref)?.childrenInfo).toEqual({ total: undefined, loaded: 205, complete: false })
+    service.dispose()
+  })
+
+  it('recomputes an evicted result after requests settle in a different order', async () => {
+    let finishFirst!: () => void
+    const first = new Promise<void>(resolve => { finishFirst = resolve })
+    const format = vi.fn(async (_value, _context, page) => {
+      if (page.start === 0) await first
+      return { kind: 'scalar' as const, summary: 'captured', start: page.start, children: [], complete: true, availability: 'available' as const }
+    })
+    const service = new DebugPresentationService({} as RuntimeSession, [{ id: 'order', matches: () => true, format }])
+    service.setSnapshot(snapshot(child))
+    const pendingFirst = service.present(child.debugRef!, { start: 0, count: 0 })
+    for (let start = 1; start <= 1000; start++) await service.present(child.debugRef!, { start, count: 0 })
+    finishFirst()
+    await pendingFirst
+    const evictedPage = { start: 1, count: 0 }
+    expect(service.getPresentation(child.debugRef!, evictedPage)).toBeUndefined()
+    const result = await service.present(child.debugRef!, evictedPage)
+    expect(service.getPresentation(child.debugRef!, evictedPage)).toBe(result)
+    expect(format).toHaveBeenCalledTimes(1002)
+    expect(await service.present(child.debugRef!, evictedPage)).toBe(result)
+    expect(format).toHaveBeenCalledTimes(1002)
+    service.dispose()
+  })
+
   it('shares page requests and resolutions between consumers, including sparse pages', async () => {
     const readDebugChildren = vi.fn(async () => loaded)
     const service = new DebugPresentationService({ readDebugChildren } as unknown as RuntimeSession, new ContributionRegistry())

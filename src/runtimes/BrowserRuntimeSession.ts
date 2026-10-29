@@ -1420,14 +1420,22 @@ export class BrowserRuntimeSession implements RuntimeSession {
             if (!this.isSessionActive(session) || !this.debugPaused || pause !== this.pauseGeneration) return true;
             const scopes = this.dapSend('scopes', { frameId: frame.id });
             const variables: VariableNode[] = [];
+            const messages = new Set<string>();
+            if (scopes?.success !== true) messages.add('Variables unavailable at this stop.');
             for (const scope of scopes?.body?.scopes ?? []) {
-                variables.push(...capture.captureScope(scope.variablesReference));
+                variables.push(...capture.captureScope(scope.variablesReference, false));
+                if (capture.lastScopeMessage) messages.add(capture.lastScopeMessage);
             }
             callStack.push({
                 id: String(frame.id), funcName: frame.name ?? 'unknown',
                 file: this.toWorkspacePath(frame.source?.path) ?? undefined,
-                line: frame.line ?? 0, variables, isActive: index === 0,
+                line: frame.line ?? 0, variables, variablesMessage: [...messages].join(' ') || undefined,
+                isActive: index === 0,
             });
+        }
+        capture.expandValues(callStack.flatMap(frame => frame.variables));
+        for (const frame of callStack) {
+            frame.variables = frame.variables.map(value => capture.read(value.debugRef!) ?? value);
         }
         if (!this.isSessionActive(session) || !this.debugPaused || pause !== this.pauseGeneration) return true;
         this.debugSnapshot = {
