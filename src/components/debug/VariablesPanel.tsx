@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
 import type {
     HeapAllocation,
@@ -6,9 +6,10 @@ import type {
     VariableNode,
 } from '@/web-ide/contracts/runtime'
 import { VariableRow } from './VariableRow'
+import { DebugPresentationToggle } from './DebugPresentationToggle'
 
 export function VariablesPanel() {
-    const { callStack, debugMode, memorySnapshot } = useWorkbenchDebugStore()
+    const { callStack, debugMode, memorySnapshot, selectedFrameId, selectFrame } = useWorkbenchDebugStore()
     const frames: StackFrame[] = useMemo(
         () => callStack,
         [callStack],
@@ -29,7 +30,6 @@ export function VariablesPanel() {
     // The selection only records explicit clicks; the rendered frame is
     // derived so a new snapshot keeps a still-valid selection and otherwise
     // falls back to the active frame — no state syncing in effects needed.
-    const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null)
 
     if (debugMode === 'idle')
         return (
@@ -60,7 +60,7 @@ export function VariablesPanel() {
                         <CallStack
                             frames={frames}
                             selectedFrameId={selectedFrame?.id ?? null}
-                            onSelectFrame={setSelectedFrameId}
+                            onSelectFrame={selectFrame}
                         />
                     </div>
                 </>
@@ -69,11 +69,13 @@ export function VariablesPanel() {
             {selectedFrame && (
                 <div className="nova-panel-header">
                     <span className="nova-panel-label">Variables</span>
+                    <DebugPresentationToggle />
                 </div>
             )}
 
             <div className="flex-1 min-h-0 overflow-y-auto py-1">
-                <Scope title="Locals" empty="No variables in scope">
+                {selectedFrame?.variablesMessage && <div className="px-3 py-1 text-xs text-muted-foreground" role="status">{selectedFrame.variablesMessage}</div>}
+                <Scope title="Locals" empty={selectedFrame?.variablesMessage ? 'No variables were captured.' : 'No variables in scope'}>
                     {selectedFrame?.variables.map((v, index) => (
                         <VariableRow
                             key={`${v.name}-${index}`}
@@ -165,7 +167,7 @@ function Scope({
         <div className="mb-2">
             <div className="nova-section-label">{title}</div>
             {hasContent ? (
-                <div className="pl-1">{children}</div>
+                <div className="pl-1" role="tree" aria-label={title}>{children}</div>
             ) : (
                 <div className="px-3 py-1 text-[11px] text-muted-foreground italic font-mono">
                     {empty}
@@ -185,26 +187,14 @@ function HeapScope({
     return (
         <div className="mb-2">
             <div className="nova-section-label">Heap</div>
-            <div className="pl-1">
+            <div className="pl-1" role="tree" aria-label="Reported heap objects">
                 {heap.map((alloc) => {
-                    const synthetic: VariableNode = {
-                        name: alloc.label,
-                        type: alloc.typeName,
-                        value: `0x${alloc.ptr.toString(16)}`,
-                        rawValue: alloc.ptr,
-                        address: alloc.ptr,
-                        size: 4,
-                        isPointer: false,
-                        isStruct: true,
-                        members: alloc.members,
-                    }
                     return (
-                        <VariableRow
-                            key={alloc.ptr}
-                            variable={synthetic}
-                            depth={0}
-                            resolvePointer={resolvePointer}
-                        />
+                        <div key={alloc.ptr}>
+                            <div className="nova-section-label">{alloc.label} · 0x{alloc.ptr.toString(16)}</div>
+                            {alloc.members.map((variable, index) => <VariableRow key={variable.debugRef ?? index}
+                                variable={variable} depth={0} resolvePointer={resolvePointer} />)}
+                        </div>
                     )
                 })}
             </div>

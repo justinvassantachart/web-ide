@@ -1,70 +1,19 @@
-import { useCallback, useRef, useState } from 'react'
-import { ReactFlow, Background, type Node, type Edge, type NodeChange, type EdgeChange, type ReactFlowInstance, Position, Handle, Panel, useViewport, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
+import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { ReactFlow, Background, type Node, type Edge, type NodeChange, type EdgeChange, type ReactFlowInstance, Position, Handle, Panel, useViewport, useUpdateNodeInternals, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
 import type {
     MemorySnapshot,
     VariableNode as MemoryValue,
 } from '@/web-ide/contracts/runtime'
+import { VariableRow } from './VariableRow'
+import { DebugPresentationToggle } from './DebugPresentationToggle'
+import { useDebugPresentationService } from '@/web-ide/react/debug-presentation-state'
 import { placeStackFrames, placeHeapNodes, rowsToHeight, type Point } from './graph-layout'
 
-function variablePath(parentPath: string, index: number) {
-    return `${parentPath}.${index}`
-}
-
-// --- Recursive Table Row ---
-function VariableRow({ variable, depth = 0, path }: { variable: MemoryValue; depth?: number; path: string }) {
-    const addrTooltip = variable.address !== undefined && variable.address > 0
-        ? `0x${variable.address.toString(16).padStart(8, '0')}`
-        : undefined
-
-    const valueClass = variable.isPointer
-        ? 'text-[var(--color-accent-pointer)]'
-        : (variable.type.includes('string') || variable.type.includes('char'))
-        ? 'text-[var(--color-accent-string)]'
-        : 'text-foreground'
-
-    return (
-        <div className="flex flex-col border-t border-border/60 w-full group relative">
-            <div className="flex items-stretch min-h-[26px] hover:bg-[var(--color-row-hover)] transition-colors relative w-full"
-                title={addrTooltip}>
-                {/* Left Column: Name */}
-                <div className="w-[45%] py-1 px-3 border-r border-border/60 text-muted-foreground flex items-center font-mono text-[11px]"
-                    style={{ paddingLeft: `${0.75 + depth * 0.75}rem` }}>
-                    <span className="truncate">{variable.name}</span>
-                </div>
-
-                {/* Right Column: Value */}
-                <div className={`w-[55%] py-1 px-3 relative flex items-center font-mono text-[11px] ${valueClass}`}>
-                    <span className="truncate">
-                        {variable.isStruct && variable.value === '{...}' ? '' : String(variable.value)}
-                    </span>
-
-                    {variable.isPointer && variable.pointsTo !== 0 && variable.pointsTo !== undefined && (
-                        <Handle type="source" position={Position.Right} id={path}
-                            className="!w-2 !h-2 !bg-primary !border-0 !-right-1" />
-                    )}
-                </div>
-
-                {variable.address !== undefined && variable.address > 0 && (
-                    <Handle type="target" position={Position.Left} id={`${path}-target`}
-                        className="!w-1 !h-1 !bg-transparent !border-0 !left-0 !opacity-0" />
-                )}
-            </div>
-
-            {variable.isStruct && variable.members && (
-                <div className="flex flex-col w-full bg-background/40">
-                    {variable.members.map((member, index) => {
-                        const memberPath = variablePath(path, index)
-                        return <VariableRow key={memberPath} variable={member} depth={depth + 1} path={memberPath} />
-                    })}
-                </div>
-            )}
-        </div>
-    )
-}
-
-function StackFrameNode({ data }: { data: { id: string; label: string; isActive: boolean; variables: MemoryValue[] } }) {
+function StackFrameNode({ data }: { data: { id: string; label: string; isActive: boolean; variables: MemoryValue[]; variablesMessage?: string } }) {
+    const updateNodeInternals = useUpdateNodeInternals()
+    useLayoutEffect(() => { updateNodeInternals(data.id) }, [data, updateNodeInternals])
     return (
         <div className={`flex flex-col rounded-md border bg-card min-w-[260px] shadow-2xl overflow-visible ${data.isActive ? 'border-primary' : 'border-border'}`}>
             {data.isActive && <div className="absolute -top-[1px] -left-[1px] -right-[1px] h-[2px] bg-primary rounded-t-md" />}
@@ -72,13 +21,13 @@ function StackFrameNode({ data }: { data: { id: string; label: string; isActive:
                 <span className="text-foreground font-bold text-[11px] font-mono uppercase tracking-wider">{data.label}</span>
                 {data.isActive && <span className="bg-primary text-primary-foreground text-[9px] px-1.5 rounded-sm font-bold tracking-wider">PAUSED</span>}
             </div>
-            <div className="flex flex-col w-full">
+            <div className="flex flex-col w-full" role="tree" aria-label={`${data.label} values`}>
                 {data.variables.length === 0 ? (
-                    <div className="p-2 text-xs text-muted-foreground italic text-center">No variables</div>
+                    <div className="p-2 text-xs text-muted-foreground italic text-center">{data.variablesMessage ?? 'No variables'}</div>
                 ) : data.variables.map((variable, index) => {
-                    const path = variablePath(data.id, index)
-                    return <VariableRow key={path} variable={variable} path={path} />
+                    return <VariableRow key={variable.debugRef ?? `${data.id}.${index}`} variable={variable} depth={0} graph />
                 })}
+                {data.variables.length > 0 && data.variablesMessage && <div role="status" className="p-2 text-xs text-muted-foreground">{data.variablesMessage}</div>}
             </div>
             <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
             <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
@@ -87,18 +36,19 @@ function StackFrameNode({ data }: { data: { id: string; label: string; isActive:
 }
 
 function HeapNode({ data }: { data: { id: string; label: string; ptr: number; members: MemoryValue[] } }) {
+    const updateNodeInternals = useUpdateNodeInternals()
+    useLayoutEffect(() => { updateNodeInternals(data.id) }, [data, updateNodeInternals])
     return (
         <div className="flex flex-col rounded-md border border-primary/40 bg-card min-w-[220px] shadow-2xl overflow-visible relative">
             <div className="px-3 py-2 bg-[var(--color-chrome)] border-b border-primary/30 flex justify-between items-center rounded-t-md">
                 <span className="text-primary font-mono text-[10px] uppercase tracking-wider truncate mr-2" title={data.label}>{data.label}</span>
                 <span className="text-muted-foreground font-mono text-[10px]">0x{data.ptr.toString(16).padStart(6, '0')}</span>
             </div>
-            <div className="flex flex-col w-full">
+            <div className="flex flex-col w-full" role="tree" aria-label={`${data.label} values`}>
                 {data.members.length === 0 ? (
                     <div className="p-2 text-xs text-muted-foreground italic text-center">Raw Data</div>
                 ) : data.members.map((member, index) => {
-                    const path = variablePath(data.id, index)
-                    return <VariableRow key={path} variable={member} path={path} />
+                    return <VariableRow key={member.debugRef ?? `${data.id}.${index}`} variable={member} depth={0} graph />
                 })}
             </div>
             <Handle type="target" position={Position.Left} id="target" className="!w-2 !h-2 !bg-primary !border-0 !-left-1 opacity-80" />
@@ -112,15 +62,6 @@ const nodeTypes = { stackFrame: StackFrameNode, heapNode: HeapNode }
 // Geometry lives in graph-layout.ts (pure + unit-tested). The component's
 // job is only to translate snapshots into node/edge specs and feed the
 // persistent position map through the incremental placer.
-function countRows(vars: MemoryValue[]): number {
-    let rows = 0;
-    for (const v of vars) {
-        rows++;
-        if (v.isStruct && v.members) rows += countRows(v.members);
-    }
-    return rows;
-}
-
 /** Find the x-coordinate boundary between the fixed stack column and the start of the heap nodes */
 function findSeparatorX(nodes: Node[]): number | null {
     const hasStack = nodes.some(n => n.type === 'stackFrame')
@@ -163,14 +104,16 @@ function SeparatorOverlay({ separatorX }: { separatorX: number }) {
                 fontFamily="monospace"
                 textAnchor="start"
             >
-                OBJECTS (HEAP)
+                REPORTED MEMORY OBJECTS
             </text>
         </svg>
     )
 }
 
 export function MemoryVisualizer() {
-    const { debugMode, memorySnapshot } = useWorkbenchDebugStore()
+    const { debugMode, memorySnapshot, presentationMode, expandedValues, visiblePages } = useWorkbenchDebugStore()
+    const service = useDebugPresentationService()
+    const presentationRevision = useSyncExternalStore(service.subscribe, service.getSnapshot, service.getSnapshot)
     const [nodes, setNodes] = useState<Node[]>([])
     const [edges, setEdges] = useState<Edge[]>([])
     const [separatorX, setSeparatorX] = useState<number | null>(null)
@@ -192,9 +135,13 @@ export function MemoryVisualizer() {
     // local because users can drag heap nodes between snapshots.
     // rebuildGraph is idempotent (same snapshot + same position map →
     // same placement), so StrictMode's double render is safe.
-    const [syncedSnapshot, setSyncedSnapshot] = useState<MemorySnapshot | null>(null)
-    if (memorySnapshot !== syncedSnapshot) {
-        setSyncedSnapshot(memorySnapshot)
+    const [syncedView, setSyncedView] = useState<{
+        snapshot: MemorySnapshot | null; mode: string; expanded: object; pages: object; revision: number
+    } | null>(null)
+    if (memorySnapshot !== syncedView?.snapshot || presentationMode !== syncedView?.mode
+        || expandedValues !== syncedView?.expanded || visiblePages !== syncedView?.pages
+        || presentationRevision !== syncedView?.revision) {
+        setSyncedView({ snapshot: memorySnapshot, mode: presentationMode, expanded: expandedValues, pages: visiblePages, revision: presentationRevision })
         if (!memorySnapshot) {
             setPositions(new Map())
             setNodes([])
@@ -210,61 +157,72 @@ export function MemoryVisualizer() {
         const rawEdges: Edge[] = []
         const reversedFrames = [...snapshot.frames].reverse()
 
-        // Build an address -> handle map so pointers can target any visualized memory,
-        // not only heap allocation bases. Heap bases register first and win at the
-        // base address; interior member addresses (e.g. &savanna[0].cat) get their
-        // own row-level target handle.
+        // Only visible, captured addresses participate in pointer/reference edges.
+        // Logical container membership is rendered as indented rows in each card.
         const addressMap = new Map<number, { nodeId: string; handleId: string }>()
-
-        for (const alloc of snapshot.heapAllocations) {
-            addressMap.set(alloc.ptr, { nodeId: `heap-${alloc.ptr}`, handleId: 'target' })
-        }
-
-        const registerAddresses = (vars: MemoryValue[], parentPath: string, nodeIdentifier: string) => {
-            vars.forEach((v, index) => {
-                const handlePath = variablePath(parentPath, index)
-                if (v.address !== undefined && v.address > 0 && !addressMap.has(v.address)) {
-                    addressMap.set(v.address, { nodeId: nodeIdentifier, handleId: `${handlePath}-target` })
-                }
-                if (v.isStruct && v.members) registerAddresses(v.members, handlePath, nodeIdentifier)
-            })
-        }
-
+        // A reference's first field can share its caller object's address.
+        // Register all frame roots before expanded fields can claim that address.
         for (const frame of snapshot.frames) {
-            registerAddresses(frame.variables, frame.id, frame.id)
+            for (const value of frame.variables) {
+                if (value.address !== undefined && value.address > 0 && !addressMap.has(value.address)) {
+                    addressMap.set(value.address, { nodeId: frame.id, handleId: `${service.getRef(value)}-target` })
+                }
+            }
         }
-
-        for (const alloc of snapshot.heapAllocations) {
-            registerAddresses(alloc.members, `heap-${alloc.ptr}`, `heap-${alloc.ptr}`)
-        }
-
-        // Drills recursively down generating edges directly from mapped physical addresses
-        const extractEdges = (vars: MemoryValue[], parentId: string, nodeIdentifier: string, isActive: boolean, inactiveStroke: string) => {
-            vars.forEach((v, index) => {
-                const currentHandleId = variablePath(parentId, index)
-                if (v.isPointer && v.pointsTo) {
-                    const target = addressMap.get(v.pointsTo)
-                    if (target) {
-                        rawEdges.push({
-                            id: `${currentHandleId}->${target.nodeId}/${target.handleId}`,
-                            source: nodeIdentifier, sourceHandle: currentHandleId,
-                            target: target.nodeId, targetHandle: target.handleId,
-                            type: 'bezier', animated: isActive,
-                            style: { stroke: isActive ? 'oklch(0.75 0.12 230)' : inactiveStroke, strokeWidth: 2 }
-                        })
+        const visible = new Map<string, MemoryValue[]>()
+        const collect = (values: MemoryValue[], id: string, depth = 0, seen = new Set<string>()) => {
+            const rows = visible.get(id) ?? []
+            visible.set(id, rows)
+            for (const value of values) {
+                const ref = service.getRef(value)
+                if (seen.has(ref) || rows.length >= 1000) continue
+                seen.add(ref)
+                rows.push(value)
+                if (value.address !== undefined && value.address > 0 && !addressMap.has(value.address)) {
+                    addressMap.set(value.address, { nodeId: id, handleId: `${ref}-target` })
+                }
+                const stateKey = `${ref}:${presentationMode}`
+                if (!expandedValues[stateKey] || depth >= 8) continue
+                const pages = visiblePages[stateKey] ?? 1
+                for (let page = 0; page < pages; page++) {
+                    const result = service.getPresentation(ref, { start: page * 100, count: 100 }, presentationMode)
+                    for (const child of result?.children ?? []) {
+                        for (const childRef of [child.keyValue, child.value]) {
+                            const childValue = childRef && service.readValue(childRef)
+                            if (childValue) collect([childValue], id, depth + 1, seen)
+                        }
                     }
                 }
-                if (v.isStruct && v.members) extractEdges(v.members, currentHandleId, nodeIdentifier, isActive, inactiveStroke);
-            })
+            }
+        }
+        for (const frame of snapshot.frames) collect(frame.variables, frame.id)
+        for (const alloc of snapshot.heapAllocations) {
+            addressMap.set(alloc.ptr, { nodeId: `heap-${alloc.ptr}`, handleId: 'target' })
+            collect(alloc.members, `heap-${alloc.ptr}`)
+        }
+        const extractEdges = (id: string, active: boolean) => {
+            for (const value of visible.get(id) ?? []) {
+                if ((!value.isPointer && value.typeKind !== 'reference') || !value.pointsTo) continue
+                const target = addressMap.get(value.pointsTo)
+                if (!target) continue
+                const sourceHandle = service.getRef(value)
+                rawEdges.push({
+                    id: `${id}/${sourceHandle}->${target.nodeId}/${target.handleId}`,
+                    source: id, sourceHandle, target: target.nodeId, targetHandle: target.handleId,
+                    type: 'bezier', animated: active,
+                    style: { stroke: active ? 'oklch(0.75 0.12 230)' : 'oklch(0.6 0 0)', strokeWidth: 2 },
+                })
+            }
         }
 
         reversedFrames.forEach((frameData) => {
             rawNodes.push({
                 id: frameData.id, type: 'stackFrame', position: { x: 0, y: 0 },
                 draggable: false,
-                data: { id: frameData.id, label: `${frameData.funcName}()`, isActive: frameData.isActive, variables: frameData.variables },
+                data: { id: frameData.id, label: `${frameData.funcName}()`, isActive: frameData.isActive,
+                    variables: frameData.variables, variablesMessage: frameData.variablesMessage },
             })
-            extractEdges(frameData.variables, frameData.id, frameData.id, frameData.isActive, 'oklch(0.45 0 0)');
+            extractEdges(frameData.id, frameData.isActive)
         })
 
         snapshot.heapAllocations.forEach((alloc) => {
@@ -274,7 +232,7 @@ export function MemoryVisualizer() {
                 draggable: true,
                 data: { id: nodeId, label: alloc.typeName, ptr: alloc.ptr, members: alloc.members },
             })
-            extractEdges(alloc.members, nodeId, nodeId, false, 'oklch(0.6 0 0)');
+            extractEdges(nodeId, false)
         })
 
         // Incremental placement: stack frames re-stack deterministically in
@@ -283,12 +241,12 @@ export function MemoryVisualizer() {
         // never move and new ones are placed collision-free around them.
         const stackSpecs = rawNodes
             .filter(n => n.type === 'stackFrame')
-            .map(n => ({ id: n.id, height: rowsToHeight(countRows(n.data.variables as MemoryValue[])) }))
+            .map(n => ({ id: n.id, height: rowsToHeight(visible.get(n.id)?.length ?? 0) }))
         const stackPositions = placeStackFrames(stackSpecs)
 
         const heapSpecs = rawNodes
             .filter(n => n.type === 'heapNode')
-            .map(n => ({ id: n.id, height: rowsToHeight(countRows(n.data.members as MemoryValue[])) }))
+            .map(n => ({ id: n.id, height: rowsToHeight(visible.get(n.id)?.length ?? 0) }))
         const heapIds = new Set(heapSpecs.map(s => s.id))
         const heapEdges = rawEdges
             .filter(e => heapIds.has(e.source) && heapIds.has(e.target))
@@ -376,11 +334,12 @@ export function MemoryVisualizer() {
                 <Panel position="top-left" className="!m-0 !p-0">
                     <div className="flex gap-6 px-4 py-2">
                         <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-                            Frames (Stack)
+                            Frames · indented rows are logical members · arrows show addresses
                         </span>
                     </div>
                 </Panel>
                 <Panel position="top-right" className="!m-1 flex items-center gap-2">
+                    <DebugPresentationToggle />
                     {debugMode === 'running' && (
                         <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground px-2 py-1">
                             Running…

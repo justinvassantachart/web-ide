@@ -1,13 +1,18 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.7.3` source candidate is
+Web IDE's source repository is public and its `0.8.0` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
 checkpoint does not configure an npm publication. The distribution path is an
 exact integrity-checked tarball attached to an immutable release in the owner's
-public `justinvassantachart/web-ide` repository. This patch preserves the 0.7
-APIs and retains the 0.7.2 compiler diagnostic correction.
-The 0.7.3 candidate enables the existing byte device for Python without changing
-its transport or adding a host-service protocol. The 0.7.0 release introduced
+public `justinvassantachart/web-ide` repository. This candidate adds optional
+debug formatter contributions, captured-value identities, bounded child paging,
+and shared Pretty/Raw presentation in Variables and Graph. Existing runtime
+providers remain supported; course-specific formatters are companion plugins.
+The compatible Stanford companion candidate is `0.5.0`, with an exact Web IDE
+`0.8.0` peer. These candidate versions are not published releases.
+
+The candidate retains the 0.7.3 Python host byte device and the 0.7.2 compiler
+diagnostic correction. The 0.7.0 release introduced
 shared C++ and Python testing, frozen execution
 snapshots, selected-test debugging, and authoritative test reports. Its migration
 from the earlier provider contract to Testing V2 remains in effect.
@@ -19,15 +24,20 @@ configuration alone does not establish publication or downstream compatibility.
 - The manifest records the public GitHub source, issue tracker, homepage,
   semantic version, and MIT source license without changing the export map or
   React peer ranges.
-- The runtime engine pin selects the reviewed Python host-device extension while
-  retaining the cumulative C++ and empty-stdin-read fixes in the
-  `0.3.15-webide.0.7.3.1` immutable public fork release asset. That asset is
-  neither an upstream registry release nor an npm publication of this project;
+- The runtime engine pin selects the sealed local
+  `0.3.15-webide.0.8.0.1` fork candidate, adding deque children, bounded tree
+  traversal, truthful child counts, and unavailable-value handling while
+  retaining the cumulative C++ and Python host-device fixes. Its canonical
+  GitHub release URL is an intended publication target, not evidence that the
+  asset is published. This is neither an upstream registry release nor an npm publication of this project;
   `release/engine-fork-input.json` is the committed exact fork input record
   (fork source commit, build toolchain, GitHub release asset identity, and the
   engine WebAssembly that the fork embeds in its module instead of fetching).
-  The record binds the published fork and the complete packed-consumer graph;
+  The record binds the exact fork artifact and the complete packed-consumer graph;
   release tools reject any dependency, integrity, or embedded-engine drift.
+  A disposable integration fixture may seed its isolated npm cache from these
+  exact local bytes and run offline `npm ci`. That proof does not satisfy the
+  release gates, which require published dependencies and clean, tagged source.
 - Host-neutral ESM exports, declarations, compiled CSS, clangd worker output,
   and raw C++ test resources remain package inputs.
 - The clean packed consumer imports the root and `web-ide/host` public exports,
@@ -52,8 +62,8 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.7.3-source` tag object peeled to that exact commit. The immutable
-`web-ide-v0.7.2-source` identity remains unchanged. The initial
+`web-ide-v0.8.0-source` tag object peeled to that exact commit. The immutable
+`web-ide-v0.7.3-source` and `web-ide-v0.7.2-source` identities remain unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint is retained unchanged and did not produce a
 package release: a browser check found that asynchronous clangd startup could drop the initial
 workspace files. The retained `web-ide-v0.7.1-source-r2` checkpoint corrects
@@ -179,7 +189,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.7.3-source` tag at that commit, and use an
+and push the annotated `web-ide-v0.8.0-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while

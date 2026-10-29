@@ -2,6 +2,7 @@ import type { EventSource } from './events'
 import type { WorkspaceFiles } from './host'
 import type { Disposable } from '../core/disposable'
 import type { CppBuildPlanV1 } from './cpp'
+import type { DebugAvailability, DebugChildPage, DebugChildrenInfo, DebugPageRequest, DebugValueRef } from './debug-presentation'
 
 export interface RuntimePreparationResult {
   success: boolean
@@ -9,6 +10,14 @@ export interface RuntimePreparationResult {
 }
 
 export interface VariableNode {
+  /** Immutable identity scoped to one runtime pause, when supported. */
+  debugRef?: DebugValueRef
+  /** Position in its raw parent's children; retained when pages have gaps. */
+  debugOrdinal?: number
+  availability?: DebugAvailability
+  childrenInfo?: DebugChildrenInfo
+  /** Only the outer C++ declarator is classified; template arguments are ignored. */
+  typeKind?: 'value' | 'pointer' | 'reference' | 'unknown'
   name: string
   type: string
   value: string | number
@@ -43,6 +52,8 @@ export interface StackFrame {
   /** Native stack pointer, when reported by the runtime. */
   sp?: number
   variables: VariableNode[]
+  /** Explains an unavailable or bounded scope capture; absent for normal scopes. */
+  variablesMessage?: string
   isActive: boolean
 }
 
@@ -52,6 +63,7 @@ export interface MemorySnapshot {
 }
 
 export interface DebugPauseState {
+  debugSnapshot?: { readonly id: string; readonly revision: number }
   line: number | null
   func: string | null
   file: string | null
@@ -187,6 +199,8 @@ export interface RuntimeEventChannels {
   terminalClear: EventSource<void>
   graphicsDraw: EventSource<DrawCommand[]>
   debugPaused: EventSource<DebugPauseState>
+  /** Captured data changed at the same stop; this is not a new history entry. */
+  debugSnapshotUpdated?: EventSource<DebugPauseState>
   debugResumed: EventSource<void>
   exit: EventSource<number>
   diagnostic: EventSource<RuntimeDiagnostic>
@@ -210,6 +224,9 @@ export interface RuntimeSession {
   readonly languageIds: readonly string[]
   readonly capabilities: Readonly<RuntimeCapabilities>
   readonly events: RuntimeEventChannels
+  /** Captured metadata only; this method must never submit a native request. */
+  readDebugValue?(value: DebugValueRef): Readonly<VariableNode> | undefined
+  readDebugChildren?(value: DebugValueRef, page: DebugPageRequest): Promise<DebugChildPage>
 
   prepare(plan: RuntimeExecutionPlan): Promise<RuntimePreparationResult>
   start(request: RuntimeStartRequest): Promise<void>

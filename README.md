@@ -22,6 +22,12 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
+The current source prepares version 0.8.0 with optional debug formatter
+contributions, bounded child paging, and shared Pretty/Raw presentation in
+Variables and Graph. Formatters use captured values through the public
+`DebugPresentationService`; course-specific rules belong in companion plugins.
+This is an unpublished candidate. The latest published package remains 0.7.3.
+
 Version 0.7.3 of the MIT-licensed component is available as an immutable
 [GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.7.3),
 with its package and validation evidence published together.

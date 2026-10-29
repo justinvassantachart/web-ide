@@ -145,8 +145,8 @@ describe('IDEPluginManager static contributions', () => {
     expect(commandRegistry.getSnapshot()).toEqual([])
     expect(commandRegistry.isDisposed).toBe(true)
     // Activities, commands, panels, workspace resources, runtime providers,
-    // test providers, and language-tooling providers all roll back.
-    expect(dispose).toHaveBeenCalledTimes(7)
+    // test providers, language-tooling providers and debug formatters all roll back.
+    expect(dispose).toHaveBeenCalledTimes(8)
   })
 })
 

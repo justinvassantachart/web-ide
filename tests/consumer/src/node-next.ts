@@ -21,6 +21,30 @@ const byteOpener: root.RuntimeHostDeviceOpener = (device: root.RuntimeHostDevice
 }
 void [registerBytes, byteOpener]
 
+// The formatter/plugin/service contract must compile from the packed public
+// entrypoint without reaching into a private store or native debugger handle.
+function presentationConsumer(session: root.RuntimeSession) {
+  const formatter: root.DebugValueFormatter = {
+    id: 'consumer.formatter',
+    matches: value => value.type === 'ConsumerValue',
+    async format(value, context, page) {
+      if (!value.debugRef) return undefined
+      const captured = context.readValue(value.debugRef)
+      const children = await context.readChildren(value.debugRef, page)
+      return {
+        kind: 'record', summary: String(captured?.value ?? ''),
+        start: children.start, total: children.total, complete: children.complete,
+        availability: children.availability,
+        children: children.children.flatMap(child => child.debugRef
+          ? [{ key: child.debugRef, label: child.name, value: child.debugRef }] : []),
+      }
+    },
+  }
+  const plugin: root.IDEPlugin = { id: 'consumer.formatter-plugin', contributes: { debugFormatters: [formatter] } }
+  return new root.DebugPresentationService(session, plugin.contributes!.debugFormatters!)
+}
+void presentationConsumer
+
 for (const provider of [runtimes.cppRuntimeProvider, runtimes.pythonRuntimeProvider]) {
   const session = provider.createSession()
   const registration = registerBytes(session, byteOpener)

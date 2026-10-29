@@ -38,6 +38,7 @@ export function Toolbar() {
 
     useEffect(() => {
         const u1 = engine.events.debugPaused.subscribe((state) => pushHistoryState(state))
+        const u6 = engine.events.debugSnapshotUpdated?.subscribe((state) => instance.debugStore.getState().refreshHistoryState(state))
         const u2 = engine.events.debugResumed.subscribe(() => setDebugMode('running'))
         const u3 = engine.events.exit.subscribe(() => {
             setIsRunning(false)
@@ -59,7 +60,7 @@ export function Toolbar() {
             instance.debugStore.getState().setFileBreakpoints(file, lines)
             host?.events?.emit('breakpoints_validated', { file, lines })
         })
-        return () => { u1(); u2(); u3(); u4(); u5() }
+        return () => { u1(); u2(); u3(); u4(); u5(); u6?.() }
     }, [engine, host, instance, pushHistoryState, setDebugMode, setIsRunning])
 
     const workbenchSnapshot: IDEWorkbenchSnapshot = {
