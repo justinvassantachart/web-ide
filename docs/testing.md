@@ -41,7 +41,7 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.8.0-source` tag, or a toolchain mismatch. The published
+`web-ide-v0.8.1-source` tag, or a toolchain mismatch. The published
 `web-ide-v0.7.3-source` identity remains unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint remains unchanged; its package was withheld
 after a clangd worker startup ordering defect was found. The retained
@@ -101,7 +101,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.8.0.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.8.1.tgz \
   npm run test:consumer
 ```
 
@@ -289,10 +289,10 @@ plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
 The built-in browser providers target exactly one pinned engine build.
-The Web IDE 0.8.0 candidate selects the exact
-`debugger-sh@0.3.15-webide.0.8.0.1` fork artifact recorded in
-`release/engine-fork-input.json`; its intended release URL is not yet a
-publication claim. An engine change must update that record,
+The Web IDE 0.8.1 candidate selects the exact
+`debugger-sh@0.3.15-webide.0.8.1.1` fork artifact recorded in
+`release/engine-fork-input.json`; its public GitHub release asset is bound by
+the recorded exact size and hashes. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
 `npm run validate:production`, and verify the CS106B companion/course-host

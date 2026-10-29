@@ -1,15 +1,5 @@
 # Scoped C++ caching and initial warmup
 
-## Checkpoint status (2026-10-29)
-
-This branch is an implementation checkpoint, not a released or deployable
-package. The manifest still pins the published 0.8.0 engine because the new
-engine has not passed its final guard, browser, and release checks. Full type
-checking therefore fails on the new engine API until its immutable release is
-available. Do not merge this checkpoint to main or substitute a sibling checkout
-for that release. Update the exact package pin, lock integrity, and release
-evidence together, then run the normal production validation and release gates.
-
 The standard C++ provider keeps performance features off. A host may create
 one provider per account/project with `createCppRuntimeProvider` from
 `web-ide/runtimes`:

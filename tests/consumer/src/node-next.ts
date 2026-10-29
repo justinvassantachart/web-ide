@@ -45,6 +45,32 @@ function presentationConsumer(session: root.RuntimeSession) {
 }
 void presentationConsumer
 
+// Warmup and statistics are supported optional public contracts. This checks
+// their packed declarations without running a compiler during type checking.
+const scopedCppProvider = runtimes.createCppRuntimeProvider({
+  cpp: {
+    scope: { projectId: 'consumer-project', accountId: 'consumer-account' },
+    objectCache: true,
+    retainWorker: true,
+    cacheCompilerModule: true,
+    idleTimeoutMs: 30_000,
+  },
+})
+async function warmupConsumer(session: root.RuntimeSession, handle: root.WebIDEInstanceHandle) {
+  const plan = runtimes.buildRuntimeExecutionPlan({
+    files: { '/workspace/main.cpp': 'int main() { return 0; }' },
+    mode: 'run',
+  })
+  const result: root.RuntimeWarmupResult | undefined = await session.warmup?.(plan)
+  const mountedResult: root.RuntimeWarmupResult | undefined = await handle.warmup?.()
+  await session.cancelWarmupAndWait?.()
+  await handle.cancelWarmup?.()
+  const statistics: unknown = session.compilationStatistics?.()
+  const mountedStatistics: unknown = handle.compilationStatistics?.()
+  return { result, mountedResult, statistics, mountedStatistics }
+}
+void [scopedCppProvider, warmupConsumer]
+
 for (const provider of [runtimes.cppRuntimeProvider, runtimes.pythonRuntimeProvider]) {
   const session = provider.createSession()
   const registration = registerBytes(session, byteOpener)
