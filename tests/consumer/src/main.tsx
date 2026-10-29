@@ -29,6 +29,11 @@ async function verifyPublicLifecycle(
   handle.persistedFiles()
   await handle.flushWorkspace()
   await handle.close()
+  const release: 'released' | 'cancelled' = await handle.releaseCompilerResources({ signal: new AbortController().signal })
+  void release
+  await handle.suspendRuntime()
+  await handle.resumeRuntime()
+  await handle.shutdownRuntime()
   return { type: 'stopped' }
 }
 

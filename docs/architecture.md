@@ -72,6 +72,35 @@ settlement methods let capable providers expose one awaited `completed`,
 `stopped`, or `error` outcome for each start while legacy void stop/dispose and
 numeric exit events remain compatible.
 
+The C++ provider's `preserveCompilerOnCancel` and
+`eagerCompilerReseedAfterStop` policies default to false. The former opts into
+the engine's cache-preserving cancellation and the `compileOnlyJoin: 1`
+contract. A matching foreground request may claim an already dispatched
+compile-only warmup, await its committed-cache settlement, and then start an
+ordinary fresh Run. Background cancellation cannot cancel that claim; explicit
+Stop, replacement, suspension, and disposal can. Before TU dispatch, foreground
+work claims only toolchain preparation and suppresses the pending background
+compile. The initial attempt is consumed once, including failure. Disabled,
+zero-capacity, and unsupported object-cache profiles perform only the explicit
+toolchain preparation operation. Student compiler errors stay out of the
+foreground terminal until an ordinary Run recompiles them.
+
+`releaseCompilerResources` releases idle compiler resources without constructing
+an absent session or engine. The mount controller holds activity tokens from
+before provider transforms through foreground settlement and throughout
+background preparation. Foreground acquisition aborts pending release; a
+release arriving during an activity defers until it drains. Session guards also
+protect direct provider calls and the prepare-to-start gap. Public
+`shutdownRuntime` permanently fences dispatch synchronously and returns its
+idempotent cleanup promise independently of persistence `close`. Reversible
+`suspendRuntime` fences both the shared Run coordinator and the session before
+draining execution; `resumeRuntime` waits for that drain and enables only the
+next explicit request. Neither operation initializes a runtime. Attachment
+identity distinguishes StrictMode's fresh session from stale detach callbacks.
+An opted-in visible user Stop may queue one toolchain-only preparation after
+draining; a newer foreground request joins an already dispatched preparation.
+Background cancellation, repeated idle Stop, and suspension never reseed.
+
 Runtime host services are an optional, capability-gated extension. The public
 descriptor limits `maxFrameBytes`, `maxPendingSends`, and
 `maxInFlightRequests` are validated before registration. Browser runtime
@@ -254,3 +283,11 @@ boundary and delays the new host-persistence attachment until initialization;
 replacing an adapter for the same ID retains the instance. The C++ language
 tooling/runtime/testing implementations have separate
 opt-in subpaths but are not yet independently versioned packages.
+
+The warmup bridge carries a `RuntimeWarmupOptions.foregroundIntent` signal through
+provider wrappers. Foreground activity aborts it before asynchronous transforms.
+The signal suppresses any pending student compilation while preserving a shared
+toolchain preparation; an already-dispatched compile still requires complete plan
+equality in `prepare()` before it becomes foreground-owned. Student compile
+failures return a silent `skipped`/`student-diagnostics` warmup result, and the
+ordinary foreground compile publishes the current diagnostics.

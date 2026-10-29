@@ -69,6 +69,7 @@ class FakeEngine {
   private readonly completion = deferred<RunResult>()
 
   readonly run = vi.fn(() => this.completion.promise)
+  readonly dispose = vi.fn(async () => { this.stop() })
   readonly stop = vi.fn(() => this.completion.resolve({ type: 'stopped' }))
 
   complete(exitCode = 0): void {

@@ -136,6 +136,7 @@ class FakeEngine {
     return invocation.promise
   })
 
+  readonly dispose = vi.fn(async () => { this.stop() })
   readonly stop = vi.fn((): void => {
     if (this.settleRunOnStop) this.activeRun()?.resolve({ type: 'stopped' })
   })

@@ -18,6 +18,7 @@ export function buildRuntimeExecutionPlan(plan: RuntimeExecutionPlan): RuntimeEx
       ...plan.cppArtifacts,
       ...(plan.cppArtifacts.sources === undefined ? {} : { sources: Object.freeze([...plan.cppArtifacts.sources]) }),
       ...(plan.cppArtifacts.archives === undefined ? {} : { archives: Object.freeze([...plan.cppArtifacts.archives]) }),
+      ...(plan.cppArtifacts.requiredToolchain === undefined ? {} : { requiredToolchain: Object.freeze({ ...plan.cppArtifacts.requiredToolchain }) }),
     }) }),
   }
   if (plan.binaryFiles !== undefined) Object.defineProperty(snapshot, 'binaryFiles', {

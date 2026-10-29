@@ -41,6 +41,7 @@ function createSession(hostChannels: boolean) {
     prepare: vi.fn(async () => ({ success: true, errors: [] })),
     start: vi.fn(async () => undefined),
     stop: vi.fn(),
+    dispose: vi.fn(async () => {}),
     setBreakpoints: vi.fn(async () => undefined),
     stepInto: vi.fn(async () => undefined),
     stepOver: vi.fn(async () => undefined),

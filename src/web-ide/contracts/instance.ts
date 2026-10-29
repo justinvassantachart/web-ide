@@ -64,6 +64,14 @@ export interface WebIDEInstanceHandle {
    * retryable and never disposes the adapter before persistence succeeds.
    */
   close(): Promise<void>
+  /** Permanently fences runtime dispatch and drains owned resources; persistence is separate. */
+  shutdownRuntime(): Promise<void>
+  /** Reversibly fences and drains execution for a persisted page suspension. */
+  suspendRuntime(): Promise<void>
+  /** Waits for suspension cleanup and enables the next explicit execution lazily. */
+  resumeRuntime(): Promise<void>
+  /** Releases idle compiler resources, without initializing an absent runtime. */
+  releaseCompilerResources(options?: { signal?: AbortSignal }): Promise<'released' | 'cancelled'>
   /** One host-requested compile-only attempt from the current owned execution snapshot. */
   warmup?(): Promise<RuntimeWarmupResult>
   /** Cancels and drains background compilation without starting foreground execution. */

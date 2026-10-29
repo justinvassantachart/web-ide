@@ -12,3 +12,5 @@ export {
   RuntimeHostServicesUnavailableError,
   validateRuntimeHostServiceV1,
 } from './runtimes/host-service'
+
+export type { RuntimeWarmupOptions, RuntimeWarmupResult } from './web-ide/contracts/runtime'

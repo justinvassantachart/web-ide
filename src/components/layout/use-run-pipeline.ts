@@ -6,6 +6,7 @@ import type {
     RuntimeExecutionPlan,
     RuntimePreparationResult,
     RuntimeOutcome,
+    RuntimeStopOptions,
 } from '@/web-ide/contracts/runtime'
 import { isTestProviderV2, prepareWorkbenchExecution } from '@/testing/test-execution'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
@@ -28,9 +29,9 @@ export function useRunPipeline() {
     const { controller: panelLayout } = usePanelLayout()
     const instance = useWorkbenchInstance()
 
-    const settleStop = useCallback(async () => {
-        if (engine.stopAndWait) await engine.stopAndWait()
-        else engine.stop()
+    const settleStop = useCallback(async (reason: RuntimeStopOptions['reason'] = 'superseded') => {
+        if (engine.stopAndWait) await engine.stopAndWait({ reason })
+        else engine.stop({ reason })
     }, [engine])
 
     const run = useCallback(async (
@@ -38,9 +39,12 @@ export function useRunPipeline() {
         isTest = false,
         preparedPlan?: RuntimeExecutionPlan,
         resourcesResolved = false,
+        foregroundActivity = true,
     ) => {
         const exec = instance.executionStore.getState()
         if (exec.isCompiling || exec.isRunning || coordinator.getPendingRun()) return { type: 'busy' as const }
+        const releaseActivity = coordinator.acquireActivity(foregroundActivity)
+        if (!releaseActivity) return { type: 'stopped' as const }
         let outcome: RuntimeOutcome | { type: 'build_failed'; message: string } = { type: 'stopped' }
         const generation = coordinator.beginTransition()
         let releaseTask!: () => void
@@ -161,6 +165,7 @@ export function useRunPipeline() {
             await task
         } finally {
             coordinator.clearPendingRun(task)
+            releaseActivity()
         }
         return outcome
     }, [coordinator, engine, host, instance, panelLayout, resources, settleStop, testProvider])
@@ -173,7 +178,7 @@ export function useRunPipeline() {
             : false
         let stopFailed = false
         try {
-            await settleStop()
+            await settleStop('user')
         } catch (error) {
             console.error('[web-ide] runtime stop failed', error)
             stopFailed = true
@@ -249,5 +254,13 @@ export function useRunPipeline() {
         ),
     }), [instance, panelLayout, restart, run, stop, testProvider])
 
-    return { run, stop, restart, execution }
+    // Testing V2 already owns the foreground intent across its provider transform.
+    // This nested guard must not cancel a release that arrived during that intent.
+    const executePreparedWithinActivity = useCallback(({
+        plan, workflow, resourcesResolved,
+    }: Parameters<NonNullable<IDEExecutionController['executePrepared']>>[0]) => run(
+        plan.mode === 'debug', workflow === 'test', plan, resourcesResolved, false,
+    ), [run])
+
+    return { run, stop, restart, execution, executePreparedWithinActivity }
 }

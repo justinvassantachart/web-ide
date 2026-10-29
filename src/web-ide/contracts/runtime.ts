@@ -7,6 +7,15 @@ import type { DebugAvailability, DebugChildPage, DebugChildrenInfo, DebugPageReq
 export interface RuntimePreparationResult {
   success: boolean
   errors: string[]
+  /** Stable classification for host recovery; omitted by legacy providers. */
+  errorCode?: string
+}
+
+/** Early foreground ownership before its asynchronous plan transforms settle. */
+export interface RuntimeWarmupOptions {
+  /** Suppresses pending student compilation, but preserves active toolchain preparation
+   * and already-dispatched compile-only work until prepare compares the complete plan. */
+  readonly foregroundIntent?: AbortSignal
 }
 
 /** A requested, compile-only background attempt; it never publishes terminal/run events. */
@@ -128,6 +137,12 @@ export interface RuntimeExecutionPlan {
     readonly precompiledHeader?: string
     /** Allow a Debug retry before DAP initialization; sources must explicitly include the headers. */
     readonly fallbackToSource?: boolean
+    /** Expected verified compiler tuple; a mismatch fails before compilation. */
+    readonly requiredToolchain?: {
+      readonly compilerSha256: string
+      readonly sysrootSha256: string
+      readonly exceptionsSha256: string
+    }
   }
 }
 
@@ -162,6 +177,10 @@ export interface RuntimeHostServiceV1 {
   open(channel: RuntimeHostChannelV1): Disposable
 }
 
+export interface RuntimeStopOptions {
+  readonly reason?: 'user' | 'superseded' | 'background' | 'teardown'
+}
+
 export interface RuntimeStartRequest {
   mode: RuntimeExecutionMode
 }
@@ -193,6 +212,10 @@ export interface RuntimeCapabilities {
   memoryVisualization?: boolean
   /** Optional generic duplex guest/host services. */
   hostChannels?: boolean
+  /** Toolchain-only preparation without student compilation or execution. */
+  compilerPreparation?: 1
+  /** Exact-plan compile-only join, drain, then ordinary foreground start. */
+  compileOnlyJoin?: 1
 }
 
 export interface RuntimeDiagnostic {
@@ -239,17 +262,21 @@ export interface RuntimeSession {
 
   prepare(plan: RuntimeExecutionPlan): Promise<RuntimePreparationResult>
   /** Host-requested Run-profile compilation only; providers also implement cancelWarmupAndWait. */
-  warmup?(plan: RuntimeExecutionPlan): Promise<RuntimeWarmupResult>
+  prepareCompiler?(): Promise<RuntimeWarmupResult>
+  warmup?(plan: RuntimeExecutionPlan, options?: RuntimeWarmupOptions): Promise<RuntimeWarmupResult>
   /** Cancels and drains background compilation before a workspace/scope replacement. */
   cancelWarmupAndWait?(): Promise<void>
   /** Owned, backend-specific compilation counters/timings; undefined when disabled or unavailable. */
   compilationStatistics?(): unknown
   start(request: RuntimeStartRequest): Promise<void>
-  stop(): void
+  stop(options?: RuntimeStopOptions): void
   /** Waits for the latest start request without changing its state. */
   waitForSettlement?(): Promise<RuntimeOutcome>
   /** Requests a stop and resolves after that start request has fully settled. */
-  stopAndWait?(): Promise<RuntimeOutcome>
+  stopAndWait?(options?: RuntimeStopOptions): Promise<RuntimeOutcome>
+  releaseCompilerResources?(options?: { signal?: AbortSignal }): Promise<'released' | 'cancelled'>
+  suspendRuntime?(): Promise<void>
+  resumeRuntime?(): Promise<void>
 
   setBreakpoints(file: string, lines: number[]): Promise<void>
   /**

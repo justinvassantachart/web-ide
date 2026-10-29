@@ -11,11 +11,14 @@ export function RunPipelineCoordinatorProvider({
 }) {
   const [coordinator] = useState(createRunPipelineCoordinator)
 
-  useEffect(() => () => {
-    // Every pending pipeline checks this generation after asynchronous and
-    // re-entrant boundaries. Invalidating it prevents an unmounted workbench
-    // from starting a runtime after its owning EngineProvider has disposed.
-    coordinator.beginTransition()
+  useEffect(() => {
+    coordinator.resume()
+    return () => {
+      // Every pending pipeline checks this generation after asynchronous and
+      // re-entrant boundaries. Invalidating it prevents an unmounted workbench
+      // from starting a runtime after its owning EngineProvider has disposed.
+      coordinator.suspend()
+    }
   }, [coordinator])
 
   return (

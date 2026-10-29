@@ -33,6 +33,7 @@ class Engine {
   autoStop = true
   compile = vi.fn(() => this.pending.promise)
   run = vi.fn(async () => ({ type: 'completed', exitCode: 0 }))
+  readonly dispose = vi.fn(async () => { this.stop() })
   stop = vi.fn(() => { if (this.autoStop) this.pending.resolve({ type: 'stopped' }) })
 }
 const scope = { projectId: 'assignment', accountId: 'account' }
@@ -78,6 +79,15 @@ describe('owned pure execution plans', () => {
     expect(Object.hasOwn(frozen, 'cppArtifacts')).toBe(false)
     expect(Object.hasOwn(frozen, 'entrypoint')).toBe(false)
     expect(Object.hasOwn(buildRuntimeExecutionPlan({ ...frozen, binaryFiles: {} }), 'binaryFiles')).toBe(true)
+  })
+
+  it('owns expected toolchain metadata and compares it as part of a warmup claim', () => {
+    const tuple = { compilerSha256: 'a'.repeat(64), sysrootSha256: 'b'.repeat(64), exceptionsSha256: 'c'.repeat(64) }
+    const snapshot = buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { ...input().cppArtifacts, requiredToolchain: tuple } })
+    tuple.compilerSha256 = 'd'.repeat(64)
+    expect(snapshot.cppArtifacts?.requiredToolchain?.compilerSha256).toBe('a'.repeat(64))
+    expect(Object.isFrozen(snapshot.cppArtifacts?.requiredToolchain)).toBe(true)
+    expect(runtimeExecutionPlansEqual(snapshot, buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { ...input().cppArtifacts, requiredToolchain: tuple } }))).toBe(false)
   })
 
   it('snapshots files, metadata and binary bytes without stream callbacks', () => {
@@ -237,7 +247,7 @@ describe('compile-only runtime warmup', () => {
     expect(engine.compile).not.toHaveBeenCalled()
     expect(events).not.toHaveBeenCalled()
   })
-  it('failed warmup is bounded, diagnostically visible and does not retry', async () => {
+  it('student compilation failure stays bounded and silent until ordinary foreground compilation', async () => {
     const engine = new Engine()
     engineCreate.mockResolvedValue(engine)
     const runtime = session()
@@ -248,10 +258,10 @@ describe('compile-only runtime warmup', () => {
     engine.stderr.emit('x'.repeat(80_000))
     engine.pending.resolve({ type: 'completed', exitCode: 1 })
     const result = await warmup
-    expect(result.status).toBe('failed')
-    expect(result.diagnostics.join('').length).toBeLessThan(66_000)
-    expect(result.diagnostics.join('')).toContain('truncated')
-    expect(diagnostic).toHaveBeenCalledOnce()
+    expect(result.status).toBe('skipped')
+    expect(result.reason).toBe('student-diagnostics')
+    expect(result.diagnostics).toEqual([])
+    expect(diagnostic).not.toHaveBeenCalled()
     expect(engine.compile).toHaveBeenCalledOnce()
     expect((await runtime.prepare(input())).success).toBe(true)
   })

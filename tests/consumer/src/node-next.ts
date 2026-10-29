@@ -54,14 +54,18 @@ const scopedCppProvider = runtimes.createCppRuntimeProvider({
     retainWorker: true,
     cacheCompilerModule: true,
     idleTimeoutMs: 30_000,
+    compilerLifetime: 'project',
   },
+  preserveCompilerOnCancel: true,
+  eagerCompilerReseedAfterStop: true,
 })
 async function warmupConsumer(session: root.RuntimeSession, handle: root.WebIDEInstanceHandle) {
   const plan = runtimes.buildRuntimeExecutionPlan({
     files: { '/workspace/main.cpp': 'int main() { return 0; }' },
     mode: 'run',
   })
-  const result: root.RuntimeWarmupResult | undefined = await session.warmup?.(plan)
+  const warmupOptions: root.RuntimeWarmupOptions = { foregroundIntent: new AbortController().signal }
+  const result: root.RuntimeWarmupResult | undefined = await session.warmup?.(plan, warmupOptions)
   const mountedResult: root.RuntimeWarmupResult | undefined = await handle.warmup?.()
   await session.cancelWarmupAndWait?.()
   await handle.cancelWarmup?.()
@@ -77,3 +81,19 @@ for (const provider of [runtimes.cppRuntimeProvider, runtimes.pythonRuntimeProvi
   registration.dispose()
   session.dispose?.()
 }
+
+async function compilerLifetimeConsumer(session: root.RuntimeSession, handle: root.WebIDEInstanceHandle) {
+  const options: root.RuntimeStopOptions = { reason: 'user' }
+  session.stop(options)
+  await session.stopAndWait?.({ reason: 'superseded' })
+  const prepared: root.RuntimeWarmupResult | undefined = await session.prepareCompiler?.()
+  const capability: 1 | undefined = session.capabilities.compilerPreparation
+  const join: 1 | undefined = session.capabilities.compileOnlyJoin
+  const controller = new AbortController()
+  const released: 'released' | 'cancelled' = await handle.releaseCompilerResources({ signal: controller.signal })
+  await handle.suspendRuntime()
+  await handle.resumeRuntime()
+  await handle.shutdownRuntime()
+  return { prepared, capability, join, released }
+}
+void compilerLifetimeConsumer

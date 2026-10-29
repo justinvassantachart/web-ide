@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { EngineContext } from './engine-context';
 import type { RuntimeSession } from '@/web-ide/contracts/runtime';
+import type { WebIDEInstanceController } from '@/web-ide/core/instance-handle';
 
 export function EngineProvider({
     createSession,
+    runtimeController,
     children,
 }: {
     createSession: () => RuntimeSession
+    runtimeController?: WebIDEInstanceController
     children: React.ReactNode
 }) {
     const [engine, setEngine] = useState<RuntimeSession | null>(null);
@@ -21,20 +24,27 @@ export function EngineProvider({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setEngine(nextEngine);
         return () => {
-            if (nextEngine.disposeAndWait) {
-                void nextEngine.disposeAndWait().catch((error: unknown) => {
-                    console.warn('[web-ide] runtime cleanup failed', error);
-                });
-            }
-            else if (nextEngine.dispose) nextEngine.dispose();
-            else nextEngine.stop();
+            const dispose = (): Promise<void> => {
+                if (nextEngine.disposeAndWait) return nextEngine.disposeAndWait().then(() => {});
+                if (nextEngine.dispose) nextEngine.dispose();
+                else nextEngine.stop({ reason: 'teardown' });
+                return Promise.resolve();
+            };
+            try {
+                const drain = runtimeController?.retireRuntime(nextEngine, dispose) ?? dispose();
+                void drain.catch((error: unknown) => console.warn('[web-ide] runtime cleanup failed', error));
+            } catch (error) { console.warn('[web-ide] runtime cleanup failed', error); }
         };
-    }, [createSession]);
+    }, [createSession, runtimeController]);
 
     // Console access for manual debugging in dev builds only.
     useEffect(() => {
         if (import.meta.env.DEV && engine) {
-            (window as unknown as { __webIDEEngine?: unknown }).__webIDEEngine = engine;
+            const debugWindow = window as unknown as { __webIDEEngine?: unknown };
+            debugWindow.__webIDEEngine = engine;
+            return () => {
+                if (debugWindow.__webIDEEngine === engine) delete debugWindow.__webIDEEngine;
+            };
         }
     }, [engine]);
 

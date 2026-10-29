@@ -123,6 +123,7 @@ class FakeEngine {
     this.runs.push(invocation)
     return invocation.promise
   })
+  readonly dispose = vi.fn(async () => { this.stop() })
   readonly stop = vi.fn(() => this.activeRun()?.resolve({ type: 'stopped' }))
 
   complete(exitCode = 0): void {

@@ -1,9 +1,14 @@
 import { createContext, useContext } from 'react'
 
 export interface RunPipelineCoordinator {
+  acquireActivity(foreground?: boolean): (() => void) | undefined
+  attachActivity(factory: (foreground: boolean) => (() => void) | undefined): () => void
+  suspend(): void
+  resume(): void
   beginTransition(): number
   clearPendingRun(task: Promise<void>): void
   getGeneration(): number
+  hasForegroundIntent(): boolean
   getPendingRun(): Promise<void> | undefined
   isPreparing(task: Promise<void>): boolean
   isCurrent(generation: number): boolean
@@ -13,10 +18,26 @@ export interface RunPipelineCoordinator {
 
 export function createRunPipelineCoordinator(): RunPipelineCoordinator {
   let generation = 0
+  let suspended = false
+  let foregroundIntent = false
+  let acquireActivity: ((foreground: boolean) => (() => void) | undefined) | undefined
   let pendingRun: Promise<void> | undefined
   let pendingRunIsPreparing = false
   return {
+    acquireActivity: (foreground = true) => {
+      if (suspended) return undefined
+      const release = acquireActivity ? acquireActivity(foreground) : (() => {})
+      if (release && foreground) foregroundIntent = true
+      return release
+    },
+    attachActivity(factory) {
+      acquireActivity = factory
+      return () => { if (acquireActivity === factory) acquireActivity = undefined }
+    },
+    suspend() { suspended = true; generation++ },
+    resume() { suspended = false },
     beginTransition: () => {
+      foregroundIntent = true
       generation += 1
       return generation
     },
@@ -27,9 +48,10 @@ export function createRunPipelineCoordinator(): RunPipelineCoordinator {
       }
     },
     getGeneration: () => generation,
+    hasForegroundIntent: () => foregroundIntent,
     getPendingRun: () => pendingRun,
     isPreparing: (task) => pendingRun === task && pendingRunIsPreparing,
-    isCurrent: (candidate) => generation === candidate,
+    isCurrent: (candidate) => !suspended && generation === candidate,
     markRuntimeStart: (candidate) => {
       if (generation === candidate && pendingRun) {
         pendingRunIsPreparing = false
