@@ -41,7 +41,8 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.8.1-source` tag, or a toolchain mismatch. The published
+`web-ide-v0.9.0-source` tag, or a toolchain mismatch. The published
+`web-ide-v0.8.1-source` identity remains unchanged. The published
 `web-ide-v0.7.3-source` identity remains unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint remains unchanged; its package was withheld
 after a clangd worker startup ordering defect was found. The retained
@@ -101,7 +102,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.8.1.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.9.0.tgz \
   npm run test:consumer
 ```
 
@@ -289,7 +290,7 @@ plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
 The built-in browser providers target exactly one pinned engine build.
-The Web IDE 0.8.1 candidate selects the exact
+The last verified Web IDE 0.8.1 tuple selects the exact
 `debugger-sh@0.3.15-webide.0.8.1.2` fork artifact recorded in
 `release/engine-fork-input.json`; its public GitHub release asset is bound by
 the recorded exact size and hashes. An engine change must update that record,
@@ -301,6 +302,16 @@ digests with that evidence. Hamilton and Karel adoption requires its own exact
 consumer compatibility evidence; the public package gates do not certify that
 composition. Do not widen the supported version range without the
 same compatibility proof for every version in the range.
+
+The pending Web IDE 0.9.0 release targets engine
+`0.3.15-webide.0.9.0.1` and companion `0.6.0`. Until that engine artifact passes
+its acceptance gates, the committed engine record and packed-consumer fixture
+remain at the last verified tuple. Freeze the new engine source/hash record,
+both lock graphs, generated license evidence and all packed files before
+creating the 0.9.0 seed tarball. Then bind the seed tarball's SHA-512 into the
+consumer lock, recompute its normalized graph digest, and run the nonfinal
+preflight. Its exact local-engine transport does not replace the final clean
+install from the immutable published URL or the real production gate receipts.
 
 ## Packed external-viewer regression
 

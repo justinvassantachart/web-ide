@@ -130,8 +130,8 @@ export async function revalidateReleaseCandidate({
     })
     await validateCycloneDx(expectedSbom)
     const sbom = await readCanonicalJSON(
-      path.join(outputDirectory, 'web-ide-0.8.1.cdx.json'),
-      'web-ide-0.8.1.cdx.json',
+      path.join(outputDirectory, 'web-ide-0.9.0.cdx.json'),
+      'web-ide-0.9.0.cdx.json',
     )
     await validateCycloneDx(sbom)
     assertCanonicalEqual(sbom, expectedSbom, 'CycloneDX SBOM')
