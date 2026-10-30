@@ -175,7 +175,7 @@ function forkInputFixture(overrides = {}) {
       source: {
         repository: 'https://github.com/justinvassantachart/engine',
         commit: 'b7236bda9c8fef31cd771fe770c2145f11ac0682',
-        acceptedBaseCommit: '3f01766f83bc77fc1017c3fed81af20a16d4227a',
+        acceptedBaseCommit: '5d0041cb91105333e2472cb96f58d06447462b8b',
       },
       build: {
         kind: 'embedded-wasm-library-build',
@@ -558,9 +558,9 @@ describe('committed exact-candidate consumer fixture', () => {
     const committed = await loadEngineForkInput()
     expect(committed.status).toBe('final')
     expect(committed.engine.distribution.url).toBe('https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.1/debugger-sh-0.3.15-webide.0.9.0.1.tgz')
-    expect(committed.engine.source.commit).toBe('80f04adb11350351dd5547022c4837fda5b3acdb')
+    expect(committed.engine.source.commit).toBe('b3785b7a8f26058b8bcc89f9c14144571824b062')
     expect(committed.engine.source.acceptedBaseCommit)
-      .toBe('3f01766f83bc77fc1017c3fed81af20a16d4227a')
+      .toBe('5d0041cb91105333e2472cb96f58d06447462b8b')
     const schema = await readJSON(path.join(repositoryRoot, 'release/schemas/artifact-manifest.schema.json'))
     const runtime = schema.properties.runtime.properties.engine.properties
     expect(schema.properties.package.properties.dependencies.const)
@@ -1960,7 +1960,7 @@ describe('artifact manifest', () => {
         wasmLoadedAtRuntime: false,
         remotelyFetched: false,
       },
-      source: { acceptedBaseCommit: '3f01766f83bc77fc1017c3fed81af20a16d4227a' },
+      source: { acceptedBaseCommit: '5d0041cb91105333e2472cb96f58d06447462b8b' },
     })
     expect(manifest.package.dependencies).toEqual({ 'debugger-sh': FORK_ENGINE_URL })
     for (const drifted of [

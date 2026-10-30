@@ -22,7 +22,7 @@ class Engine {
   stderr = { on: vi.fn() }
   stdin = { write: vi.fn() }
   debugger = { enabled: false, on: vi.fn(), send: vi.fn() }
-  cacheStats: { toolchainProfile: string; cacheEligible?: boolean; cacheEligibilityReason?: string } = { toolchainProfile: 'cache-receipt-v1' }
+  cacheStats: { toolchainProfile: string; cacheEligible?: boolean; cacheEligibilityReason?: string } = { toolchainProfile: 'stock-certified-v1', cacheEligible: true }
   pending = deferred<Result>()
   prepareCompiler = vi.fn<(_options?: { validateCacheInputs?: boolean }) => Promise<Result>>(async () => completed)
   compile = vi.fn(() => this.pending.promise)
@@ -157,12 +157,13 @@ describe('compiler lifecycle and foreground ownership', () => {
     expect(engine.run).not.toHaveBeenCalled()
   })
 
-  it('does not compile student TUs for an unsupported cache profile', async () => {
+  it.each(['legacy', 'cache-receipt-v1'])('does not compile student TUs for an unsupported cache profile (%s)', async profile => {
     const engine = new Engine()
-    engine.cacheStats.toolchainProfile = 'legacy'
+    engine.cacheStats.toolchainProfile = profile
     create.mockResolvedValue(engine)
     const runtime = session()
     expect((await runtime.warmup!(plan())).status).toBe('completed')
+    expect(engine.prepareCompiler).toHaveBeenCalledExactlyOnceWith()
     expect(engine.compile).not.toHaveBeenCalled()
   })
 
@@ -267,7 +268,7 @@ describe('compiler lifecycle and foreground ownership', () => {
     expect((await warming).status).toBe('completed')
   })
 
-  it.each(['legacy', 'cache-receipt-v1', 'stock-certified-v1'])('joins prior preparation without a redundant validation for %s when no stock scan is needed', async profile => {
+  it.each(['legacy', 'stock-certified-v1'])('joins prior preparation without a redundant validation for %s when no stock scan is needed', async profile => {
     const engine = new Engine(), preparation = deferred<Result>()
     engine.cacheStats.toolchainProfile = profile
     engine.prepareCompiler.mockReturnValue(preparation.promise)
@@ -280,7 +281,7 @@ describe('compiler lifecycle and foreground ownership', () => {
     engine.pending.resolve(completed)
     await Promise.all([preparing, warming])
     expect(engine.prepareCompiler).toHaveBeenCalledExactlyOnceWith()
-    expect(engine.compile).toHaveBeenCalledTimes(profile === 'cache-receipt-v1' ? 1 : 0)
+    expect(engine.compile).not.toHaveBeenCalled()
   })
 
   it('aborts pending release at prepare and defers a new release across prepare→start', async () => {

@@ -917,11 +917,10 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 const cache = this.profile.engineOptions?.cpp?.objectCache;
                 if (!cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))) return prepared;
                 const statistics = this.engine?.cacheStats;
-                if (statistics?.toolchainProfile === 'stock-certified-v1') {
-                    if (!state.cacheInputsValidated || statistics.cacheEligible !== true) return {
-                        status: 'skipped', diagnostics: [], reason: statistics.cacheEligibilityReason ?? 'cache-ineligible', statistics,
-                    };
-                } else if (statistics?.toolchainProfile !== 'cache-receipt-v1') return prepared;
+                if (statistics?.toolchainProfile !== 'stock-certified-v1') return prepared;
+                if (!state.cacheInputsValidated || statistics.cacheEligible !== true) return {
+                    status: 'skipped', diagnostics: [], reason: statistics.cacheEligibilityReason ?? 'cache-ineligible', statistics,
+                };
             }
             const engine = await this.ensureEngine();
             if (state.cancelled || state.suppressCompile || this.disposed || this.suspended || this.warmupState !== state) return { status: 'cancelled', diagnostics: [] };

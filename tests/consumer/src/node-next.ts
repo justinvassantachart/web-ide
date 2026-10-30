@@ -55,7 +55,7 @@ const scopedCppProvider = runtimes.createCppRuntimeProvider({
     cacheCompilerModule: true,
     idleTimeoutMs: 30_000,
     compilerLifetime: 'project',
-    toolchainProfile: 'cache-receipt-v1',
+    toolchainProfile: 'legacy',
   },
   preserveCompilerOnCancel: true,
   eagerCompilerReseedAfterStop: true,

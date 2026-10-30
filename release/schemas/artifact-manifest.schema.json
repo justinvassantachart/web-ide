@@ -762,7 +762,7 @@
                   "pattern": "^[a-f0-9]{40}$"
                 },
                 "acceptedBaseCommit": {
-                  "const": "3f01766f83bc77fc1017c3fed81af20a16d4227a"
+                  "const": "5d0041cb91105333e2472cb96f58d06447462b8b"
                 },
                 "upstreamRepository": {
                   "const": "https://github.com/debugger-sh/engine"

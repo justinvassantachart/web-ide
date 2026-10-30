@@ -567,7 +567,7 @@ describe('same-realm WebIDE instance isolation', () => {
       fs: {}, binaryFiles: {}, cppArtifacts: undefined,
       stdout: { on: vi.fn() }, stderr: { on: vi.fn() }, stdin: { write: vi.fn() },
       debugger: { enabled: false, on: vi.fn(), send: vi.fn() },
-      cacheStats: { toolchainProfile: 'cache-receipt-v1' },
+      cacheStats: { toolchainProfile: 'stock-certified-v1', cacheEligible: true },
       prepareCompiler: vi.fn(() => toolchain),
       compile: vi.fn(async () => ({ type: 'completed', exitCode: 0 })),
       run: vi.fn(async () => ({ type: 'completed', exitCode: 0 })),

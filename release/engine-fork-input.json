@@ -13,8 +13,8 @@
     },
     "source": {
       "repository": "https://github.com/justinvassantachart/engine",
-      "acceptedBaseCommit": "3f01766f83bc77fc1017c3fed81af20a16d4227a",
-      "commit": "80f04adb11350351dd5547022c4837fda5b3acdb"
+      "acceptedBaseCommit": "5d0041cb91105333e2472cb96f58d06447462b8b",
+      "commit": "b3785b7a8f26058b8bcc89f9c14144571824b062"
     },
     "build": {
       "kind": "embedded-wasm-library-build",
@@ -32,22 +32,22 @@
       "tag": "debugger-sh-v0.3.15-webide.0.9.0.1",
       "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.1/debugger-sh-0.3.15-webide.0.9.0.1.tgz",
       "assetFilename": "debugger-sh-0.3.15-webide.0.9.0.1.tgz",
-      "size": 32393198,
-      "sha256": "5731f822bacd313f7005c98bb831103dd037a0e3536c2fb872b133ed3cbbf2d3",
-      "sha512Integrity": "sha512-Myd+e/I6PL5CBaB8WZWZ8uxK3FPBkxs0WPB1z3lDtfglAKG538ynnVSmWxuEmbrS3HmfK6ze2x5yjStYTGVuDQ=="
+      "size": 32208120,
+      "sha256": "a29007a077897a4faf3988855d9fefc6a905000720c2fe99ab2680485a5f4f52",
+      "sha512Integrity": "sha512-xNCChftWwa5ee1dOfyWfK/J+de6USL7UFovIcOnYABN+LqNNTzqokfwzpd/453VZ26QePFNdbrtj0MG/gfzq4Q=="
     },
     "embeddedWasm": {
       "wasmPath": "dist/engine_bg.wasm",
       "wasmLoadedAtRuntime": false,
       "modulePath": "dist/debugger-sh.js",
       "remotelyFetched": false,
-      "wasmSize": 10437992,
-      "wasmSha256": "0a8cbe03f54e0dbc24a1efca243219cf5acfa0b6b8ecc05b836620e3905ad775",
-      "moduleSize": 27947582,
-      "moduleSha256": "226aeff5729caba5fbef6318ba5c243051cc2a962f1b4a5e35aa0d7eb6d1073f"
+      "wasmSize": 10404399,
+      "wasmSha256": "f64e926edd193a275a6fc3247e9d10c27d6d7c993d992aa5653084c094dd0862",
+      "moduleSize": 27856973,
+      "moduleSha256": "5cf402223c1afa8a368c7448264a203889f848aa51de3dc10cfab2d853ae6ba0"
     }
   },
   "consumerGraph": {
-    "normalizedLockSha256": "5f3ffd5dd6c8e1c2edb10a8587540bd6c463c96204ab42c76d918dd8252e580e"
+    "normalizedLockSha256": "3798814e72edcc7e4aa7eab15edefa23ddd99174abdc42e39210c6a779e49d38"
   }
 }
