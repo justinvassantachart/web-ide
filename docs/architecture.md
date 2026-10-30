@@ -85,6 +85,15 @@ zero-capacity, and unsupported object-cache profiles perform only the explicit
 toolchain preparation operation. Student compiler errors stay out of the
 foreground terminal until an ordinary Run recompiles them.
 
+For `stock-certified-v1`, the initial warmup assigns its owned plan before
+requesting input validation through compiler preparation. A successful
+preparation alone does not authorize background translation units: the engine
+must report that exact plan cache-eligible. Known-ineligible inputs finish as
+silent skipped warmups and compile normally on the next foreground request.
+The optional certificate string is opaque bounded transport; WebIDE cannot
+grant trust in caller metadata. Explicit preparation, zero-capacity caches,
+and post-Stop reseeding remain toolchain-only and do not scan student inputs.
+
 `releaseCompilerResources` releases idle compiler resources without constructing
 an absent session or engine. The mount controller holds activity tokens from
 before provider transforms through foreground settlement and throughout

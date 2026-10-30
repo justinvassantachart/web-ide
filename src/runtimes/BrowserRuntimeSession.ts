@@ -117,6 +117,7 @@ interface WarmupState {
     dispatched: boolean;
     claimedBy?: number;
     suppressCompile: boolean;
+    cacheInputsValidated?: boolean;
     detachForegroundIntent?: () => void;
     output: string;
     truncated: boolean;
@@ -717,9 +718,23 @@ export class BrowserRuntimeSession implements RuntimeSession {
         return this.prepareCompilerFor('initial');
     }
 
-    private prepareCompilerFor(purpose: 'initial' | 'post-stop' | 'foreground'): Promise<RuntimeWarmupResult> {
+    private prepareCompilerFor(purpose: 'initial' | 'post-stop' | 'foreground', initial?: {
+        state: WarmupState; built: BrowserExecutionPlan;
+    }): Promise<RuntimeWarmupResult> {
         if (this.disposed || this.suspended) return Promise.resolve({ status: 'cancelled', diagnostics: [] });
-        if (this.compilerPreparation) return this.compilerPreparation.promise;
+        if (this.compilerPreparation) {
+            const pending = this.compilerPreparation.promise;
+            if (!initial) return pending;
+            // A toolchain-only preparation cannot validate this plan. Drain it
+            // before submitting validation, and let foreground intent win.
+            return pending.then(result => {
+                const cache = this.profile.engineOptions?.cpp?.objectCache;
+                if (initial.state.cancelled || initial.state.suppressCompile || result.status !== 'completed'
+                    || this.engine?.cacheStats.toolchainProfile !== 'stock-certified-v1'
+                    || !cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))) return result;
+                return this.prepareCompilerFor(purpose, initial);
+            });
+        }
         if (this.profile.engineLanguage !== 'c' || this.capabilities.compilerPreparation !== 1) {
             return Promise.resolve({ status: 'skipped', diagnostics: [], reason: 'unsupported' });
         }
@@ -735,8 +750,20 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 if (state.cancelled || this.disposed || this.suspended) return { status: 'cancelled', diagnostics: [] };
                 if (typeof engine.prepareCompiler !== 'function') return { status: 'skipped', diagnostics: [], reason: 'unsupported-engine' };
                 state.engine = engine;
-                const result = await engine.prepareCompiler();
+                const cache = this.profile.engineOptions?.cpp?.objectCache;
+                const validate = initial && !initial.state.cancelled && !initial.state.suppressCompile
+                    && cache && !(typeof cache === 'object' && Object.values(cache).some(value => value === 0))
+                    && engine.cacheStats.toolchainProfile === 'stock-certified-v1';
+                if (validate) {
+                    initial.state.engine = engine;
+                    engine.fs = initial.built.fileTree;
+                    engine.binaryFiles = initial.built.binaryFiles;
+                    engine.cppArtifacts = initial.built.cppArtifacts;
+                    engine.debugger.enabled = false;
+                }
+                const result = await (validate ? engine.prepareCompiler({ validateCacheInputs: true }) : engine.prepareCompiler());
                 if (state.cancelled || this.disposed || this.suspended || result.type === 'stopped') return { status: 'cancelled', diagnostics: [] };
+                if (validate && result.type === 'completed' && result.exitCode === 0) initial.state.cacheInputsValidated = true;
                 if (result.type === 'completed' && result.exitCode === 0) return { status: 'completed', diagnostics: [], statistics: engine.cacheStats };
                 return { status: 'failed', diagnostics: [], reason: result.type === 'error' ? result.error.message : 'Compiler preparation failed' };
             } catch (error) {
@@ -881,15 +908,20 @@ export class BrowserRuntimeSession implements RuntimeSession {
         let result: RuntimeWarmupResult;
         try {
             if (this.capabilities.compileOnlyJoin === 1) {
-                const preparation = this.prepareCompilerFor('initial');
+                const preparation = this.prepareCompilerFor('initial', { state, built });
                 if (state.suppressCompile && this.compilerPreparation) this.compilerPreparation.claimed = true;
                 const prepared = await preparation;
                 if (state.cancelled || this.disposed || this.suspended) return { status: 'cancelled', diagnostics: [] };
                 if (state.suppressCompile) return prepared;
                 if (prepared.status !== 'completed') return prepared;
                 const cache = this.profile.engineOptions?.cpp?.objectCache;
-                if (!cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))
-                    || this.engine?.cacheStats.toolchainProfile !== 'cache-receipt-v1') return prepared;
+                if (!cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))) return prepared;
+                const statistics = this.engine?.cacheStats;
+                if (statistics?.toolchainProfile === 'stock-certified-v1') {
+                    if (!state.cacheInputsValidated || statistics.cacheEligible !== true) return {
+                        status: 'skipped', diagnostics: [], reason: statistics.cacheEligibilityReason ?? 'cache-ineligible', statistics,
+                    };
+                } else if (statistics?.toolchainProfile !== 'cache-receipt-v1') return prepared;
             }
             const engine = await this.ensureEngine();
             if (state.cancelled || state.suppressCompile || this.disposed || this.suspended || this.warmupState !== state) return { status: 'cancelled', diagnostics: [] };

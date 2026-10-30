@@ -60,6 +60,14 @@ const scopedCppProvider = runtimes.createCppRuntimeProvider({
   preserveCompilerOnCancel: true,
   eagerCompilerReseedAfterStop: true,
 })
+const stockCppProvider = runtimes.createCppRuntimeProvider({
+  cpp: {
+    scope: { projectId: 'consumer-project', accountId: 'consumer-account' },
+    toolchainProfile: 'stock-certified-v1',
+    objectCache: true,
+  },
+  preserveCompilerOnCancel: true,
+})
 async function warmupConsumer(session: root.RuntimeSession, handle: root.WebIDEInstanceHandle) {
   const plan = runtimes.buildRuntimeExecutionPlan({
     files: { '/workspace/main.cpp': 'int main() { return 0; }' },
@@ -75,7 +83,7 @@ async function warmupConsumer(session: root.RuntimeSession, handle: root.WebIDEI
   const mountedStatistics: unknown = handle.compilationStatistics?.()
   return { result, mountedResult, statistics, mountedStatistics }
 }
-void [scopedCppProvider, warmupConsumer]
+void [scopedCppProvider, stockCppProvider, warmupConsumer]
 
 for (const provider of [runtimes.cppRuntimeProvider, runtimes.pythonRuntimeProvider]) {
   const session = provider.createSession()

@@ -22,9 +22,9 @@ class Engine {
   stderr = { on: vi.fn() }
   stdin = { write: vi.fn() }
   debugger = { enabled: false, on: vi.fn(), send: vi.fn() }
-  cacheStats = { toolchainProfile: 'cache-receipt-v1' }
+  cacheStats: { toolchainProfile: string; cacheEligible?: boolean; cacheEligibilityReason?: string } = { toolchainProfile: 'cache-receipt-v1' }
   pending = deferred<Result>()
-  prepareCompiler = vi.fn(async (): Promise<Result> => completed)
+  prepareCompiler = vi.fn<(_options?: { validateCacheInputs?: boolean }) => Promise<Result>>(async () => completed)
   compile = vi.fn(() => this.pending.promise)
   run = vi.fn(async (): Promise<Result> => completed)
   cancelCurrentOperation = vi.fn(async () => { this.pending.resolve({ type: 'stopped' }) })
@@ -166,6 +166,123 @@ describe('compiler lifecycle and foreground ownership', () => {
     expect(engine.compile).not.toHaveBeenCalled()
   })
 
+  it('validates the owned stock plan before compiling and never trusts a profile name alone', async () => {
+    const engine = new Engine()
+    engine.cacheStats.toolchainProfile = 'stock-certified-v1'
+    const loading = deferred<unknown>()
+    create.mockReturnValue(loading.promise)
+    const runtime = session()
+    const input = { ...plan(), binaryFiles: { '/sysroot/support.pch': new Uint8Array([1, 2]) },
+      cppArtifacts: { precompiledHeader: '/sysroot/support.pch', cacheCertificate: '{ "exact": 1 }' } }
+    engine.prepareCompiler.mockImplementation(async options => {
+      expect(options).toEqual({ validateCacheInputs: true })
+      expect(engine.fs).toEqual({ 'main.cpp': 'int main() {}' })
+      expect(engine.binaryFiles).toEqual({ '/support.pch': new Uint8Array([1, 2]) })
+      expect(engine.cppArtifacts).toMatchObject({ precompiledHeader: '/support.pch', cacheCertificate: '{ "exact": 1 }' })
+      engine.cacheStats.cacheEligible = true
+      return completed
+    })
+    const warming = runtime.warmup!(input)
+    input.files['/workspace/main.cpp'] = 'changed'
+    input.binaryFiles['/sysroot/support.pch'][0] = 9
+    input.cppArtifacts.cacheCertificate = '{}'
+    loading.resolve(engine)
+    await vi.waitFor(() => expect(engine.compile).toHaveBeenCalledOnce())
+    engine.pending.resolve(completed)
+    expect((await warming).status).toBe('completed')
+    expect(engine.prepareCompiler).toHaveBeenCalledOnce()
+    expect(engine.run).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, false])('keeps stock ineligible preparation silent without dispatch (%s)', async cacheEligible => {
+    const engine = new Engine()
+    engine.cacheStats = { toolchainProfile: 'stock-certified-v1', cacheEligible, cacheEligibilityReason: 'stock-temporal' }
+    create.mockResolvedValue(engine)
+    const runtime = session()
+    const diagnostic = vi.fn()
+    runtime.events.diagnostic.subscribe(diagnostic)
+    const result = await runtime.warmup!(plan())
+    expect(result).toMatchObject({ status: 'skipped', reason: 'stock-temporal', diagnostics: [] })
+    expect(engine.prepareCompiler).toHaveBeenCalledWith({ validateCacheInputs: true })
+    expect(engine.compile).not.toHaveBeenCalled()
+    expect(engine.run).not.toHaveBeenCalled()
+    expect(diagnostic).not.toHaveBeenCalled()
+    expect((await runtime.prepare(plan())).success).toBe(true)
+    await runtime.start({ mode: 'run' })
+    expect(engine.run).toHaveBeenCalledOnce()
+  })
+
+  it.each(['foreground', 'zero-capacity', 'explicit-prepare'] as const)('does not scan stock inputs for %s toolchain preparation', async reason => {
+    const engine = new Engine()
+    engine.cacheStats = { toolchainProfile: 'stock-certified-v1', cacheEligible: true }
+    create.mockResolvedValue(engine)
+    const runtime = session({ cache: reason === 'zero-capacity' ? { maxEntries: 0 } : true })
+    const intent = new AbortController()
+    intent.abort()
+    if (reason === 'explicit-prepare') await runtime.prepareCompiler!()
+    else await runtime.warmup!(plan(), reason === 'foreground' ? { foregroundIntent: intent.signal } : undefined)
+    expect(engine.prepareCompiler).toHaveBeenCalledExactlyOnceWith()
+    expect(engine.compile).not.toHaveBeenCalled()
+    expect(engine.cppArtifacts).toBeUndefined()
+  })
+
+  it('lets foreground intent claim in-progress stock validation without dispatching a background TU', async () => {
+    const engine = new Engine()
+    engine.cacheStats = { toolchainProfile: 'stock-certified-v1', cacheEligible: true }
+    const validation = deferred<Result>()
+    engine.prepareCompiler.mockReturnValue(validation.promise)
+    create.mockResolvedValue(engine)
+    const runtime = session(), intent = new AbortController()
+    const warming = runtime.warmup!(plan(), { foregroundIntent: intent.signal })
+    await vi.waitFor(() => expect(engine.prepareCompiler).toHaveBeenCalledWith({ validateCacheInputs: true }))
+    intent.abort()
+    validation.resolve(completed)
+    await warming
+    expect(engine.compile).not.toHaveBeenCalled()
+    expect((await runtime.prepare(plan())).success).toBe(true)
+    await runtime.start({ mode: 'run' })
+    expect(engine.run).toHaveBeenCalledOnce()
+  })
+
+  it('drains a prior toolchain-only preparation before validating the initial stock snapshot', async () => {
+    const engine = new Engine()
+    engine.cacheStats.toolchainProfile = 'stock-certified-v1'
+    const preparation = deferred<Result>()
+    engine.prepareCompiler.mockReturnValueOnce(preparation.promise).mockImplementation(async options => {
+      expect(options).toEqual({ validateCacheInputs: true })
+      engine.cacheStats.cacheEligible = true
+      return completed
+    })
+    create.mockResolvedValue(engine)
+    const runtime = session()
+    const preparing = runtime.prepareCompiler!()
+    await vi.waitFor(() => expect(engine.prepareCompiler).toHaveBeenCalledOnce())
+    const warming = runtime.warmup!(plan())
+    expect(engine.compile).not.toHaveBeenCalled()
+    preparation.resolve(completed)
+    await preparing
+    await vi.waitFor(() => expect(engine.compile).toHaveBeenCalledOnce())
+    expect(engine.prepareCompiler).toHaveBeenCalledTimes(2)
+    engine.pending.resolve(completed)
+    expect((await warming).status).toBe('completed')
+  })
+
+  it.each(['legacy', 'cache-receipt-v1', 'stock-certified-v1'])('joins prior preparation without a redundant validation for %s when no stock scan is needed', async profile => {
+    const engine = new Engine(), preparation = deferred<Result>()
+    engine.cacheStats.toolchainProfile = profile
+    engine.prepareCompiler.mockReturnValue(preparation.promise)
+    create.mockResolvedValue(engine)
+    const runtime = session({ cache: profile === 'stock-certified-v1' ? { maxEntries: 0 } : true })
+    const preparing = runtime.prepareCompiler!()
+    await vi.waitFor(() => expect(engine.prepareCompiler).toHaveBeenCalledOnce())
+    const warming = runtime.warmup!(plan())
+    preparation.resolve(completed)
+    engine.pending.resolve(completed)
+    await Promise.all([preparing, warming])
+    expect(engine.prepareCompiler).toHaveBeenCalledExactlyOnceWith()
+    expect(engine.compile).toHaveBeenCalledTimes(profile === 'cache-receipt-v1' ? 1 : 0)
+  })
+
   it('aborts pending release at prepare and defers a new release across prepare→start', async () => {
     const engine = new Engine()
     create.mockResolvedValue(engine)
@@ -250,6 +367,7 @@ describe('compiler lifecycle and foreground ownership', () => {
 
   it('post-Stop reseeding prepares once and an immediate Run joins it', async () => {
     const engine = new Engine()
+    engine.cacheStats.toolchainProfile = 'stock-certified-v1'
     const activeRun = deferred<Result>()
     engine.run.mockReturnValueOnce(activeRun.promise)
     engine.cancelCurrentOperation.mockImplementation(async () => { activeRun.resolve({ type: 'stopped' }) })
@@ -263,6 +381,7 @@ describe('compiler lifecycle and foreground ownership', () => {
     await runtime.stopAndWait!({ reason: 'user' })
     await running
     await vi.waitFor(() => expect(engine.prepareCompiler).toHaveBeenCalledOnce())
+    expect(engine.prepareCompiler).toHaveBeenCalledExactlyOnceWith()
     const foreground = runtime.prepare(plan())
     let ready = false
     void foreground.then(() => { ready = true })
