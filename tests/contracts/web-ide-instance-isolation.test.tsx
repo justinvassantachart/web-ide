@@ -502,6 +502,63 @@ afterEach(async () => {
 })
 
 describe('same-realm WebIDE instance isolation', () => {
+  it('offers toolbar Stop during foreground preparation and fences a late successful preparation', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const background = deferred<RuntimeWarmupResult>()
+    const preparation = deferred<{ success: boolean; errors: string[] }>()
+    const warmup = vi.fn<NonNullable<RuntimeSession['warmup']>>(() => background.promise)
+    const prepare = vi.fn<RuntimeSession['prepare']>()
+      .mockImplementationOnce(() => preparation.promise)
+      .mockResolvedValue({ success: true, errors: [] })
+    const start = vi.fn<RuntimeSession['start']>(async () => undefined)
+    const stopAndWait = vi.fn<NonNullable<RuntimeSession['stopAndWait']>>(async () => ({ type: 'stopped' }))
+    const runtime = createRuntimeProvider(vi.fn())
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), {
+      warmup, prepare, start, stopAndWait,
+      cancelWarmupAndWait: async () => { background.resolve({ status: 'cancelled', diagnostics: [] }) },
+    })
+    const base = configuration(runtime)
+    const config = { ...base, plugins: [...base.plugins, coreWorkbenchPlugin] }
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    const command = (id: string) => mountedContainer!.querySelector<HTMLButtonElement>(`[data-command-id="workbench.${id}"]`)
+    await act(async () => {
+      root?.render(<WebIDEHostMount configuration={config} host={host('preparation-stop', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={reference} />)
+    })
+    await act(async () => { await vi.waitFor(() => expect(reference.current).not.toBeNull()) })
+    let warming!: Promise<RuntimeWarmupResult>
+    await act(async () => { warming = reference.current!.warmup!(); await Promise.resolve() })
+    expect(warmup).toHaveBeenCalledOnce()
+    expect(command('stop')).toBeNull()
+    expect(command('run')?.disabled).toBe(false)
+    await act(async () => { background.resolve({ status: 'completed', diagnostics: [] }); await warming })
+
+    await act(async () => { command('run')!.click(); await Promise.resolve() })
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(start).not.toHaveBeenCalled()
+    const instance = harness.instances.get('preparation-stop') as WorkbenchInstance
+    expect(instance.executionStore.getState()).toMatchObject({ isCompiling: true, isRunning: false })
+    expect(command('stop')).not.toBeNull()
+    expect(command('stop')!.disabled).toBe(false)
+    await act(async () => { command('stop')!.click(); await Promise.resolve() })
+    expect(stopAndWait).toHaveBeenCalledWith({ reason: 'user' })
+    await act(async () => {
+      preparation.resolve({ success: true, errors: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(start).not.toHaveBeenCalled()
+    expect(instance.executionStore.getState()).toMatchObject({ isCompiling: false, isRunning: false })
+    expect(command('stop')).toBeNull()
+    expect(command('run')?.disabled).toBe(false)
+    await act(async () => { command('run')!.click(); await Promise.resolve() })
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(start).toHaveBeenCalledOnce()
+  })
+
   it('foreground intent suppresses background TU dispatch while its provider transform is unresolved', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     let completeToolchain!: (result: { type: 'completed'; exitCode: number }) => void
