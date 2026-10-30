@@ -146,6 +146,7 @@ function engineEvidence(forkInput, lockEntry) {
     distribution: { ...engine.distribution },
     lock: assertEngineLockEntry(lockEntry, forkInput, `${ENGINE_LOCK_PATH} lock entry`),
     embeddedWasm: { ...engine.embeddedWasm },
+    ...(engine.receiptToolchain ? { receiptToolchain: { ...engine.receiptToolchain } } : {}),
   }
 }
 
@@ -197,7 +198,7 @@ function validateRuntime(runtime, forkInput) {
   assertExactKeys(
     runtime.engine,
     ['name', 'version', 'registryPublished', 'source', 'build', 'distribution', 'lock', 'embeddedWasm'],
-    [],
+    ['receiptToolchain'],
     'artifact manifest runtime.engine',
   )
   if (

@@ -55,6 +55,7 @@ const scopedCppProvider = runtimes.createCppRuntimeProvider({
     cacheCompilerModule: true,
     idleTimeoutMs: 30_000,
     compilerLifetime: 'project',
+    toolchainProfile: 'cache-receipt-v1',
   },
   preserveCompilerOnCancel: true,
   eagerCompilerReseedAfterStop: true,
@@ -63,6 +64,7 @@ async function warmupConsumer(session: root.RuntimeSession, handle: root.WebIDEI
   const plan = runtimes.buildRuntimeExecutionPlan({
     files: { '/workspace/main.cpp': 'int main() { return 0; }' },
     mode: 'run',
+    cppArtifacts: { requiredToolchain: { compilerSha256: 'a'.repeat(64), sysrootSha256: 'b'.repeat(64), exceptionsSha256: 'c'.repeat(64) } },
   })
   const warmupOptions: root.RuntimeWarmupOptions = { foregroundIntent: new AbortController().signal }
   const result: root.RuntimeWarmupResult | undefined = await session.warmup?.(plan, warmupOptions)
@@ -86,6 +88,8 @@ async function compilerLifetimeConsumer(session: root.RuntimeSession, handle: ro
   const options: root.RuntimeStopOptions = { reason: 'user' }
   session.stop(options)
   await session.stopAndWait?.({ reason: 'superseded' })
+  const preparation: root.RuntimePreparationResult = { success: false, errors: ['Prior runtime did not drain'], errorCode: 'runtime-teardown-failed' }
+  void preparation
   const prepared: root.RuntimeWarmupResult | undefined = await session.prepareCompiler?.()
   const capability: 1 | undefined = session.capabilities.compilerPreparation
   const join: 1 | undefined = session.capabilities.compileOnlyJoin

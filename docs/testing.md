@@ -330,3 +330,21 @@ queued terminal input and stderr, stepping, two concurrent Python sessions,
 Stop/restart, awaited disposal, stale handles, and omitted-device sessions.
 The same seven lifecycle cases run for both built-in providers; these retain
 negative duplicate/active/disposed registration and older-engine cases.
+
+## Receipt compiler package gate
+
+When the exact engine release includes the receipt profile, its release input
+also records `engine.receiptToolchain`: the fixed profile name,
+`dist/cpp-cache-receipt-v1/profile.json`, and that file's SHA-256. This field is
+release evidence, not a runtime capability override. Engine still selects its
+private build-fixed profile and verifies actual compiler bytes.
+
+The clean packed consumer checks the installed profile, fixed ABI/capability,
+exact four asset members, their lengths/hashes, and the decompressed sysroot.
+After the ordinary Vite build it requires the byte-exact compiler and compressed
+sysroot to appear once as emitted assets referenced by bundled JavaScript.
+Missing, corrupt, inlined or unreferenced assets fail. Generic legacy inputs
+remain valid without receipt assets; an unrecorded receipt asset directory fails.
+`tests/release/receipt-toolchain.test.mjs` exercises this transport boundary with
+small synthetic bytes and a real Vite build. Those tests do not certify compiler
+capability, PCH admission, diagnostics, or performance.

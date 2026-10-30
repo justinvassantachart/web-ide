@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promis
 import os from 'node:os'
 import path from 'node:path'
 
+import { createPreflightCheckout } from './preflight-source.mjs'
 import { git, run, settleOperations } from './process-utils.mjs'
 import { readJSON, readRegularFileSnapshot, repositoryRoot } from './release-utils.mjs'
 import { beginEmptyDirectoryTransaction } from './transactional-output.mjs'
@@ -53,7 +54,7 @@ const tagEnvironment = {
   ], 'Preflight Git fixture setup')
   await git(['init', '--quiet', '--bare', '--initial-branch=main', bareRemote], { env: tagEnvironment })
   const canonicalBareRemote = await realpath(bareRemote)
-  await git(['clone', '--quiet', repositoryRoot, checkout], { env: tagEnvironment })
+  await createPreflightCheckout({ source: repositoryRoot, checkout, sourceCommit, env: tagEnvironment })
   const existingTag = await git(['tag', '--list', configuration.sourceTag], {
     cwd: checkout,
     env: tagEnvironment,

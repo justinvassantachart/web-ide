@@ -286,3 +286,36 @@ consumer and audit logs, and immutable public release upload/download
 receipts. CS106B consumption additionally requires its companion and course-host
 proof against those exact bytes. See [Testing](testing.md) for the behavior and
 evidence matrix.
+
+## Candidate measurements before publication
+
+Compiler acceptance and the course's M9 measurements precede publication. Freeze
+candidate source commits, exact proposed versions, lock graphs, tarball hashes,
+all installed package files, compiler/companion profiles and asset bytes, and the
+actual served bundle. An isolated development consumer may install these frozen
+candidate tarballs locally; record that substitution and never place it in a
+production manifest or claim it is an immutable published install.
+
+The disposable release preflight creates a synthetic `main` at the captured
+clean candidate commit even when the real repository is on a feature branch.
+It does not move real `main` or change the final release rules. The normal final
+candidate still requires clean real `main`, live origin agreement, the annotated
+source tag, two deterministic clean builds, and the exact published upstream
+engine dependency. Preflight evidence is explicitly nonfinal.
+
+After merging/tagging and dependency-order publication, install the immutable
+packages in a clean consumer. Compare their complete inventories with the
+measured candidate. Prefer identical complete tarballs. If source tags, archive
+headers or generated source/evidence metadata differ, record every changed path
+and both hashes, explain the change, and separately require byte equality for
+all executable JavaScript, WASM, CSS, declarations, profile manifests, compiler,
+sysroot, exception/PCH/archive bytes and other runtime resources. Changed
+package dependency/peer/export metadata requires clean graph/public-type checks.
+Any runtime or asset difference invalidates the corresponding candidate
+measurements until the affected correctness/performance gates are rerun. A
+version label or similar output is not an equivalence proof.
+
+Finally verify the serving revision and its complete asset tuple and run the
+deployed smoke checks. Neither preflight nor M9 replaces immutable clean-install
+validation, repository review/merge protections, release evidence finalization,
+or the actual deployment verification.

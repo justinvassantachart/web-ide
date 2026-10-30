@@ -112,6 +112,11 @@ function engineComponent(forkInput, packageManifest, lockPackages) {
     purlQualifiers: `download_url=${encodeURIComponent(engine.distribution.url)}`,
     extraExternalReferences: [{ type: 'vcs', url: engine.source.repository }],
     extraProperties: [
+      ...(engine.receiptToolchain ? [
+        { name: 'web-ide:evidence:receipt-toolchain-profile', value: engine.receiptToolchain.profile },
+        { name: 'web-ide:evidence:receipt-toolchain-profile-sha256', value: engine.receiptToolchain.profileSha256 },
+        { name: 'web-ide:evidence:receipt-toolchain-profile-path', value: engine.receiptToolchain.profilePath },
+      ] : []),
       { name: 'web-ide:evidence:engine-distribution-mechanism', value: engine.distribution.mechanism },
       { name: 'web-ide:evidence:engine-embedded-wasm-path', value: engine.embeddedWasm.wasmPath },
       { name: 'web-ide:evidence:engine-embedded-wasm-sha256', value: engine.embeddedWasm.wasmSha256 },

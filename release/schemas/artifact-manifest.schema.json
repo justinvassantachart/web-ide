@@ -928,6 +928,27 @@
                   "pattern": "^[a-f0-9]{64}$"
                 }
               }
+            },
+            "receiptToolchain": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile",
+                "profilePath",
+                "profileSha256"
+              ],
+              "properties": {
+                "profile": {
+                  "const": "cache-receipt-v1"
+                },
+                "profilePath": {
+                  "const": "dist/cpp-cache-receipt-v1/profile.json"
+                },
+                "profileSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
             }
           }
         }
