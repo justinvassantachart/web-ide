@@ -303,6 +303,18 @@ candidate still requires clean real `main`, live origin agreement, the annotated
 source tag, two deterministic clean builds, and the exact published upstream
 engine dependency. Preflight evidence is explicitly nonfinal.
 
+Before that engine URL is published, the nonfinal preflight alone may accept
+`WEB_IDE_PREFLIGHT_ENGINE_TARBALL=/absolute/verified/engine-candidate.tgz`.
+The committed engine input must already describe its exact proposed version,
+planned immutable URL, source commit, SHA-256, SHA-512 integrity, size and embedded
+runtime identities. Preflight verifies the supplied package and seeds only its
+owned disposable npm caches before the unchanged locked installs. It verifies
+the installed package manifest and embedded runtime bytes, records this transport
+in candidate state and deterministic-build evidence, and repeats verification
+during the independent rebuild. Source manifests and locks keep their planned
+HTTPS dependency. This transport is not evidence that the URL exists or is
+immutable; the production finalizer rejects the variable and nonfinal state.
+
 After merging/tagging and dependency-order publication, install the immutable
 packages in a clean consumer. Compare their complete inventories with the
 measured candidate. Prefer identical complete tarballs. If source tags, archive

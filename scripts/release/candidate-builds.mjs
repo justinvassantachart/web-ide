@@ -6,6 +6,7 @@ import { canonicalJSONString } from './canonical-json.mjs'
 import { inspectPackedPackage } from './package-inspection.mjs'
 import { git, run, settleOperations } from './process-utils.mjs'
 import { repositoryRoot } from './release-utils.mjs'
+import { seedPreflightEngineCache, verifyInstalledPreflightEngine } from './preflight-engine-candidate.mjs'
 
 export function assertCleanIsolatedCheckoutStatus(status, index, stage = 'operation') {
   if (status !== '') {
@@ -33,7 +34,7 @@ export function assertExpectedIgnoredCheckoutStatus(status, index, stage, expect
   }
 }
 
-async function buildOne({ workRoot, index, sourceCommit, configuration }) {
+async function buildOne({ workRoot, index, sourceCommit, configuration, preflightEngineCandidate, fixtureRemote }) {
   const buildDirectory = path.join(workRoot, `build-${index}`)
   const cloneDirectory = path.join(buildDirectory, 'source')
   const cacheDirectory = path.join(buildDirectory, 'npm-cache')
@@ -118,12 +119,16 @@ async function buildOne({ workRoot, index, sourceCommit, configuration }) {
   const installArguments = ['ci', '--ignore-scripts', '--no-audit', '--no-fund']
   const buildArguments = ['run', 'build:library']
   const packArguments = ['pack', '--json', '--ignore-scripts', '--pack-destination', '../pack']
+  if (preflightEngineCandidate) await seedPreflightEngineCache(preflightEngineCandidate, {
+    directory: buildDirectory, cwd: cloneDirectory, env: fixedEnvironment, fixtureRemote,
+  })
   await run('npm', installArguments, {
     cwd: cloneDirectory,
     env: fixedEnvironment,
     inherit: true,
   })
   await assertCheckoutStillClean('install', installIgnoredPaths)
+  if (preflightEngineCandidate) await verifyInstalledPreflightEngine(preflightEngineCandidate, cloneDirectory)
   await run('npm', buildArguments, {
     cwd: cloneDirectory,
     env: { ...fixedEnvironment, WEB_IDE_RELEASE_PROVENANCE_PATH: provenancePath },
@@ -200,13 +205,13 @@ export async function settleIsolatedBuilds(builds) {
   return await settleOperations(builds, 'One or more isolated release builds')
 }
 
-export async function buildDeterministicCandidates({ outputDirectory, sourceCommit, configuration }) {
+export async function buildDeterministicCandidates({ outputDirectory, sourceCommit, configuration, preflightEngineCandidate, fixtureRemote }) {
   const workRoot = path.join(outputDirectory, '.isolated-builds')
   await mkdir(workRoot, { recursive: false })
   try {
     const [first, second] = await settleIsolatedBuilds([
-      buildOne({ workRoot, index: 1, sourceCommit, configuration }),
-      buildOne({ workRoot, index: 2, sourceCommit, configuration }),
+      buildOne({ workRoot, index: 1, sourceCommit, configuration, preflightEngineCandidate, fixtureRemote }),
+      buildOne({ workRoot, index: 2, sourceCommit, configuration, preflightEngineCandidate, fixtureRemote }),
     ])
     if (!first.tarballBytes.equals(second.tarballBytes)) {
       throw new TypeError('Two clean isolated builds produced different package tarballs')
@@ -247,6 +252,12 @@ export async function buildDeterministicCandidates({ outputDirectory, sourceComm
         bundleProvenanceByteIdentical: true,
         packageInventoriesCanonicalByteIdentical: true,
         licenseEvidenceByteIdentical: true,
+        ...(preflightEngineCandidate ? { nonreleaseEngineTransport: {
+          candidate: preflightEngineCandidate.receipt,
+          cacheSeedArgv: ['npm', 'cache', 'add', '<verified-preflight-engine>', '--ignore-scripts', '--no-audit', '--no-fund'],
+          lockAndManifestUnchanged: true,
+          installedManifestAndEmbeddedBytesVerified: true,
+        } } : {}),
       },
     }
   } finally {

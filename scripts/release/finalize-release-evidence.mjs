@@ -32,6 +32,9 @@ import { beginDirectoryReplacement } from './transactional-output.mjs'
 import { decodeValidationLog } from './validation-log.mjs'
 import { parseValidationGateReceipt } from './validation-gate-receipt.mjs'
 import { validateReleaseSchema } from './validate-release-schema.mjs'
+import { rejectPreflightEngineCandidate } from './preflight-engine-candidate.mjs'
+
+rejectPreflightEngineCandidate()
 
 const outputInput = process.env.WEB_IDE_RELEASE_OUTPUT_DIR
 const validationInput = process.env.WEB_IDE_RELEASE_VALIDATION_INPUT

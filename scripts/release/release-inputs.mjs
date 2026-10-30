@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 import { canonicalJSONString } from './canonical-json.mjs'
+import { validatePreflightEngineReceipt } from './preflight-engine-candidate.mjs'
 import {
   assertExactKeys,
   assertNonEmptyString,
@@ -190,7 +191,7 @@ export function validatePreflightCandidateState(state, configuration, source) {
   assertExactKeys(
     state.preflightFixture,
     ['mode', 'remote', 'finalizable'],
-    [],
+    ['engineCandidate'],
     'preflight candidate state fixture',
   )
   if (
@@ -199,6 +200,7 @@ export function validatePreflightCandidateState(state, configuration, source) {
     || state.preflightFixture.remote !== source.remote
     || state.preflightFixture.finalizable !== false
   ) throw new TypeError('Preflight candidate state does not identify the disposable nonrelease fixture')
+  if (state.preflightFixture.engineCandidate !== undefined) validatePreflightEngineReceipt(state.preflightFixture.engineCandidate)
   const candidateState = { ...state }
   delete candidateState.preflightFixture
   validateFinalCandidateState(

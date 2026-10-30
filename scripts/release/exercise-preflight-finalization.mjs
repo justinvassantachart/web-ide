@@ -33,6 +33,8 @@ import {
   preflightValidationGateReceiptFooter,
 } from './validation-gate-receipt.mjs'
 import { validateReleaseSchema } from './validate-release-schema.mjs'
+import { loadEngineForkInput } from './engine-fork-input.mjs'
+import { PREFLIGHT_ENGINE_VARIABLE, verifyPreflightEngineCandidate } from './preflight-engine-candidate.mjs'
 
 async function writeSnapshot(directory, fileName, snapshot) {
   const destination = path.join(directory, fileName)
@@ -60,11 +62,18 @@ export async function exercisePreflightFinalization({
     configuration,
     source,
   )
+  const preflightEngineCandidate = process.env[PREFLIGHT_ENGINE_VARIABLE]
+    ? await verifyPreflightEngineCandidate(process.env[PREFLIGHT_ENGINE_VARIABLE], await loadEngineForkInput(), fixtureRemote)
+    : undefined
+  if (canonicalJSONString(state.preflightFixture.engineCandidate ?? null) !== canonicalJSONString(preflightEngineCandidate?.receipt ?? null)) {
+    throw new TypeError('Preflight finalization engine input does not match candidate state')
+  }
   const regenerated = await revalidateReleaseCandidate({
     outputDirectory,
     configuration,
     source,
     sourceOptions: { nonreleaseFixtureRemote: fixtureRemote },
+    preflightEngineCandidate,
   })
   const candidateIdentity = state.artifacts.find(
     (artifact) => artifact.fileName === configuration.releaseAssetFilename,
@@ -240,6 +249,7 @@ export async function exercisePreflightFinalization({
         logCount: normalizedGates.length,
         candidateIndependentlyRevalidated: true,
         transactionalDirectoryReplacementExercised: true,
+        ...(preflightEngineCandidate ? { engineCandidate: preflightEngineCandidate.receipt } : {}),
       }
     } catch (error) {
       await transaction.rollback()
