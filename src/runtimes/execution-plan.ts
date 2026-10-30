@@ -3,6 +3,16 @@ import { normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
 
 /** Pure, owned execution snapshot. Reading binaryFiles returns new owned bytes. */
 export function buildRuntimeExecutionPlan(plan: RuntimeExecutionPlan): RuntimeExecutionPlan {
+  const cppArtifacts = plan.cppArtifacts === undefined ? undefined : { ...plan.cppArtifacts }
+  if (cppArtifacts?.cacheCertificate !== undefined) {
+    const certificate = cppArtifacts.cacheCertificate
+    // Preserve exact serialized bytes. Parsing, schema and trust decisions
+    // belong to the engine; this public boundary only enforces transport limits.
+    if (typeof certificate !== 'string') throw new TypeError('Cache certificate must be a string')
+    if (certificate.length > 1024 * 1024 || new TextEncoder().encode(certificate).byteLength > 1024 * 1024) {
+      throw new RangeError('Cache certificate exceeds 1 MiB of UTF-8')
+    }
+  }
   const binaryFiles = Object.fromEntries(Object.entries(plan.binaryFiles ?? {}).map(([path, bytes]) => {
     if (!(bytes instanceof Uint8Array)) throw new TypeError(`Binary input must be bytes: ${path}`)
     return [path, new Uint8Array(bytes)]
@@ -14,11 +24,11 @@ export function buildRuntimeExecutionPlan(plan: RuntimeExecutionPlan): RuntimeEx
     ...(plan.streamInterceptor === undefined ? {} : { streamInterceptor: plan.streamInterceptor }),
     ...(plan.sourceAliases === undefined ? {} : { sourceAliases: Object.freeze({ ...plan.sourceAliases }) }),
     ...(plan.cppBuildPlan === undefined ? {} : { cppBuildPlan: freezeValue(structuredClone(plan.cppBuildPlan)) }),
-    ...(plan.cppArtifacts === undefined ? {} : { cppArtifacts: Object.freeze({
-      ...plan.cppArtifacts,
-      ...(plan.cppArtifacts.sources === undefined ? {} : { sources: Object.freeze([...plan.cppArtifacts.sources]) }),
-      ...(plan.cppArtifacts.archives === undefined ? {} : { archives: Object.freeze([...plan.cppArtifacts.archives]) }),
-      ...(plan.cppArtifacts.requiredToolchain === undefined ? {} : { requiredToolchain: Object.freeze({ ...plan.cppArtifacts.requiredToolchain }) }),
+    ...(cppArtifacts === undefined ? {} : { cppArtifacts: Object.freeze({
+      ...cppArtifacts,
+      ...(cppArtifacts.sources === undefined ? {} : { sources: Object.freeze([...cppArtifacts.sources]) }),
+      ...(cppArtifacts.archives === undefined ? {} : { archives: Object.freeze([...cppArtifacts.archives]) }),
+      ...(cppArtifacts.requiredToolchain === undefined ? {} : { requiredToolchain: Object.freeze({ ...cppArtifacts.requiredToolchain }) }),
     }) }),
   }
   if (plan.binaryFiles !== undefined) Object.defineProperty(snapshot, 'binaryFiles', {

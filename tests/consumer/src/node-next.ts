@@ -64,7 +64,7 @@ async function warmupConsumer(session: root.RuntimeSession, handle: root.WebIDEI
   const plan = runtimes.buildRuntimeExecutionPlan({
     files: { '/workspace/main.cpp': 'int main() { return 0; }' },
     mode: 'run',
-    cppArtifacts: { requiredToolchain: { compilerSha256: 'a'.repeat(64), sysrootSha256: 'b'.repeat(64), exceptionsSha256: 'c'.repeat(64) } },
+    cppArtifacts: { cacheCertificate: '{"schema":1}', requiredToolchain: { compilerSha256: 'a'.repeat(64), sysrootSha256: 'b'.repeat(64), exceptionsSha256: 'c'.repeat(64) } },
   })
   const warmupOptions: root.RuntimeWarmupOptions = { foregroundIntent: new AbortController().signal }
   const result: root.RuntimeWarmupResult | undefined = await session.warmup?.(plan, warmupOptions)

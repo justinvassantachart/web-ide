@@ -137,6 +137,8 @@ export interface RuntimeExecutionPlan {
     readonly precompiledHeader?: string
     /** Allow a Debug retry before DAP initialization; sources must explicitly include the headers. */
     readonly fallbackToSource?: boolean
+    /** Exact UTF-8 cache-certificate JSON, at most 1 MiB. The engine validates its authority; it is never a guest file. */
+    readonly cacheCertificate?: string
     /** Expected verified compiler tuple; a mismatch fails before compilation. */
     readonly requiredToolchain?: {
       readonly compilerSha256: string

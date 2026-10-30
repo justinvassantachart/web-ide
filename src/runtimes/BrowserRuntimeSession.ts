@@ -628,6 +628,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 precompiledHeader: cppArtifacts.precompiledHeader === undefined
                     ? undefined : artifactPath(cppArtifacts.precompiledHeader),
                 ...(cppArtifacts.requiredToolchain === undefined ? {} : { requiredToolchain: { ...cppArtifacts.requiredToolchain } }),
+                ...(cppArtifacts.cacheCertificate === undefined ? {} : { cacheCertificate: cppArtifacts.cacheCertificate }),
             };
         }
         return {
