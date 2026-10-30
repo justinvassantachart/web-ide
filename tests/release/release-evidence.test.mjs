@@ -558,7 +558,7 @@ describe('committed exact-candidate consumer fixture', () => {
     const committed = await loadEngineForkInput()
     expect(committed.status).toBe('final')
     expect(committed.engine.distribution.url).toBe('https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.1/debugger-sh-0.3.15-webide.0.9.0.1.tgz')
-    expect(committed.engine.source.commit).toBe('6c9ef01f9c0a4f22dbdbc62d268a3a2445019aeb')
+    expect(committed.engine.source.commit).toBe('80f04adb11350351dd5547022c4837fda5b3acdb')
     expect(committed.engine.source.acceptedBaseCommit)
       .toBe('3f01766f83bc77fc1017c3fed81af20a16d4227a')
     const schema = await readJSON(path.join(repositoryRoot, 'release/schemas/artifact-manifest.schema.json'))

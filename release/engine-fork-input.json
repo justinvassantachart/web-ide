@@ -14,7 +14,7 @@
     "source": {
       "repository": "https://github.com/justinvassantachart/engine",
       "acceptedBaseCommit": "3f01766f83bc77fc1017c3fed81af20a16d4227a",
-      "commit": "6c9ef01f9c0a4f22dbdbc62d268a3a2445019aeb"
+      "commit": "80f04adb11350351dd5547022c4837fda5b3acdb"
     },
     "build": {
       "kind": "embedded-wasm-library-build",
@@ -32,9 +32,9 @@
       "tag": "debugger-sh-v0.3.15-webide.0.9.0.1",
       "url": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.1/debugger-sh-0.3.15-webide.0.9.0.1.tgz",
       "assetFilename": "debugger-sh-0.3.15-webide.0.9.0.1.tgz",
-      "size": 32392890,
-      "sha256": "103c09323b46994efa415bb1217ff136f5e797a75d362e92f49042b69c57d273",
-      "sha512Integrity": "sha512-W4jm0cZJX7sWAsyVLYoWqEQo/bpChIJIlAkkZ9c/4fdvseS4jDsMBo7felrUkzQbgjCDtfqNoXBb7yzwlZw+/A=="
+      "size": 32393198,
+      "sha256": "5731f822bacd313f7005c98bb831103dd037a0e3536c2fb872b133ed3cbbf2d3",
+      "sha512Integrity": "sha512-Myd+e/I6PL5CBaB8WZWZ8uxK3FPBkxs0WPB1z3lDtfglAKG538ynnVSmWxuEmbrS3HmfK6ze2x5yjStYTGVuDQ=="
     },
     "embeddedWasm": {
       "wasmPath": "dist/engine_bg.wasm",
@@ -43,11 +43,11 @@
       "remotelyFetched": false,
       "wasmSize": 10437992,
       "wasmSha256": "0a8cbe03f54e0dbc24a1efca243219cf5acfa0b6b8ecc05b836620e3905ad775",
-      "moduleSize": 27946663,
-      "moduleSha256": "e8dde9e4f97deb1e9136eac356394b45507c66d2e3352b2a4e8edc71be6aa466"
+      "moduleSize": 27947582,
+      "moduleSha256": "226aeff5729caba5fbef6318ba5c243051cc2a962f1b4a5e35aa0d7eb6d1073f"
     }
   },
   "consumerGraph": {
-    "normalizedLockSha256": "80cb816b55db129c6c52eaa2f5962456325d20b94e78c03527d8427a68e8c363"
+    "normalizedLockSha256": "5f3ffd5dd6c8e1c2edb10a8587540bd6c463c96204ab42c76d918dd8252e580e"
   }
 }
