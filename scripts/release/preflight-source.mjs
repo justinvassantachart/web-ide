@@ -9,6 +9,10 @@ export async function createPreflightCheckout({ source, checkout, sourceCommit, 
   // Clone only main so unrelated feature-branch tracking configuration cannot
   // enter the final source validator's deliberately restricted local config.
   await git(['clone', '--quiet', '--no-local', '--no-checkout', '--single-branch', '--branch', 'main', source, checkout], { env })
+  // A single-branch clone narrows its fetch refspec. Restore the reviewed
+  // canonical refspec only in this newly created disposable checkout so the
+  // unchanged release source verifier can validate the synthetic origin.
+  await git(['config', '--local', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], { cwd: checkout, env })
   await git(['fetch', '--quiet', 'origin', sourceCommit], { cwd: checkout, env })
   await git(['checkout', '--quiet', '-B', 'main', sourceCommit], { cwd: checkout, env })
   const head = (await git(['rev-parse', 'HEAD'], { cwd: checkout, env })).stdout.trim()
