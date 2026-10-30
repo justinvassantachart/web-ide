@@ -16,11 +16,10 @@ peer and engine `0.3.15-webide.0.9.0.1`. These target versions are not published
 releases. The completed `0.8.1` release and its evidence remain unchanged.
 
 Release metadata preparation does not establish an accepted engine artifact.
-Until its exact source and tarball identities are available, the committed
-engine input and consumer fixture retain their last verified `0.8.1` tuple.
-They must be replaced together with verified engine bytes and a new candidate
-integrity before the `0.9.0` preflight or final release can pass. No provisional
-digest or local dependency path is a production pin.
+The committed engine input now binds the exact local `0.3.15-webide.0.9.0.1` candidate
+archive and embedded runtime bytes. Its planned immutable URL is not yet
+published. The consumer fixture binds the `0.9.0` candidate integrity before
+preflight; no provisional digest or local dependency path is a production pin.
 
 The candidate retains the 0.7.3 Python host byte device and the 0.7.2 compiler
 diagnostic correction. The 0.7.0 release introduced
@@ -35,13 +34,14 @@ configuration alone does not establish publication or downstream compatibility.
 - The manifest records the public GitHub source, issue tracker, homepage,
   semantic version, and MIT source license without changing the export map or
   React peer ranges.
-- The last verified runtime engine pin still selects the published
-  `0.3.15-webide.0.8.1.2` fork, adding scoped C++ object caching, immutable
+- The candidate runtime engine pin selects the exact
+  `0.3.15-webide.0.9.0.1` fork, adding scoped C++ object caching, immutable
   compiler code retention, compile-only preparation and owned timing statistics.
   These features remain off for the standard provider. The fork retains the
   cumulative debugger formatter and C++/Python host-device fixes. Its exact
-  GitHub release asset is public; this is neither an upstream registry release
-  nor an npm publication of this project.
+  GitHub release URL is reserved for the verified artifact; publication and
+  immutable download verification remain separate release gates. This is
+  neither an upstream registry release nor an npm publication of this project.
   `release/engine-fork-input.json` is the committed exact fork input record
   (fork source commit, build toolchain, GitHub release asset identity, and the
   engine WebAssembly that the fork embeds in its module instead of fetching).

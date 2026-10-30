@@ -290,10 +290,11 @@ plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
 The built-in browser providers target exactly one pinned engine build.
-The last verified Web IDE 0.8.1 tuple selects the exact
-`debugger-sh@0.3.15-webide.0.8.1.2` fork artifact recorded in
-`release/engine-fork-input.json`; its public GitHub release asset is bound by
-the recorded exact size and hashes. An engine change must update that record,
+The Web IDE 0.9.0 candidate selects the exact
+`debugger-sh@0.3.15-webide.0.9.0.1` fork artifact recorded in
+`release/engine-fork-input.json`; its candidate archive and planned immutable
+GitHub release URL are bound by the recorded exact size and hashes. Publication
+and clean immutable installation remain required. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
 `npm run validate:production`, and verify the CS106B companion/course-host
@@ -304,9 +305,9 @@ composition. Do not widen the supported version range without the
 same compatibility proof for every version in the range.
 
 The pending Web IDE 0.9.0 release targets engine
-`0.3.15-webide.0.9.0.1` and companion `0.6.0`. Until that engine artifact passes
-its acceptance gates, the committed engine record and packed-consumer fixture
-remain at the last verified tuple. Freeze the new engine source/hash record,
+`0.3.15-webide.0.9.0.1` and companion `0.6.0`. The engine record now describes
+the exact local versioned candidate; this does not establish its safety or
+performance gates. Freeze the engine source/hash record,
 both lock graphs, generated license evidence and all packed files before
 creating the 0.9.0 seed tarball. Then bind the seed tarball's SHA-512 into the
 consumer lock, recompute its normalized graph digest, and run the nonfinal
