@@ -72,6 +72,7 @@ const viewer = {
             active: this.handle(index).snapshot().editor.activeFile,
             selections: editor.getSelections(), focus: editor.hasTextFocus(),
             scrollTop: editor.getScrollTop(), scrollLeft: editor.getScrollLeft(),
+            lineHeight: editor.getOption(monaco.editor.EditorOption.lineHeight),
             topSource: visible[0] ? model.getLineContent(visible[0].startLineNumber) : null }
     },
     async apply(files: Record<string, string>, index = 0) {
