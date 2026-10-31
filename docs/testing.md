@@ -289,6 +289,14 @@ the exact direct browser shims that replaced the former whole-stdlib polyfill
 plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
+The lint toolchain uses ESLint 10 with the existing `@eslint/js` 9 recommended
+rules. A `minimatch@11.0.3` override limited to version 10 dependencies removes the
+affected matcher used by ESLint, its config array, and TypeScript ESTree
+(GHSA-g3hv-75wg-m249). These
+parents use the named matcher APIs supported by version 11; the former
+ESLint 9 legacy config dependency used a default import and is not overridden.
+When updating these pins, verify both audits and the linted file/result set.
+
 The built-in browser providers target exactly one pinned engine build.
 The Web IDE 0.9.0 candidate selects the exact
 `debugger-sh@0.3.15-webide.0.9.0.1` fork artifact recorded in

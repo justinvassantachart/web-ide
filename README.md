@@ -528,7 +528,10 @@ Python runtime provider. Web IDE does not maintain a closed plugin catalog.
 
 ## Local development
 
-Requires Node `^20.19.0` or `>=22.12.0`, matching the supported Vite runtime.
+The library's consumer runtime supports Node `^20.19.0` or `>=22.12.0`,
+matching Vite. Repository development also runs ESLint 10, which requires
+Node `^20.19.0`, `^22.13.0`, or `>=24.0.0`. Release checks use Node
+`24.11.1` and npm `11.6.2`.
 
 ```sh
 npm install
