@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { validateReceiptToolchainInput } from './receipt-toolchain.mjs'
 
 import { assertExactKeys, assertNonEmptyString, readJSON, repositoryRoot } from './release-utils.mjs'
 
@@ -179,7 +180,7 @@ export function validateEngineForkInput(record, location = 'engine fork input') 
       'name', 'version', 'registryPublished', 'upstream', 'source',
       'distribution', 'embeddedWasm', 'build',
     ],
-    [],
+    ['receiptToolchain'],
     `${location}.engine`,
   )
   if (engine.name !== ENGINE_PACKAGE_NAME) {
@@ -199,6 +200,7 @@ export function validateEngineForkInput(record, location = 'engine fork input') 
   validateDistribution(engine.distribution, engine, `${location}.engine.distribution`)
   validateEmbeddedWasm(engine.embeddedWasm, `${location}.engine.embeddedWasm`)
   validateBuild(engine.build, `${location}.engine.build`)
+  if (engine.receiptToolchain !== undefined) validateReceiptToolchainInput(engine.receiptToolchain, `${location}.engine.receiptToolchain`)
   assertExactKeys(record.consumerGraph, ['normalizedLockSha256'], [], `${location}.consumerGraph`)
   assertDigest(record.consumerGraph.normalizedLockSha256, `${location}.consumerGraph.normalizedLockSha256`)
   return record

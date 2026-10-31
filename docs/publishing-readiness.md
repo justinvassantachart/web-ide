@@ -1,18 +1,25 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.8.1` source candidate is
+Web IDE's source repository is public and its `0.9.0` source candidate is
 licensed under MIT. The npm manifest deliberately remains `private: true`: this
 checkpoint does not configure an npm publication. The distribution path is an
 exact integrity-checked tarball attached to an immutable release in the owner's
-public `justinvassantachart/web-ide` repository. This candidate adds optional
-scoped C++ object caching, compiler code retention, compile-only warmup and
-owned runtime statistics. The standard C++ provider keeps these features off.
+public `justinvassantachart/web-ide` repository. This candidate adds permanent
+runtime disposal, compiler release/suspend/resume, foreground-priority
+compile-only warmup and optional validated cache inputs. The standard C++
+provider retains its conservative defaults.
 It retains the optional debug formatter contributions and shared Pretty/Raw
 presentation in Variables and Graph. Existing runtime providers remain
 supported; course-specific formatters are companion plugins. The Stanford
-companion compatibility candidate is `0.5.1`, with an exact Web IDE `0.8.1`
-peer; the published `0.5.0` companion requires Web IDE `0.8.0`. These new
-candidate versions are not published releases.
+companion compatibility target is `0.6.0`, with an exact Web IDE `0.9.0`
+peer and engine `0.3.15-webide.0.9.0.1`. These target versions are not published
+releases. The completed `0.8.1` release and its evidence remain unchanged.
+
+Release metadata preparation does not establish an accepted engine artifact.
+The committed engine input now binds the exact local `0.3.15-webide.0.9.0.1` candidate
+archive and embedded runtime bytes. Its planned immutable URL is not yet
+published. The consumer fixture binds the `0.9.0` candidate integrity before
+preflight; no provisional digest or local dependency path is a production pin.
 
 The candidate retains the 0.7.3 Python host byte device and the 0.7.2 compiler
 diagnostic correction. The 0.7.0 release introduced
@@ -27,13 +34,14 @@ configuration alone does not establish publication or downstream compatibility.
 - The manifest records the public GitHub source, issue tracker, homepage,
   semantic version, and MIT source license without changing the export map or
   React peer ranges.
-- The runtime engine pin selects the published
-  `0.3.15-webide.0.8.1.2` fork, adding scoped C++ object caching, immutable
+- The candidate runtime engine pin selects the exact
+  `0.3.15-webide.0.9.0.1` fork, adding scoped C++ object caching, immutable
   compiler code retention, compile-only preparation and owned timing statistics.
   These features remain off for the standard provider. The fork retains the
   cumulative debugger formatter and C++/Python host-device fixes. Its exact
-  GitHub release asset is public; this is neither an upstream registry release
-  nor an npm publication of this project.
+  GitHub release URL is reserved for the verified artifact; publication and
+  immutable download verification remain separate release gates. This is
+  neither an upstream registry release nor an npm publication of this project.
   `release/engine-fork-input.json` is the committed exact fork input record
   (fork source commit, build toolchain, GitHub release asset identity, and the
   engine WebAssembly that the fork embeds in its module instead of fetching).
@@ -41,6 +49,11 @@ configuration alone does not establish publication or downstream compatibility.
   release tools reject any dependency, integrity, or embedded-engine drift.
   Release gates require those published dependencies and clean, tagged source;
   sibling checkouts and mutable dependency substitutions do not satisfy them.
+  The pending `0.9.0` tuple must preserve the legacy compiler profile for generic
+  consumers. Its course cache profile uses the unmodified stock compiler with
+  an engine-approved certificate; source, PCH, invocation and observed input
+  checks determine admission. Package preparation alone does not prove those
+  checks or the required browser performance gates.
 - Host-neutral ESM exports, declarations, compiled CSS, clangd worker output,
   and raw C++ test resources remain package inputs.
 - The clean packed consumer imports the root and `web-ide/host` public exports,
@@ -49,8 +62,8 @@ configuration alone does not establish publication or downstream compatibility.
   cache, and user/global npm-config paths under an explicit registry policy,
   proves one React/React DOM version, runs a production-only audit, and builds
   without source aliases or sibling imports.
-- Unit, integration, and production-browser coverage proves the current C/C++
-  and Python runtime claims. The separately maintained Karel companion is not
+- Unit, integration, and production-browser coverage must prove the exact
+  candidate's C/C++ and Python behavior before release. The separately maintained Karel companion is not
   part of this package.
 - Source and distribution scans exclude LMS, Firebase, lessons, replay, Karel,
   absolute developer paths, unresolved `@/` aliases, copied compiler/sysroot
@@ -65,7 +78,8 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.8.1-source` tag object peeled to that exact commit. The immutable
+`web-ide-v0.9.0-source` tag object peeled to that exact commit. The immutable
+`web-ide-v0.8.1-source` identity remains unchanged. The immutable
 `web-ide-v0.7.3-source` and `web-ide-v0.7.2-source` identities remain unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint is retained unchanged and did not produce a
 package release: a browser check found that asynchronous clangd startup could drop the initial
@@ -192,7 +206,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.8.1-source` tag at that commit, and use an
+and push the annotated `web-ide-v0.9.0-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while
@@ -286,3 +300,48 @@ consumer and audit logs, and immutable public release upload/download
 receipts. CS106B consumption additionally requires its companion and course-host
 proof against those exact bytes. See [Testing](testing.md) for the behavior and
 evidence matrix.
+
+## Candidate measurements before publication
+
+Compiler acceptance and the course's M9 measurements precede publication. Freeze
+candidate source commits, exact proposed versions, lock graphs, tarball hashes,
+all installed package files, compiler/companion profiles and asset bytes, and the
+actual served bundle. An isolated development consumer may install these frozen
+candidate tarballs locally; record that substitution and never place it in a
+production manifest or claim it is an immutable published install.
+
+The disposable release preflight creates a synthetic `main` at the captured
+clean candidate commit even when the real repository is on a feature branch.
+It does not move real `main` or change the final release rules. The normal final
+candidate still requires clean real `main`, live origin agreement, the annotated
+source tag, two deterministic clean builds, and the exact published upstream
+engine dependency. Preflight evidence is explicitly nonfinal.
+
+Before that engine URL is published, the nonfinal preflight alone may accept
+`WEB_IDE_PREFLIGHT_ENGINE_TARBALL=/absolute/verified/engine-candidate.tgz`.
+The committed engine input must already describe its exact proposed version,
+planned immutable URL, source commit, SHA-256, SHA-512 integrity, size and embedded
+runtime identities. Preflight verifies the supplied package and seeds only its
+owned disposable npm caches before the unchanged locked installs. It verifies
+the installed package manifest and embedded runtime bytes, records this transport
+in candidate state and deterministic-build evidence, and repeats verification
+during the independent rebuild. Source manifests and locks keep their planned
+HTTPS dependency. This transport is not evidence that the URL exists or is
+immutable; the production finalizer rejects the variable and nonfinal state.
+
+After merging/tagging and dependency-order publication, install the immutable
+packages in a clean consumer. Compare their complete inventories with the
+measured candidate. Prefer identical complete tarballs. If source tags, archive
+headers or generated source/evidence metadata differ, record every changed path
+and both hashes, explain the change, and separately require byte equality for
+all executable JavaScript, WASM, CSS, declarations, profile manifests, compiler,
+sysroot, exception/PCH/archive bytes and other runtime resources. Changed
+package dependency/peer/export metadata requires clean graph/public-type checks.
+Any runtime or asset difference invalidates the corresponding candidate
+measurements until the affected correctness/performance gates are rerun. A
+version label or similar output is not an equivalence proof.
+
+Finally verify the serving revision and its complete asset tuple and run the
+deployed smoke checks. Neither preflight nor M9 replaces immutable clean-install
+validation, repository review/merge protections, release evidence finalization,
+or the actual deployment verification.

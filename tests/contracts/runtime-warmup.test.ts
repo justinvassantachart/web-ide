@@ -33,6 +33,7 @@ class Engine {
   autoStop = true
   compile = vi.fn(() => this.pending.promise)
   run = vi.fn(async () => ({ type: 'completed', exitCode: 0 }))
+  readonly dispose = vi.fn(async () => { this.stop() })
   stop = vi.fn(() => { if (this.autoStop) this.pending.resolve({ type: 'stopped' }) })
 }
 const scope = { projectId: 'assignment', accountId: 'account' }
@@ -60,6 +61,25 @@ beforeEach(() => engineCreate.mockReset())
 afterEach(async () => { for (const value of sessions.splice(0)) await value.disposeAndWait?.() })
 
 describe('owned pure execution plans', () => {
+  it('owns exact certificate serialization and compares it before a warmup claim', () => {
+    const artifacts = { ...input().cppArtifacts, cacheCertificate: '{ "schema": 1 }\n' }
+    const snapshot = buildRuntimeExecutionPlan({ ...input(), cppArtifacts: artifacts })
+    artifacts.cacheCertificate = '{"schema":1}'
+    expect(snapshot.cppArtifacts?.cacheCertificate).toBe('{ "schema": 1 }\n')
+    expect(runtimeExecutionPlansEqual(snapshot, buildRuntimeExecutionPlan({ ...input(), cppArtifacts: artifacts }))).toBe(false)
+    expect(Object.isFrozen(snapshot.cppArtifacts)).toBe(true)
+  })
+
+  it('rejects non-string and oversized UTF-8 certificates without coercion', () => {
+    for (const certificate of [null, 1, {}, new String('{}')]) {
+      expect(() => buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { cacheCertificate: certificate as string } })).toThrow('Cache certificate must be a string')
+    }
+    for (const certificate of ['x'.repeat(1024 * 1024 + 1), 'é'.repeat(512 * 1024 + 1)]) {
+      expect(() => buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { cacheCertificate: certificate } })).toThrow('exceeds 1 MiB')
+    }
+    const boundary = ' '.repeat(1024 * 1024 - 2) + '{}'
+    expect(buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { cacheCertificate: boundary } }).cppArtifacts?.cacheCertificate).toBe(boundary)
+  })
   it.each(byteInputs)('owns %s inputs and every exposed binary snapshot', (_name, createBytes) => {
     const bytes = createBytes()
     const frozen = buildRuntimeExecutionPlan({ ...input(), binaryFiles: { '/sysroot/support.a': bytes } })
@@ -78,6 +98,15 @@ describe('owned pure execution plans', () => {
     expect(Object.hasOwn(frozen, 'cppArtifacts')).toBe(false)
     expect(Object.hasOwn(frozen, 'entrypoint')).toBe(false)
     expect(Object.hasOwn(buildRuntimeExecutionPlan({ ...frozen, binaryFiles: {} }), 'binaryFiles')).toBe(true)
+  })
+
+  it('owns expected toolchain metadata and compares it as part of a warmup claim', () => {
+    const tuple = { compilerSha256: 'a'.repeat(64), sysrootSha256: 'b'.repeat(64), exceptionsSha256: 'c'.repeat(64) }
+    const snapshot = buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { ...input().cppArtifacts, requiredToolchain: tuple } })
+    tuple.compilerSha256 = 'd'.repeat(64)
+    expect(snapshot.cppArtifacts?.requiredToolchain?.compilerSha256).toBe('a'.repeat(64))
+    expect(Object.isFrozen(snapshot.cppArtifacts?.requiredToolchain)).toBe(true)
+    expect(runtimeExecutionPlansEqual(snapshot, buildRuntimeExecutionPlan({ ...input(), cppArtifacts: { ...input().cppArtifacts, requiredToolchain: tuple } }))).toBe(false)
   })
 
   it('snapshots files, metadata and binary bytes without stream callbacks', () => {
@@ -108,6 +137,22 @@ describe('owned pure execution plans', () => {
 })
 
 describe('compile-only runtime warmup', () => {
+  it('captures and forwards the exact certificate before async initialization without mounting it', async () => {
+    const loading = deferred<unknown>()
+    engineCreate.mockReturnValue(loading.promise)
+    const engine = new Engine()
+    const runtime = session()
+    const artifacts = { ...input().cppArtifacts, cacheCertificate: '{ "schema": 1 }\n' }
+    const warming = runtime.warmup!({ ...input(), cppArtifacts: artifacts })
+    artifacts.cacheCertificate = '{"schema":2}'
+    loading.resolve(engine)
+    await vi.waitFor(() => expect(engine.compile).toHaveBeenCalledOnce())
+    expect(engine.cppArtifacts).toMatchObject({ cacheCertificate: '{ "schema": 1 }\n' })
+    expect(engine.fs).toEqual({ 'main.cpp': 'int main() { return 1; }' })
+    expect(Object.keys(engine.binaryFiles)).toEqual(['/support.a'])
+    engine.pending.resolve({ type: 'completed', exitCode: 0 })
+    expect((await warming).status).toBe('completed')
+  })
   it.each(byteInputs)('captures %s bytes before asynchronous engine initialization', async (_name, createBytes) => {
     const loading = deferred<unknown>()
     engineCreate.mockReturnValue(loading.promise)
@@ -237,7 +282,7 @@ describe('compile-only runtime warmup', () => {
     expect(engine.compile).not.toHaveBeenCalled()
     expect(events).not.toHaveBeenCalled()
   })
-  it('failed warmup is bounded, diagnostically visible and does not retry', async () => {
+  it('student compilation failure stays bounded and silent until ordinary foreground compilation', async () => {
     const engine = new Engine()
     engineCreate.mockResolvedValue(engine)
     const runtime = session()
@@ -248,10 +293,10 @@ describe('compile-only runtime warmup', () => {
     engine.stderr.emit('x'.repeat(80_000))
     engine.pending.resolve({ type: 'completed', exitCode: 1 })
     const result = await warmup
-    expect(result.status).toBe('failed')
-    expect(result.diagnostics.join('').length).toBeLessThan(66_000)
-    expect(result.diagnostics.join('')).toContain('truncated')
-    expect(diagnostic).toHaveBeenCalledOnce()
+    expect(result.status).toBe('skipped')
+    expect(result.reason).toBe('student-diagnostics')
+    expect(result.diagnostics).toEqual([])
+    expect(diagnostic).not.toHaveBeenCalled()
     expect(engine.compile).toHaveBeenCalledOnce()
     expect((await runtime.prepare(input())).success).toBe(true)
   })

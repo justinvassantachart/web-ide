@@ -22,16 +22,16 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-The current source prepares version 0.8.1 with optional scoped C++ caching,
-compiler code retention and compile-only warmup. The standard provider keeps
+The current source prepares version 0.9.0 with compiler lifetime controls,
+foreground-priority compile-only warmup and optional scoped C++ caching. The standard provider keeps
 these features off. It retains optional debug formatter contributions, bounded
 child paging, and shared Pretty/Raw presentation in Variables and Graph.
 Formatters use captured values through the public
 `DebugPresentationService`; course-specific rules belong in companion plugins.
-This is an unpublished candidate. The latest published package remains 0.8.0.
+This is an unpublished candidate. The latest published package remains 0.8.1.
 
-Version 0.8.0 of the MIT-licensed component is available as an immutable
-[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.8.0),
+Version 0.8.1 of the MIT-licensed component is available as an immutable
+[GitHub release](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.8.1),
 with its package and validation evidence published together.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
@@ -528,7 +528,10 @@ Python runtime provider. Web IDE does not maintain a closed plugin catalog.
 
 ## Local development
 
-Requires Node `^20.19.0` or `>=22.12.0`, matching the supported Vite runtime.
+The library's consumer runtime supports Node `^20.19.0` or `>=22.12.0`,
+matching Vite. Repository development also runs ESLint 10, which requires
+Node `^20.19.0`, `^22.13.0`, or `>=24.0.0`. Release checks use Node
+`24.11.1` and npm `11.6.2`.
 
 ```sh
 npm install

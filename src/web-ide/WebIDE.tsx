@@ -188,6 +188,7 @@ function WebIDEWorkspaceMount({
             <EngineProvider
               key={runtimeMountKey}
               createSession={createRuntimeSession!}
+              runtimeController={instanceController}
             >
               <RunPipelineCoordinatorProvider>
                 <RuntimeWarmupBridge controller={instanceController} />

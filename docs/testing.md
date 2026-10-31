@@ -41,7 +41,8 @@ The license check requires an absolute `WEB_IDE_RELEASE_PROVENANCE_PATH`; the
 runtime verifier requires an external `WEB_IDE_RELEASE_OUTPUT_DIR`.
 `release:candidate` rejects a dirty checkout, a detached or non-`main` branch,
 local/remote divergence, a wrong remote, a missing/lightweight/unpushed
-`web-ide-v0.8.1-source` tag, or a toolchain mismatch. The published
+`web-ide-v0.9.0-source` tag, or a toolchain mismatch. The published
+`web-ide-v0.8.1-source` identity remains unchanged. The published
 `web-ide-v0.7.3-source` identity remains unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint remains unchanged; its package was withheld
 after a clangd worker startup ordering defect was found. The retained
@@ -101,7 +102,7 @@ into an OS temporary directory and leaves no repository tarball. To verify an
 already-built release candidate, provide an absolute path:
 
 ```sh
-WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.8.1.tgz \
+WEB_IDE_CANDIDATE_TARBALL=/absolute/path/web-ide-0.9.0.tgz \
   npm run test:consumer
 ```
 
@@ -288,11 +289,20 @@ the exact direct browser shims that replaced the former whole-stdlib polyfill
 plugin. Refresh this baseline whenever dependency metadata or the lockfile
 changes.
 
+The lint toolchain uses ESLint 10 with the existing `@eslint/js` 9 recommended
+rules. A `minimatch@11.0.3` override limited to version 10 dependencies removes the
+affected matcher used by ESLint, its config array, and TypeScript ESTree
+(GHSA-g3hv-75wg-m249). These
+parents use the named matcher APIs supported by version 11; the former
+ESLint 9 legacy config dependency used a default import and is not overridden.
+When updating these pins, verify both audits and the linted file/result set.
+
 The built-in browser providers target exactly one pinned engine build.
-The Web IDE 0.8.1 candidate selects the exact
-`debugger-sh@0.3.15-webide.0.8.1.2` fork artifact recorded in
-`release/engine-fork-input.json`; its public GitHub release asset is bound by
-the recorded exact size and hashes. An engine change must update that record,
+The Web IDE 0.9.0 candidate selects the exact
+`debugger-sh@0.3.15-webide.0.9.0.1` fork artifact recorded in
+`release/engine-fork-input.json`; its candidate archive and planned immutable
+GitHub release URL are bound by the recorded exact size and hashes. Publication
+and clean immutable installation remain required. An engine change must update that record,
 `package.json`, and both lockfiles to the exact published bytes, review upstream
 protocol and asset changes, run the focused provider/lifecycle suites, run
 `npm run validate:production`, and verify the CS106B companion/course-host
@@ -301,6 +311,16 @@ digests with that evidence. Hamilton and Karel adoption requires its own exact
 consumer compatibility evidence; the public package gates do not certify that
 composition. Do not widen the supported version range without the
 same compatibility proof for every version in the range.
+
+The pending Web IDE 0.9.0 release targets engine
+`0.3.15-webide.0.9.0.1` and companion `0.6.0`. The engine record now describes
+the exact local versioned candidate; this does not establish its safety or
+performance gates. Freeze the engine source/hash record,
+both lock graphs, generated license evidence and all packed files before
+creating the 0.9.0 seed tarball. Then bind the seed tarball's SHA-512 into the
+consumer lock, recompute its normalized graph digest, and run the nonfinal
+preflight. Its exact local-engine transport does not replace the final clean
+install from the immutable published URL or the real production gate receipts.
 
 ## Packed external-viewer regression
 
@@ -330,3 +350,21 @@ queued terminal input and stderr, stepping, two concurrent Python sessions,
 Stop/restart, awaited disposal, stale handles, and omitted-device sessions.
 The same seven lifecycle cases run for both built-in providers; these retain
 negative duplicate/active/disposed registration and older-engine cases.
+
+## Receipt compiler package gate
+
+When the exact engine release includes the receipt profile, its release input
+also records `engine.receiptToolchain`: the fixed profile name,
+`dist/cpp-cache-receipt-v1/profile.json`, and that file's SHA-256. This field is
+release evidence, not a runtime capability override. Engine still selects its
+private build-fixed profile and verifies actual compiler bytes.
+
+The clean packed consumer checks the installed profile, fixed ABI/capability,
+exact four asset members, their lengths/hashes, and the decompressed sysroot.
+After the ordinary Vite build it requires the byte-exact compiler and compressed
+sysroot to appear once as emitted assets referenced by bundled JavaScript.
+Missing, corrupt, inlined or unreferenced assets fail. Generic legacy inputs
+remain valid without receipt assets; an unrecorded receipt asset directory fails.
+`tests/release/receipt-toolchain.test.mjs` exercises this transport boundary with
+small synthetic bytes and a real Vite build. Those tests do not certify compiler
+capability, PCH admission, diagnostics, or performance.

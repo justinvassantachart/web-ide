@@ -59,7 +59,16 @@ export interface WebIDEInstanceController {
   readonly handle: WebIDEInstanceHandle
   /** Returns a token-scoped detach function so a stale mount cannot detach a replacement. */
   attachWorkspaceLifecycle(lifecycle: WorkspaceInstanceLifecycle): () => void
+  acquireRuntimeActivity(foreground: boolean): (() => void) | undefined
+  beginRuntime(identity: object, dispose: () => Promise<void>): void
+  retireRuntime(identity: object, dispose: () => Promise<void>): Promise<void>
   attachRuntimeWarmup(lifecycle: {
+    identity?: object
+    ready?(): void
+    shutdown?(): Promise<void>
+    suspend?(): Promise<void>
+    resume?(): Promise<void>
+    release?(options?: { signal?: AbortSignal }): Promise<'released' | 'cancelled'>
     warmup(): Promise<RuntimeWarmupResult>
     cancel(): Promise<void>
     compilationStatistics?(): unknown
@@ -74,6 +83,60 @@ export function createWebIDEInstanceController(
   let workspaceLifecycle: WorkspaceInstanceLifecycle | undefined
   let lifecycleToken: object | undefined
   let runtimeWarmup: Parameters<WebIDEInstanceController['attachRuntimeWarmup']>[0] | undefined
+  let runtimeIdentity: object | undefined
+  let runtimeDisposer: (() => Promise<void>) | undefined
+  let shutdown: Promise<void> | undefined
+  let suspension: Promise<void> | undefined
+  let suspended = false
+  let predecessor: { ready: boolean; drain: Promise<void> } | undefined
+  const activities = new Set<object>()
+  const activityWaiters = new Set<() => void>()
+  const releases = new Set<AbortController>()
+  const abortReleases = () => { for (const request of releases) request.abort() }
+  const acquireRuntimeActivity = (foreground: boolean): (() => void) | undefined => {
+    if (shutdown || suspended || (predecessor && !predecessor.ready)) return undefined
+    if (foreground) abortReleases()
+    const token = {}
+    activities.add(token)
+    return () => {
+      activities.delete(token)
+      if (activities.size === 0) {
+        for (const resolve of activityWaiters) resolve()
+        activityWaiters.clear()
+      }
+    }
+  }
+  const drainActivities = (signal?: AbortSignal): Promise<void> => {
+    if (!activities.size || signal?.aborted) return Promise.resolve()
+    return new Promise(resolve => {
+      const done = () => {
+        activityWaiters.delete(done)
+        signal?.removeEventListener('abort', done)
+        resolve()
+      }
+      activityWaiters.add(done)
+      signal?.addEventListener('abort', done, { once: true })
+    })
+  }
+
+  const beginRuntime = (identity: object, dispose?: () => Promise<void>): void => {
+    if (runtimeIdentity === identity) {
+      if (dispose) runtimeDisposer = dispose
+      return
+    }
+    if (runtimeIdentity !== undefined) {
+      if (shutdown) {
+        const prior = { ready: false, drain: shutdown }
+        predecessor = prior
+        void prior.drain.then(() => { prior.ready = true }, () => {})
+      }
+      shutdown = undefined
+      suspension = undefined
+      suspended = false
+    }
+    runtimeIdentity = identity
+    runtimeDisposer = dispose
+  }
 
   const persistedFiles = (): WorkspaceFiles => {
     return Object.freeze({ ...instance.workspace.persistedFiles() })
@@ -117,7 +180,66 @@ export function createWebIDEInstanceController(
       await runtimeWarmup?.cancel()
       await workspaceLifecycle?.close(persistedFiles())
     },
-    warmup: () => runtimeWarmup?.warmup() ?? Promise.resolve({ status: 'skipped', diagnostics: [], reason: 'runtime-unavailable' }),
+    shutdownRuntime() {
+      if (shutdown) return shutdown
+      abortReleases()
+      const lifecycle = runtimeWarmup
+      // Fence the coordinator/session synchronously, before waiting for transform cleanup.
+      let drain: Promise<void>
+      try { drain = lifecycle?.shutdown?.() ?? runtimeDisposer?.() ?? lifecycle?.cancel() ?? Promise.resolve() }
+      catch (error) { drain = Promise.reject(error) }
+      shutdown = Promise.allSettled([drain, drainActivities(), predecessor?.drain]).then(results => {
+        const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+        if (errors.length) throw new AggregateError(errors, 'Runtime shutdown failed')
+      })
+      void shutdown.catch(() => {})
+      return shutdown
+    },
+    suspendRuntime() {
+      if (shutdown) return shutdown
+      if (suspended) return suspension ?? Promise.resolve()
+      suspended = true
+      abortReleases()
+      let drain: Promise<void>
+      try { drain = runtimeWarmup?.suspend?.() ?? runtimeWarmup?.cancel() ?? Promise.resolve() }
+      catch (error) { drain = Promise.reject(error) }
+      suspension = Promise.all([drain, drainActivities()]).then(() => {})
+      void suspension.catch(() => {})
+      return suspension
+    },
+    async resumeRuntime() {
+      const pending = suspension
+      const lifecycle = runtimeWarmup
+      await pending
+      if (shutdown || pending !== suspension || lifecycle !== runtimeWarmup) return
+      await lifecycle?.resume?.()
+      if (shutdown || pending !== suspension || lifecycle !== runtimeWarmup) return
+      suspended = false
+      suspension = undefined
+    },
+    async releaseCompilerResources(options) {
+      if (options?.signal?.aborted) return 'cancelled'
+      if (shutdown) return 'released'
+      const request = new AbortController()
+      const abort = () => request.abort()
+      options?.signal?.addEventListener('abort', abort, { once: true })
+      releases.add(request)
+      const lifecycle = runtimeWarmup
+      try {
+        await drainActivities(request.signal)
+        if (request.signal.aborted) return 'cancelled'
+        if (shutdown || !lifecycle) return 'released'
+        if (lifecycle !== runtimeWarmup) return 'cancelled'
+        return await lifecycle.release?.({ signal: request.signal }) ?? 'cancelled'
+      } finally {
+        releases.delete(request)
+        options?.signal?.removeEventListener('abort', abort)
+      }
+    },
+    warmup() {
+      if (shutdown || suspended || (predecessor && !predecessor.ready)) return Promise.resolve({ status: 'skipped', diagnostics: [], reason: 'runtime-unavailable' })
+      return runtimeWarmup?.warmup() ?? Promise.resolve({ status: 'skipped', diagnostics: [], reason: 'runtime-unavailable' })
+    },
     cancelWarmup: () => runtimeWarmup?.cancel() ?? Promise.resolve(),
     compilationStatistics: () => {
       const statistics = runtimeWarmup?.compilationStatistics?.()
@@ -198,6 +320,18 @@ export function createWebIDEInstanceController(
 
   return {
     handle,
+    acquireRuntimeActivity,
+    beginRuntime,
+    retireRuntime(identity, dispose) {
+      let drain: Promise<void>
+      try { drain = runtimeIdentity === identity ? handle.shutdownRuntime() : dispose() }
+      catch (error) { drain = Promise.reject(error) }
+      const previous = predecessor?.drain
+      const retirement = { ready: false, drain: Promise.all([previous, drain]).then(() => {}) }
+      predecessor = retirement
+      void retirement.drain.then(() => { retirement.ready = true }, () => {})
+      return retirement.drain
+    },
     attachWorkspaceLifecycle(lifecycle) {
       const token = {}
       workspaceLifecycle = lifecycle
@@ -209,7 +343,25 @@ export function createWebIDEInstanceController(
       }
     },
     attachRuntimeWarmup(lifecycle) {
+      // StrictMode may reuse the public ref while EngineProvider creates a new session.
+      // Only a different actual session identity may start a new attachment lifetime.
+      if (lifecycle.identity) beginRuntime(lifecycle.identity)
       runtimeWarmup = lifecycle
+      if (shutdown) {
+        // A permanent close before the first session attachment is still final.
+        // Retire the arriving session instead of letting effect timing reopen it.
+        const prior = shutdown
+        let late: Promise<void>
+        try { late = lifecycle.shutdown?.() ?? lifecycle.cancel() }
+        catch (error) { late = Promise.reject(error) }
+        shutdown = Promise.all([prior, late]).then(() => {})
+        void shutdown.catch(() => {})
+      }
+      const ready = () => {
+        if (runtimeWarmup === lifecycle && !shutdown && !suspended) lifecycle.ready?.()
+      }
+      if (predecessor && !predecessor.ready) void predecessor.drain.then(ready, () => {})
+      else ready()
       return () => {
         if (runtimeWarmup !== lifecycle) return
         runtimeWarmup = undefined

@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 import { canonicalJSONString } from './canonical-json.mjs'
+import { validatePreflightEngineReceipt } from './preflight-engine-candidate.mjs'
 import {
   assertExactKeys,
   assertNonEmptyString,
@@ -55,7 +56,7 @@ export async function loadReleaseConfiguration() {
     [],
     'release input',
   )
-  if (input.schemaVersion !== 1 || input.package !== 'web-ide@0.8.1') {
+  if (input.schemaVersion !== 1 || input.package !== 'web-ide@0.9.0') {
     throw new TypeError('Unsupported release input identity')
   }
   for (const field of Object.keys(input).filter((key) => key !== 'schemaVersion')) {
@@ -64,11 +65,11 @@ export async function loadReleaseConfiguration() {
   if (input.capabilityReleaseId !== 'cs106b.source/2' || input.packageRole !== 'web-ide') {
     throw new TypeError('Release input does not match the accepted CS106B composition identity')
   }
-  if (input.sourceTag !== 'web-ide-v0.8.1-source') {
-    throw new TypeError('Release input does not use the forward-only Web IDE 0.8.1 source tag')
+  if (input.sourceTag !== 'web-ide-v0.9.0-source') {
+    throw new TypeError('Release input does not use the forward-only Web IDE 0.9.0 source tag')
   }
-  if (input.releaseAssetFilename !== 'web-ide-0.8.1.tgz' || input.sourceAssetFilename !== 'web-ide-0.8.1-source.tar.gz') {
-    throw new TypeError('Release asset names do not match the accepted Web IDE 0.8.1 identity')
+  if (input.releaseAssetFilename !== 'web-ide-0.9.0.tgz' || input.sourceAssetFilename !== 'web-ide-0.9.0-source.tar.gz') {
+    throw new TypeError('Release asset names do not match the accepted Web IDE 0.9.0 identity')
   }
   return input
 }
@@ -80,7 +81,7 @@ export function validateValidationSummary(summary, sourceCommit, candidateSha256
     [],
     'validation summary',
   )
-  if (summary.schemaVersion !== 1 || summary.package !== 'web-ide@0.8.1') {
+  if (summary.schemaVersion !== 1 || summary.package !== 'web-ide@0.9.0') {
     throw new TypeError('Unsupported validation summary identity')
   }
   if (summary.sourceCommit !== sourceCommit) throw new TypeError('Validation summary sourceCommit does not match HEAD')
@@ -169,7 +170,7 @@ export function validateFinalCandidateState(state, configuration, source) {
     'runtime-source-provenance.json',
     'third-party-licenses.json',
     'THIRD_PARTY_LICENSES.txt',
-    'web-ide-0.8.1.cdx.json',
+    'web-ide-0.9.0.cdx.json',
   ].sort()
   if (JSON.stringify(names) !== JSON.stringify(expectedNames) || new Set(names).size !== names.length) {
     throw new TypeError('Candidate state artifact identities are incomplete, duplicated, or unsorted')
@@ -190,7 +191,7 @@ export function validatePreflightCandidateState(state, configuration, source) {
   assertExactKeys(
     state.preflightFixture,
     ['mode', 'remote', 'finalizable'],
-    [],
+    ['engineCandidate'],
     'preflight candidate state fixture',
   )
   if (
@@ -199,6 +200,7 @@ export function validatePreflightCandidateState(state, configuration, source) {
     || state.preflightFixture.remote !== source.remote
     || state.preflightFixture.finalizable !== false
   ) throw new TypeError('Preflight candidate state does not identify the disposable nonrelease fixture')
+  if (state.preflightFixture.engineCandidate !== undefined) validatePreflightEngineReceipt(state.preflightFixture.engineCandidate)
   const candidateState = { ...state }
   delete candidateState.preflightFixture
   validateFinalCandidateState(

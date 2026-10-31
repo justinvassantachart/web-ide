@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { StrictMode, createRef, useLayoutEffect } from 'react'
+import { StrictMode, createRef, useLayoutEffect, type Ref } from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -26,6 +26,9 @@ import { createCppClangdProvider } from '../../src/clangd/plugin'
 import type { CppCompileProfileV1 } from '../../src/web-ide/contracts/cpp'
 import { testingPlugin } from '../../src/web-ide/plugins/testing'
 import { coreWorkbenchPlugin } from '../../src/web-ide/plugins/core-workbench'
+import { createCppRuntimeProvider } from '../../src/runtimes/providers'
+const compilerCreate = vi.hoisted(() => vi.fn())
+vi.mock('debugger-sh', () => ({ Engine: { create: compilerCreate } }))
 import { useRunPipelineCoordinator, type RunPipelineCoordinator } from '../../src/components/layout/run-pipeline-context'
 import {
   bootstrapWorkspace as bootstrapLegacyWorkspace,
@@ -36,6 +39,7 @@ import {
 const harness = vi.hoisted(() => ({
   instances: new Map<string, unknown>(),
   coordinators: new Map<string, RunPipelineCoordinator>(),
+  executions: new Map<string, IDEPanelServices['execution']>(),
   contributionFeeds: new Map<string, IDEPanelServices['workspace'][]>(),
   models: new Map<string, {
     uri: { authority: string; path: string; toString(): string }
@@ -251,17 +255,18 @@ function captureFeed(key: string, workspace: IDEPanelServices['workspace']) {
   harness.contributionFeeds.set(key, [...(harness.contributionFeeds.get(key) ?? []), workspace])
 }
 
-function CapturePanel({ workspace }: IDEPanelServices) {
+function CapturePanel({ workspace, execution }: IDEPanelServices) {
   const instance = useWorkbenchInstance()
   const coordinator = useRunPipelineCoordinator()
   const workspaceId = useWebIDEHost()?.workspace?.id ?? 'standalone'
   useLayoutEffect(() => {
     harness.instances.set(workspaceId, instance)
     harness.coordinators.set(workspaceId, coordinator)
+    harness.executions.set(workspaceId, execution)
     return () => {
       if (harness.instances.get(workspaceId) === instance) harness.instances.delete(workspaceId)
     }
-  }, [coordinator, instance, workspaceId])
+  }, [coordinator, execution, instance, workspaceId])
   useLayoutEffect(() => { captureFeed(`panel:${workspaceId}`, workspace) })
   return <div data-instance-capture={workspaceId} />
 }
@@ -485,6 +490,7 @@ afterEach(async () => {
   mountedContainer = undefined
   harness.instances.clear()
   harness.coordinators.clear()
+  harness.executions.clear()
   harness.contributionFeeds.clear()
   harness.models.clear()
   harness.runtimeSessions.length = 0
@@ -496,6 +502,260 @@ afterEach(async () => {
 })
 
 describe('same-realm WebIDE instance isolation', () => {
+  it('offers toolbar Stop during foreground preparation and fences a late successful preparation', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const background = deferred<RuntimeWarmupResult>()
+    const preparation = deferred<{ success: boolean; errors: string[] }>()
+    const warmup = vi.fn<NonNullable<RuntimeSession['warmup']>>(() => background.promise)
+    const prepare = vi.fn<RuntimeSession['prepare']>()
+      .mockImplementationOnce(() => preparation.promise)
+      .mockResolvedValue({ success: true, errors: [] })
+    const start = vi.fn<RuntimeSession['start']>(async () => undefined)
+    const stopAndWait = vi.fn<NonNullable<RuntimeSession['stopAndWait']>>(async () => ({ type: 'stopped' }))
+    const runtime = createRuntimeProvider(vi.fn())
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), {
+      warmup, prepare, start, stopAndWait,
+      cancelWarmupAndWait: async () => { background.resolve({ status: 'cancelled', diagnostics: [] }) },
+    })
+    const base = configuration(runtime)
+    const config = { ...base, plugins: [...base.plugins, coreWorkbenchPlugin] }
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    const command = (id: string) => mountedContainer!.querySelector<HTMLButtonElement>(`[data-command-id="workbench.${id}"]`)
+    await act(async () => {
+      root?.render(<WebIDEHostMount configuration={config} host={host('preparation-stop', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={reference} />)
+    })
+    await act(async () => { await vi.waitFor(() => expect(reference.current).not.toBeNull()) })
+    let warming!: Promise<RuntimeWarmupResult>
+    await act(async () => { warming = reference.current!.warmup!(); await Promise.resolve() })
+    expect(warmup).toHaveBeenCalledOnce()
+    expect(command('stop')).toBeNull()
+    expect(command('run')?.disabled).toBe(false)
+    await act(async () => { background.resolve({ status: 'completed', diagnostics: [] }); await warming })
+
+    await act(async () => { command('run')!.click(); await Promise.resolve() })
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(start).not.toHaveBeenCalled()
+    const instance = harness.instances.get('preparation-stop') as WorkbenchInstance
+    expect(instance.executionStore.getState()).toMatchObject({ isCompiling: true, isRunning: false })
+    expect(command('stop')).not.toBeNull()
+    expect(command('stop')!.disabled).toBe(false)
+    await act(async () => { command('stop')!.click(); await Promise.resolve() })
+    expect(stopAndWait).toHaveBeenCalledWith({ reason: 'user' })
+    await act(async () => {
+      preparation.resolve({ success: true, errors: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(start).not.toHaveBeenCalled()
+    expect(instance.executionStore.getState()).toMatchObject({ isCompiling: false, isRunning: false })
+    expect(command('stop')).toBeNull()
+    expect(command('run')?.disabled).toBe(false)
+    await act(async () => { command('run')!.click(); await Promise.resolve() })
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(start).toHaveBeenCalledOnce()
+  })
+
+  it('foreground intent suppresses background TU dispatch while its provider transform is unresolved', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    let completeToolchain!: (result: { type: 'completed'; exitCode: number }) => void
+    const toolchain = new Promise<{ type: 'completed'; exitCode: number }>(resolve => { completeToolchain = resolve })
+    const engine = {
+      fs: {}, binaryFiles: {}, cppArtifacts: undefined,
+      stdout: { on: vi.fn() }, stderr: { on: vi.fn() }, stdin: { write: vi.fn() },
+      debugger: { enabled: false, on: vi.fn(), send: vi.fn() },
+      cacheStats: { toolchainProfile: 'stock-certified-v1', cacheEligible: true },
+      prepareCompiler: vi.fn(() => toolchain),
+      compile: vi.fn(async () => ({ type: 'completed', exitCode: 0 })),
+      run: vi.fn(async () => ({ type: 'completed', exitCode: 0 })),
+      cancelCurrentOperation: vi.fn(async () => {}), dispose: vi.fn(async () => {}),
+    }
+    compilerCreate.mockResolvedValue(engine)
+    const tests = mountedTestingV2Provider()
+    let releaseForeground!: (plan: RuntimeExecutionPlan) => void
+    const transformed = new Promise<RuntimeExecutionPlan>(resolve => { releaseForeground = resolve })
+    const plan: RuntimeExecutionPlan = { files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' }
+    tests.provider.prepareExecution = vi.fn().mockResolvedValueOnce(plan).mockReturnValueOnce(transformed)
+    const runtime = createCppRuntimeProvider({ cpp: { scope: { accountId: 'test', projectId: 'early-intent' }, objectCache: true }, preserveCompilerOnCancel: true })
+    const base = configuration(runtime)
+    const config = { ...base, testProvider: tests.provider.id, plugins: [...base.plugins, { id: 'intent.transform', contributes: { testProviders: [tests.provider] } }] }
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    await act(async () => { root?.render(<WebIDEHostMount configuration={config} host={host('early-intent', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={reference} />) })
+    await act(async () => { await vi.waitFor(() => expect(harness.executions.has('early-intent')).toBe(true)) })
+    let warming!: Promise<RuntimeWarmupResult>
+    await act(async () => { warming = reference.current!.warmup!(); await Promise.resolve() })
+    await vi.waitFor(() => expect(engine.prepareCompiler).toHaveBeenCalledOnce())
+    let foreground!: Promise<unknown>
+    await act(async () => { foreground = Promise.resolve(harness.executions.get('early-intent')!.start('run')); await Promise.resolve() })
+    expect(tests.provider.prepareExecution).toHaveBeenCalledTimes(2)
+    await act(async () => { completeToolchain({ type: 'completed', exitCode: 0 }); await warming })
+    expect(engine.compile).not.toHaveBeenCalled()
+    expect(engine.run).not.toHaveBeenCalled()
+    await act(async () => { releaseForeground(plan); await foreground })
+    expect(engine.run).toHaveBeenCalledOnce()
+    expect(engine.compile).not.toHaveBeenCalled()
+  })
+
+  it('drains the first StrictMode session when the host shuts down from ref cleanup before bridge attachment', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const dispose = vi.fn()
+    const warmup = vi.fn<NonNullable<RuntimeSession['warmup']>>(async () => ({ status: 'completed', diagnostics: [] }))
+    const runtime = createRuntimeProvider(dispose)
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), { warmup, cancelWarmupAndWait: async () => {} })
+    let current: WebIDEInstanceHandle | null = null
+    const retirements: Promise<void>[] = []
+    const attached = (handle: WebIDEInstanceHandle | null) => {
+      if (current) retirements.push(current.shutdownRuntime())
+      current = handle
+    }
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    await act(async () => { root?.render(<StrictMode><WebIDEHostMount configuration={configuration(runtime)} host={host('strict-ref', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={attached} /></StrictMode>) })
+    await act(async () => { await Promise.all(retirements) })
+    let result!: RuntimeWarmupResult
+    await act(async () => { result = await current!.warmup!() })
+    expect(result.status).toBe('completed')
+    expect(warmup).toHaveBeenCalledOnce()
+    expect(dispose).toHaveBeenCalledOnce()
+    await act(async () => { await harness.executions.get('strict-ref')!.start('run') })
+    expect(harness.runtimeSessions.at(-1)!.start).toHaveBeenCalledOnce()
+  })
+
+  it.each(['complete', 'suspend'] as const)('guards selected Testing V2 preparation before executePrepared (%s)', async action => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const tests = mountedTestingV2Provider()
+    const prepare = tests.provider.prepareRun.bind(tests.provider)
+    let allowPreparation!: () => void
+    const pending = new Promise<void>(resolve => { allowPreparation = resolve })
+    tests.provider.prepareRun = vi.fn(async (request, context) => { await pending; return prepare(request, context) })
+    const release = vi.fn(async (): Promise<'released' | 'cancelled'> => 'released')
+    const suspend = vi.fn(async () => {})
+    const runtime = createRuntimeProvider(vi.fn())
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), { releaseCompilerResources: release, suspendRuntime: suspend, resumeRuntime: async () => {} })
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    const config = testingConfiguration(runtime, tests.provider)
+    config.initialLayout = { ...config.initialLayout, selectedPanelId: 'synthetic.panel' }
+    await act(async () => { root?.render(<WebIDEHostMount configuration={config} host={host('v2-lifetime', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={reference} />) })
+    await act(async () => { await vi.waitFor(() => expect(harness.instances.has('v2-lifetime')).toBe(true)) })
+    const instance = harness.instances.get('v2-lifetime') as WorkbenchInstance
+    let testing!: Awaited<ReturnType<typeof instance.testingV2.whenAvailable>>
+    await act(async () => { testing = await instance.testingV2.whenAvailable() })
+    const active = harness.runtimeSessions.at(-1)!
+    let running!: Promise<void>
+    await act(async () => { running = testing.run({ mode: 'debug', selection: { kind: 'tests', testIds: ['mounted:alpha'] } }); await Promise.resolve() })
+    await vi.waitFor(() => expect(tests.provider.prepareRun).toHaveBeenCalledOnce())
+    const releasing = reference.current!.releaseCompilerResources()
+    await Promise.resolve()
+    expect(release).not.toHaveBeenCalled()
+    if (action === 'complete') {
+      await act(async () => { allowPreparation(); await running })
+      expect(await releasing).toBe('released')
+      expect(release).toHaveBeenCalledOnce()
+      expect(active.start).toHaveBeenCalledOnce()
+      return
+    }
+    const suspended = reference.current!.suspendRuntime()
+    expect(await releasing).toBe('cancelled')
+    await act(async () => { allowPreparation(); await running; await suspended })
+    expect(active.prepare).not.toHaveBeenCalled()
+    expect(active.start).not.toHaveBeenCalled()
+    await act(async () => { await reference.current!.resumeRuntime(); await testing.run({ mode: 'run', selection: { kind: 'all' } }) })
+    expect(active.start).toHaveBeenCalledOnce()
+  })
+
+  it('gates a generic provider replacement on the predecessor disposal and releases the dev reference', async () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    let completeDisposal!: () => void
+    const disposal = new Promise<void>(resolve => { completeDisposal = resolve })
+    const first = createRuntimeProvider(vi.fn())
+    const createFirst = first.createSession.bind(first)
+    first.createSession = () => {
+      const session = createFirst()
+      return Object.assign(session, { disposeAndWait: async () => { session.dispose?.(); await disposal; return { type: 'stopped' as const } } })
+    }
+    const second = createRuntimeProvider(vi.fn())
+    const reference = createRef<WebIDEInstanceHandle>()
+    const selectedHost = host('provider-replacement', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    await act(async () => { root?.render(<WebIDEHostMount configuration={configuration(first)} host={selectedHost} instanceRef={reference} />) })
+    await act(async () => { await vi.waitFor(() => expect(harness.executions.has('provider-replacement')).toBe(true)) })
+    await act(async () => { root?.render(<WebIDEHostMount configuration={configuration(second)} host={selectedHost} instanceRef={reference} />) })
+    const replacement = harness.runtimeSessions.at(-1)!
+    await act(async () => { await harness.executions.get('provider-replacement')!.start('run') })
+    expect(replacement.prepare).not.toHaveBeenCalled()
+    expect(replacement.start).not.toHaveBeenCalled()
+    await act(async () => { completeDisposal(); await disposal; await Promise.resolve() })
+    await act(async () => { await harness.executions.get('provider-replacement')!.start('run') })
+    expect(replacement.start).toHaveBeenCalledOnce()
+    expect((window as unknown as { __webIDEEngine?: unknown }).__webIDEEngine).toBe(replacement)
+    await act(async () => { root?.unmount(); await Promise.resolve() })
+    root = undefined
+    expect((window as unknown as { __webIDEEngine?: unknown }).__webIDEEngine).toBeUndefined()
+  })
+
+  it.each([false, true])('fences mounted foreground transforms on suspension and resumes lazily (StrictMode %s)', async strict => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    let resolvePlan!: (plan: RuntimeExecutionPlan) => void
+    const transform = new Promise<RuntimeExecutionPlan>(resolve => { resolvePlan = resolve })
+    const tests = mountedTestingV2Provider()
+    tests.provider.prepareExecution = vi.fn(() => transform)
+    const release = vi.fn(async (): Promise<'released' | 'cancelled'> => 'released')
+    const suspend = vi.fn(async () => {})
+    const resume = vi.fn(async () => {})
+    const dispose = vi.fn()
+    const runtime = createRuntimeProvider(dispose)
+    const originalCreate = runtime.createSession.bind(runtime)
+    runtime.createSession = () => Object.assign(originalCreate(), {
+      releaseCompilerResources: release, suspendRuntime: suspend, resumeRuntime: resume,
+    })
+    const base = configuration(runtime)
+    const config = { ...base, testProvider: tests.provider.id, plugins: [...base.plugins, { id: 'lifetime.transform', contributes: { testProviders: [tests.provider] } }] }
+    const reference = createRef<WebIDEInstanceHandle>()
+    mountedContainer = document.createElement('div')
+    document.body.append(mountedContainer)
+    root = createRoot(mountedContainer)
+    const element = <WebIDEHostMount configuration={config} host={host('lifetime-workspace', 'int main() {}', { save: vi.fn(), flush: vi.fn(), dispose: vi.fn() })} instanceRef={reference} />
+    await act(async () => { root?.render(strict ? <StrictMode>{element}</StrictMode> : element) })
+    await act(async () => { await vi.waitFor(() => expect(harness.executions.has('lifetime-workspace')).toBe(true)) })
+    const active = harness.runtimeSessions.at(-1)!
+    let foreground!: Promise<unknown>
+    await act(async () => { foreground = Promise.resolve(harness.executions.get('lifetime-workspace')!.start('run')); await Promise.resolve() })
+    expect(tests.provider.prepareExecution).toHaveBeenCalledOnce()
+    const releasing = reference.current!.releaseCompilerResources()
+    await Promise.resolve()
+    expect(release).not.toHaveBeenCalled()
+    const suspending = reference.current!.suspendRuntime()
+    expect(suspend).toHaveBeenCalledOnce()
+    expect(await releasing).toBe('cancelled')
+    expect(harness.coordinators.get('lifetime-workspace')!.acquireActivity()).toBeUndefined()
+    await act(async () => { resolvePlan({ files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' }); await foreground; await suspending })
+    expect(active.prepare).not.toHaveBeenCalled()
+    expect(active.start).not.toHaveBeenCalled()
+    await act(async () => { await reference.current!.resumeRuntime() })
+    expect(resume).toHaveBeenCalledOnce()
+    expect(active.start).not.toHaveBeenCalled()
+    await act(async () => { await harness.executions.get('lifetime-workspace')!.start('run') })
+    expect(active.prepare).toHaveBeenCalledOnce()
+    expect(active.start).toHaveBeenCalledOnce()
+    await act(async () => { await reference.current!.shutdownRuntime() })
+    expect(dispose).toHaveBeenCalledTimes(strict ? 2 : 1)
+    expect(harness.coordinators.get('lifetime-workspace')!.acquireActivity()).toBeUndefined()
+  })
+
   it.each(['resolve', 'reject'] as const)('a foreground transition supersedes delayed initial warmup even after foreground settles (%s)', async outcome => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     let resolvePlan!: (plan: RuntimeExecutionPlan) => void
@@ -530,7 +790,7 @@ describe('same-realm WebIDE instance isolation', () => {
     expect(tests.provider.prepareExecution).toHaveBeenCalledOnce()
   })
 
-  it('captures execution-only resources for one host warmup and cancels on edits without foreground events', async () => {
+  it.each([false, true])('captures resources for one initial warmup without foreground events (StrictMode %s)', async strict => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     let settle!: (result: RuntimeWarmupResult) => void
     const background = new Promise<RuntimeWarmupResult>(resolve => { settle = resolve })
@@ -548,7 +808,8 @@ describe('same-realm WebIDE instance isolation', () => {
     mountedContainer = document.createElement('div')
     document.body.append(mountedContainer)
     root = createRoot(mountedContainer)
-    await act(async () => { root?.render(<WebIDEHostMount configuration={config} host={selectedHost} instanceRef={reference} />) })
+    const element = <WebIDEHostMount configuration={config} host={selectedHost} instanceRef={reference} />
+    await act(async () => { root?.render(strict ? <StrictMode>{element}</StrictMode> : element) })
     await act(async () => { await vi.waitFor(() => expect(reference.current?.workspace.snapshot()['/workspace/main.cpp']).toBe('int main() {}')) })
     events.emit.mockClear()
     let task!: Promise<RuntimeWarmupResult>
@@ -1341,7 +1602,7 @@ function WebIDEHostMount({
 }: {
   configuration: WebIDEConfiguration
   host: WebIDEHost
-  instanceRef: ReturnType<typeof createRef<WebIDEInstanceHandle>>
+  instanceRef: Ref<WebIDEInstanceHandle>
 }) {
   return (
     <WebIDEHostProvider host={selectedHost}>

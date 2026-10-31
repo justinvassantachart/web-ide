@@ -1,4 +1,5 @@
 import { EventEmitter } from '@/lib/event-emitter';
+import { registerRuntimeForegroundIntent } from './foreground-intent';
 // debugger-sh is imported lazily inside ensureEngine(). Importing it at
 // module load fires off ~80 MB of cross-origin prefetches for llvm.core.wasm
 // and llvm-resources.tar.gz from fabioibanez.github.io, inlines an
@@ -24,7 +25,9 @@ import type {
     RuntimeHostServiceV1,
     RuntimeSession,
     RuntimeStartRequest,
+    RuntimeStopOptions,
     RuntimeWarmupResult,
+    RuntimeWarmupOptions,
 } from '@/web-ide/contracts/runtime';
 import type { Disposable } from '@/web-ide/core/disposable';
 import { validateRuntimeHostServiceV1 } from './host-service';
@@ -70,7 +73,7 @@ interface HostDeviceRegistration {
 type HostDeviceCapableEngine = EngineType & { hostDevice?: RuntimeHostDeviceOpener };
 type ArtifactEngine = EngineType & {
     binaryFiles: Record<string, Uint8Array>;
-    cppArtifacts?: { sources?: string[]; archives?: string[]; precompiledHeader?: string };
+    cppArtifacts?: EngineType['cppArtifacts'];
 };
 
 interface DebugConfigurationState {
@@ -111,6 +114,11 @@ interface WarmupState {
     promise: Promise<RuntimeWarmupResult>;
     engine?: EngineType;
     cancelled: boolean;
+    dispatched: boolean;
+    claimedBy?: number;
+    suppressCompile: boolean;
+    cacheInputsValidated?: boolean;
+    detachForegroundIntent?: () => void;
     output: string;
     truncated: boolean;
     stdout: TextDecoder;
@@ -143,6 +151,8 @@ interface BrowserRuntimeSessionProfile {
     /** Guard adapters whose resume transport has a bounded breakpoint payload. */
     readonly maxBreakpointConfigurationBytes?: number;
     readonly engineOptions?: EngineOptions;
+    readonly preserveCompilerOnCancel?: boolean;
+    readonly eagerCompilerReseedAfterStop?: boolean;
 }
 
 function emptyDirectory(): DirNode {
@@ -341,7 +351,26 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private readonly scheduledTasks = new Set<ScheduledTask>();
     private debugConfiguration: DebugConfigurationState | null = null;
     private disposed = false;
+    private suspended = false;
+    private suspensionPromise?: Promise<void>;
+    private readonly engineDisposals = new WeakMap<EngineType, Promise<void>>();
+    private readonly releases = new Set<AbortController>();
+    private foregroundActivity?: { token: number; drained: Promise<void>; resolve(): void };
+    private preparedGeneration?: number;
+    private pendingCancellation?: Promise<void>;
+    private lateDisposal?: Promise<void>;
+    private engineRetirement: Promise<void> = Promise.resolve();
+    private initialWarmupAttempted = false;
+    private compilerPreparation?: {
+        purpose: 'initial' | 'post-stop' | 'foreground';
+        promise: Promise<RuntimeWarmupResult>;
+        cancelled: boolean;
+        claimed: boolean;
+        engine?: EngineType;
+    };
     private preparationGeneration = 0;
+    private foregroundIntentGeneration = 0;
+    private readonly detachForegroundIntent: () => void;
     private warmupState?: WarmupState;
     private readonly profile: BrowserRuntimeSessionProfile;
     private readonly hostServices = new Map<string, HostServiceRegistration>();
@@ -349,6 +378,13 @@ export class BrowserRuntimeSession implements RuntimeSession {
 
     constructor(profile: BrowserRuntimeSessionProfile) {
         this.profile = profile;
+        this.detachForegroundIntent = registerRuntimeForegroundIntent(this, () => {
+            if (this.disposed || this.suspended) return;
+            this.foregroundIntentGeneration++;
+            this.abortReleases();
+            const preparation = this.compilerPreparation;
+            if (preparation && this.capabilities.compileOnlyJoin === 1) preparation.claimed = true;
+        });
         this.id = profile.id;
         this.languageIds = profile.languageIds;
         this.capabilities = profile.capabilities;
@@ -592,6 +628,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 archives: cppArtifacts.archives?.map(artifactPath),
                 precompiledHeader: cppArtifacts.precompiledHeader === undefined
                     ? undefined : artifactPath(cppArtifacts.precompiledHeader),
+                ...(cppArtifacts.requiredToolchain === undefined ? {} : { requiredToolchain: { ...cppArtifacts.requiredToolchain } }),
+                ...(cppArtifacts.cacheCertificate === undefined ? {} : { cacheCertificate: cppArtifacts.cacheCertificate }),
             };
         }
         return {
@@ -605,19 +643,168 @@ export class BrowserRuntimeSession implements RuntimeSession {
         };
     }
 
+    private abortReleases(): void {
+        for (const release of this.releases) release.abort();
+    }
+
+    private finishForeground(token?: number): void {
+        const activity = this.foregroundActivity;
+        if (activity && (token === undefined || activity.token === token)) {
+            this.foregroundActivity = undefined;
+            activity.resolve();
+        }
+    }
+
+    private cancelEngine(engine: EngineType): Promise<void> {
+        try {
+            if (this.profile.preserveCompilerOnCancel && typeof engine.cancelCurrentOperation === 'function') {
+                return engine.cancelCurrentOperation();
+            }
+            return Promise.resolve(engine.stop());
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    private disposeEngine(engine: EngineType): Promise<void> {
+        let drain = this.engineDisposals.get(engine);
+        if (!drain) {
+            // Call synchronously: a page teardown cannot wait for a microtask to fence its worker.
+            try { drain = Promise.resolve(engine.dispose()); }
+            catch (error) { drain = Promise.reject(error); }
+            this.engineDisposals.set(engine, drain);
+            void drain.catch(() => {});
+        }
+        return drain;
+    }
+
+    async releaseCompilerResources(options?: { signal?: AbortSignal }): Promise<'released' | 'cancelled'> {
+        if (options?.signal?.aborted) return 'cancelled';
+        if (this.disposed) return 'released';
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        options?.signal?.addEventListener('abort', abort, { once: true });
+        this.releases.add(controller);
+        try {
+            while (!controller.signal.aborted && !this.disposed) {
+                const activity = this.foregroundActivity?.drained
+                    ?? this.warmupState?.promise ?? this.compilerPreparation?.promise;
+                if (!activity) break;
+                let onAbort!: () => void;
+                try {
+                    await Promise.race([activity, new Promise<void>(resolve => {
+                        onAbort = resolve;
+                        controller.signal.addEventListener('abort', onAbort, { once: true });
+                    })]);
+                } finally { controller.signal.removeEventListener('abort', onAbort); }
+            }
+            if (controller.signal.aborted) return 'cancelled';
+            if (this.disposed) return 'released';
+            const initialization = this.engineInit;
+            let engine = this.engine;
+            if (!engine && initialization) {
+                try { engine = await initialization; } catch { return this.disposed ? 'released' : 'cancelled'; }
+            }
+            if (controller.signal.aborted) return 'cancelled';
+            if (this.disposed) return 'released';
+            if (!engine) return 'released';
+            if (typeof engine.releaseCompilerResources !== 'function') return 'cancelled';
+            return await engine.releaseCompilerResources({ signal: controller.signal });
+        } finally {
+            this.releases.delete(controller);
+            options?.signal?.removeEventListener('abort', abort);
+        }
+    }
+
+    prepareCompiler(): Promise<RuntimeWarmupResult> {
+        return this.prepareCompilerFor('initial');
+    }
+
+    private prepareCompilerFor(purpose: 'initial' | 'post-stop' | 'foreground', initial?: {
+        state: WarmupState; built: BrowserExecutionPlan;
+    }): Promise<RuntimeWarmupResult> {
+        if (this.disposed || this.suspended) return Promise.resolve({ status: 'cancelled', diagnostics: [] });
+        if (this.compilerPreparation) {
+            const pending = this.compilerPreparation.promise;
+            if (!initial) return pending;
+            // A toolchain-only preparation cannot validate this plan. Drain it
+            // before submitting validation, and let foreground intent win.
+            return pending.then(result => {
+                const cache = this.profile.engineOptions?.cpp?.objectCache;
+                if (initial.state.cancelled || initial.state.suppressCompile || result.status !== 'completed'
+                    || this.engine?.cacheStats.toolchainProfile !== 'stock-certified-v1'
+                    || !cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))) return result;
+                return this.prepareCompilerFor(purpose, initial);
+            });
+        }
+        if (this.profile.engineLanguage !== 'c' || this.capabilities.compilerPreparation !== 1) {
+            return Promise.resolve({ status: 'skipped', diagnostics: [], reason: 'unsupported' });
+        }
+        let resolve!: (value: RuntimeWarmupResult) => void;
+        const state: NonNullable<BrowserRuntimeSession['compilerPreparation']> = {
+            purpose, cancelled: false, claimed: purpose === 'foreground',
+            promise: new Promise(done => { resolve = done; }),
+        };
+        this.compilerPreparation = state;
+        void (async (): Promise<RuntimeWarmupResult> => {
+            try {
+                const engine = await this.ensureEngine();
+                if (state.cancelled || this.disposed || this.suspended) return { status: 'cancelled', diagnostics: [] };
+                if (typeof engine.prepareCompiler !== 'function') return { status: 'skipped', diagnostics: [], reason: 'unsupported-engine' };
+                state.engine = engine;
+                const cache = this.profile.engineOptions?.cpp?.objectCache;
+                const validate = initial && !initial.state.cancelled && !initial.state.suppressCompile
+                    && cache && !(typeof cache === 'object' && Object.values(cache).some(value => value === 0))
+                    && engine.cacheStats.toolchainProfile === 'stock-certified-v1';
+                if (validate) {
+                    initial.state.engine = engine;
+                    engine.fs = initial.built.fileTree;
+                    engine.binaryFiles = initial.built.binaryFiles;
+                    engine.cppArtifacts = initial.built.cppArtifacts;
+                    engine.debugger.enabled = false;
+                }
+                const result = await (validate ? engine.prepareCompiler({ validateCacheInputs: true }) : engine.prepareCompiler());
+                if (state.cancelled || this.disposed || this.suspended || result.type === 'stopped') return { status: 'cancelled', diagnostics: [] };
+                if (validate && result.type === 'completed' && result.exitCode === 0) initial.state.cacheInputsValidated = true;
+                if (result.type === 'completed' && result.exitCode === 0) return { status: 'completed', diagnostics: [], statistics: engine.cacheStats };
+                return { status: 'failed', diagnostics: [], reason: result.type === 'error' ? result.error.message : 'Compiler preparation failed' };
+            } catch (error) {
+                return { status: state.cancelled || this.disposed || this.suspended ? 'cancelled' : 'failed', diagnostics: [], reason: error instanceof Error ? error.message : String(error) };
+            } finally {
+                if (this.compilerPreparation === state) this.compilerPreparation = undefined;
+                state.engine = undefined;
+            }
+        })().then(resolve);
+        return state.promise;
+    }
+
     async prepare(input: RuntimeExecutionPlan): Promise<RuntimePreparationResult> {
+        this.abortReleases();
+        if (this.suspended) return { success: false, errors: ['Runtime is suspended'] };
         if (this.disposed) throw new Error('Cannot prepare a disposed runtime session');
         const generation = ++this.preparationGeneration;
+        this.finishForeground();
+        let resolve!: () => void;
+        this.foregroundActivity = { token: generation, drained: new Promise(done => { resolve = done; }), resolve: () => resolve() };
         let next: BrowserExecutionPlan;
         try { next = this.buildPlan(input); }
-        catch (error) { return { success: false, errors: [error instanceof Error ? error.message : String(error)] }; }
+        catch (error) { this.finishForeground(generation); return { success: false, errors: [error instanceof Error ? error.message : String(error)] }; }
         const background = this.warmupState;
-        if (background) {
-            if (next.plan.mode === 'run' && !next.plan.streamInterceptor && runtimeExecutionPlansEqual(next.plan, background.plan)) {
-                await background.promise;
-            } else await this.cancelWarmupAndWait();
+        const preparation = this.compilerPreparation;
+        if (preparation && this.capabilities.compileOnlyJoin === 1) {
+            preparation.claimed = true;
+            if (background) { background.claimedBy = generation; background.suppressCompile = true; }
+            await preparation.promise;
         }
-        const current = () => !this.disposed && generation === this.preparationGeneration;
+        if (background) {
+            if (!background.dispatched && this.capabilities.compileOnlyJoin === 1) {
+                background.claimedBy = generation;
+                background.suppressCompile = true;
+                await background.promise;
+            } else if (next.plan.mode === 'run' && !next.plan.streamInterceptor && runtimeExecutionPlansEqual(next.plan, background.plan)) {
+                if (this.capabilities.compileOnlyJoin === 1) background.claimedBy = generation;
+                await background.promise;
+            } else await this.cancelWarmup(true);
+        }
+        const current = () => !this.disposed && !this.suspended && generation === this.preparationGeneration;
         if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
         this.flushStreamInterceptor();
         if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
@@ -636,13 +823,15 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.runtimeBinaryFiles = next.binaryFiles;
         this.runtimeCppArtifacts = next.cppArtifacts;
         this.pchFallbackAllowed = next.plan.cppArtifacts?.fallbackToSource === true;
+        this.preparedGeneration = generation;
         return { success: true, errors: [] };
     }
 
-    warmup(input: RuntimeExecutionPlan): Promise<RuntimeWarmupResult> {
+    warmup(input: RuntimeExecutionPlan, options?: RuntimeWarmupOptions): Promise<RuntimeWarmupResult> {
         const skipped = (reason: string): Promise<RuntimeWarmupResult> => Promise.resolve({ status: 'skipped', diagnostics: [], reason });
-        if (this.disposed) return skipped('disposed');
-        if (this.profile.engineLanguage !== 'c' || !this.profile.engineOptions?.cpp?.objectCache) return skipped('disabled');
+        if (this.disposed || this.suspended) return skipped('unavailable');
+        const canPrepare = this.capabilities.compileOnlyJoin === 1;
+        if (this.profile.engineLanguage !== 'c' || (!canPrepare && !this.profile.engineOptions?.cpp?.objectCache)) return skipped('disabled');
         if (input.mode !== 'run' || input.streamInterceptor) return skipped('unsupported-workflow');
         if (this.running || this.currentRun || (this.activeSettlement && !this.activeSettlement.settled)) return skipped('foreground-active');
         let built: BrowserExecutionPlan;
@@ -655,17 +844,30 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (this.warmupState) {
             return runtimeExecutionPlansEqual(built.plan, this.warmupState.plan) ? this.warmupState.promise : skipped('warmup-active');
         }
+        if (this.initialWarmupAttempted) return skipped('already-attempted');
+        this.initialWarmupAttempted = true;
         let resolve!: (result: RuntimeWarmupResult) => void;
         const state: WarmupState = {
             plan: built.plan,
             promise: new Promise<RuntimeWarmupResult>(done => { resolve = done; }),
-            cancelled: false,
+            cancelled: false, dispatched: false, suppressCompile: false,
             output: '',
             truncated: false,
             stdout: new TextDecoder(),
             stderr: new TextDecoder(),
         };
         this.warmupState = state;
+        const foregroundIntent = options?.foregroundIntent;
+        if (foregroundIntent && this.capabilities.compileOnlyJoin === 1) {
+            const suppressPendingCompile = () => {
+                if (state.dispatched || state.cancelled) return;
+                state.suppressCompile = true;
+                if (this.compilerPreparation) this.compilerPreparation.claimed = true;
+            };
+            foregroundIntent.addEventListener('abort', suppressPendingCompile, { once: true });
+            state.detachForegroundIntent = () => foregroundIntent.removeEventListener('abort', suppressPendingCompile);
+            if (foregroundIntent.aborted) suppressPendingCompile();
+        }
         void this.compileWarmup(state, built).then(resolve, error => resolve({
             status: state.cancelled || this.disposed ? 'cancelled' : 'failed',
             diagnostics: [],
@@ -674,12 +876,17 @@ export class BrowserRuntimeSession implements RuntimeSession {
         return state.promise;
     }
 
-    cancelWarmupAndWait(): Promise<void> {
+    cancelWarmupAndWait(): Promise<void> { return this.cancelWarmup(false); }
+
+    private cancelWarmup(force: boolean): Promise<void> {
         const state = this.warmupState;
-        if (!state) return Promise.resolve();
-        state.cancelled = true;
-        try { state.engine?.stop(); } catch { /* the compile result still drains */ }
-        return state.promise.then(() => {});
+        const preparation = this.compilerPreparation;
+        if (!force && (state?.claimedBy !== undefined || preparation?.claimed)) return Promise.resolve();
+        if (state) { state.cancelled = true; state.claimedBy = undefined; }
+        if (preparation) preparation.cancelled = true;
+        const engine = state?.engine ?? preparation?.engine;
+        const cancelled = engine && !this.disposed ? this.cancelEngine(engine) : Promise.resolve();
+        return Promise.all([cancelled, state?.promise, preparation?.promise]).then(() => {});
     }
 
     compilationStatistics(): unknown {
@@ -700,13 +907,29 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private async compileWarmup(state: WarmupState, built: BrowserExecutionPlan): Promise<RuntimeWarmupResult> {
         let result: RuntimeWarmupResult;
         try {
+            if (this.capabilities.compileOnlyJoin === 1) {
+                const preparation = this.prepareCompilerFor('initial', { state, built });
+                if (state.suppressCompile && this.compilerPreparation) this.compilerPreparation.claimed = true;
+                const prepared = await preparation;
+                if (state.cancelled || this.disposed || this.suspended) return { status: 'cancelled', diagnostics: [] };
+                if (state.suppressCompile) return prepared;
+                if (prepared.status !== 'completed') return prepared;
+                const cache = this.profile.engineOptions?.cpp?.objectCache;
+                if (!cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))) return prepared;
+                const statistics = this.engine?.cacheStats;
+                if (statistics?.toolchainProfile !== 'stock-certified-v1') return prepared;
+                if (!state.cacheInputsValidated || statistics.cacheEligible !== true) return {
+                    status: 'skipped', diagnostics: [], reason: statistics.cacheEligibilityReason ?? 'cache-ineligible', statistics,
+                };
+            }
             const engine = await this.ensureEngine();
-            if (state.cancelled || this.disposed || this.warmupState !== state) return { status: 'cancelled', diagnostics: [] };
+            if (state.cancelled || state.suppressCompile || this.disposed || this.suspended || this.warmupState !== state) return { status: 'cancelled', diagnostics: [] };
             state.engine = engine;
             engine.fs = built.fileTree;
             engine.binaryFiles = built.binaryFiles;
             engine.cppArtifacts = built.cppArtifacts;
             engine.debugger.enabled = false;
+            state.dispatched = true;
             const outcome = await engine.compile();
             const tail = state.stdout.decode() + state.stderr.decode();
             state.output += tail.slice(0, 65_536 - state.output.length);
@@ -715,6 +938,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 result = { status: 'cancelled', diagnostics: [] };
             } else if (outcome.type === 'completed' && outcome.exitCode === 0) {
                 result = { status: 'completed', diagnostics, statistics: engine.cacheStats };
+            } else if (outcome.type === 'completed' && outcome.exitCode === 1) {
+                result = { status: 'skipped', diagnostics: [], reason: 'student-diagnostics', statistics: engine.cacheStats };
             } else {
                 const reason = outcome.type === 'error' ? outcome.error.message
                     : outcome.type === 'completed' ? `Compiler exited ${outcome.exitCode}` : 'Compiler stopped';
@@ -725,6 +950,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 : { status: 'failed', diagnostics: state.output ? [state.output] : [], reason: error instanceof Error ? error.message : String(error) };
         } finally {
             if (this.warmupState === state) this.warmupState = undefined;
+            state.detachForegroundIntent?.();
+            state.detachForegroundIntent = undefined;
+            state.engine = undefined;
+            state.claimedBy = undefined;
+            state.output = '';
         }
         if (result.status === 'failed') this.reportWarmupFailure(result);
         return result;
@@ -852,7 +1082,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     private isSessionCurrent(session: number): boolean {
-        return !this.disposed && this.sessionGeneration === session;
+        return !this.disposed && !this.suspended && this.sessionGeneration === session;
     }
 
     private isSessionActive(session: number): boolean {
@@ -939,9 +1169,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
 
     // Recovery path for a crashed DAP adapter. Settles the in-flight run
     // (stop() rejects the worker promise, which terminates the worker) and
-    // discards the Engine so the next run builds a fresh adapter. Leaking
-    // one engine here is acceptable — the alternative is a debug session
-    // that hangs until the page is reloaded.
+    // disposes the Engine so the next run builds a fresh adapter only after
+    // the previous owner has drained.
     private abortDeadSession() {
         if (!this.engine) return;
         const engine = this.engine;
@@ -958,11 +1187,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
+        this.engineRetirement = this.disposeEngine(engine);
         this.emitStream('stderr', `${message}\r\n`);
         this.running = false;
         this.debugPaused = false;
         this.invalidateSession();
-        try { engine.stop(); } catch { /* ignore */ }
         if (wasRunning) {
             if (settlement) this.publishExit(settlement, 1);
             else this.emitExit(1);
@@ -970,25 +1199,34 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     private async ensureEngine(): Promise<EngineType> {
-        if (this.disposed) {
-            throw new Error('Cannot initialize a disposed runtime session');
+        if (this.disposed || this.suspended) {
+            throw new Error('Cannot initialize a closed or suspended runtime session');
         }
         if (this.engine) return this.engine;
         if (!this.engineInit) {
             const token = {};
             this.engineInitToken = token;
-            const initialization = import('debugger-sh').then(({ Engine }) =>
-                this.profile.engineOptions
+            const initialization = this.engineRetirement.then(() => {
+                if (this.disposed || this.suspended || this.engineInitToken !== token) {
+                    throw new Error('Runtime initialization was cancelled');
+                }
+                return import('debugger-sh');
+            }).then(({ Engine }) => {
+                if (this.disposed || this.suspended || this.engineInitToken !== token) {
+                    throw new Error('Runtime initialization was cancelled');
+                }
+                return this.profile.engineOptions
                     ? Engine.create(this.profile.engineLanguage as Lang, this.profile.engineOptions)
-                    : Engine.create(this.profile.engineLanguage as Lang),
-            );
-            const adoption = initialization.then((engine) => {
+                    : Engine.create(this.profile.engineLanguage as Lang);
+            });
+            const adoption = initialization.then(async (engine) => {
                 // dispose() cannot cancel Engine.create(), so reject its
                 // eventual value explicitly instead of resurrecting an
                 // session after its provider has unmounted.
-                if (this.disposed || this.engineInitToken !== token) {
-                    try { engine.stop(); } catch { /* ignore */ }
-                    throw new Error('Runtime session was disposed during initialization');
+                if (this.disposed || this.suspended || this.engineInitToken !== token) {
+                    this.lateDisposal = this.disposeEngine(engine);
+                    await this.lateDisposal;
+                    throw new Error('Runtime session was closed or suspended during initialization');
                 }
                 try {
                     this.attachListeners(engine);
@@ -1002,7 +1240,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 } catch (error) {
                     this.releaseEngineHostServices(engine, false);
                     this.releaseEngineHostDevice(engine);
-                    try { engine.stop(); } catch { /* ignore */ }
+                    await this.disposeEngine(engine);
                     throw error;
                 }
             });
@@ -1092,12 +1330,19 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     async start({ mode }: RuntimeStartRequest): Promise<void> {
-        if (this.disposed) {
-            throw new Error('Cannot start a disposed runtime session');
-        }
+        if (this.disposed) throw new Error('Cannot start a disposed runtime session');
+        if (this.suspended) throw new Error('Cannot start a suspended runtime session');
         if (mode === 'debug' && !this.capabilities.debug) {
             throw new Error(`Runtime provider "${this.id}" does not support debugging`);
         }
+        if (this.capabilities.compileOnlyJoin === 1 && this.preparedGeneration !== undefined && this.preparedGeneration !== this.preparationGeneration) return;
+        this.preparedGeneration = undefined;
+        if (!this.foregroundActivity) {
+            this.abortReleases();
+            let resolve!: () => void;
+            this.foregroundActivity = { token: ++this.preparationGeneration, drained: new Promise(done => { resolve = done; }), resolve: () => resolve() };
+        }
+        const activityToken = this.foregroundActivity.token;
         const isDebug = mode === 'debug';
         const previousRun = this.currentRun;
         const previousEngine = this.engine;
@@ -1118,7 +1363,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
         let runPromise: Promise<EngineRunResult> | null = null;
         let outcome: RuntimeOutcome = { type: 'stopped' };
         try {
-            await this.cancelWarmupAndWait();
+            if (this.warmupState) await this.cancelWarmup(true);
+            if (this.compilerPreparation) await this.compilerPreparation.promise;
             if (!this.isSessionCurrent(session)) return;
             // Cancel any in-flight run on the shared engine, then await its
             // settlement so Engine.run() doesn't short-circuit to the stale
@@ -1131,7 +1377,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 this.running = false;
                 this.debugPaused = false;
                 if (shouldStopEngine) {
-                    try { previousEngine?.stop(); } catch { /* ignore */ }
+                    if (previousEngine) await this.cancelEngine(previousEngine);
                 }
                 if (wasRunning) {
                     if (previousRunSettlement) this.publishExit(previousRunSettlement, 0);
@@ -1238,25 +1484,29 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 this.emitStream('stderr', `Runtime error: ${failure.error.message}\r\n`);
             }
         } finally {
+            this.finishForeground(activityToken);
             if (runPromise && this.currentRun === runPromise) {
                 this.currentRun = null;
                 this.currentRunSettlement = null;
             }
-            if (this.isSessionActive(session)) {
-                // Drain any pending stderr line and close the compile-phase window.
-                if (this.inCompilePhase && this.stderrLineBuf.length > 0) {
-                    this.scanForCompileError('\n');
+            try {
+                if (this.isSessionActive(session)) {
+                    // Drain any pending stderr line and close the compile-phase window.
+                    if (this.inCompilePhase && this.stderrLineBuf.length > 0) {
+                        this.scanForCompileError('\n');
+                    }
+                    this.inCompilePhase = false;
+                    const exitCode = outcome.type === 'completed'
+                        ? outcome.exitCode
+                        : outcome.type === 'error' ? 1 : 0;
+                    this.finishSession(session, settlement, exitCode);
+                } else if (this.isSessionCurrent(session) && outcome.type === 'error') {
+                    this.publishExit(settlement, 1);
                 }
-                this.inCompilePhase = false;
-                const exitCode = outcome.type === 'completed'
-                    ? outcome.exitCode
-                    : outcome.type === 'error' ? 1 : 0;
-                this.finishSession(session, settlement, exitCode);
-            } else if (this.isSessionCurrent(session) && outcome.type === 'error') {
-                this.publishExit(settlement, 1);
+            } finally {
+                this.settleRuntime(settlement, outcome);
+                this.resetBreakpointAdapterIfIdle();
             }
-            this.settleRuntime(settlement, outcome);
-            this.resetBreakpointAdapterIfIdle();
         }
     }
 
@@ -1423,7 +1673,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.engine = null;
         this.engineInit = null;
         this.engineInitToken = null;
-        try { engine.stop(); } catch { /* ignore */ }
+        this.engineRetirement = this.disposeEngine(engine);
     }
 
     private toRuntimePath(file: string): string {
@@ -1907,7 +2157,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         }
     }
 
-    private requestStop(): Promise<RuntimeOutcome> {
+    private requestStop(stopEngine = true): Promise<RuntimeOutcome> {
         const settlement = this.activeSettlement;
         if (!settlement) return this.idleSettlement;
         if (settlement.settled || settlement.stopRequested) return settlement.promise;
@@ -1919,8 +2169,9 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.running = false;
         this.debugPaused = false;
         this.invalidateSession();
-        if (ownsCurrentRun) {
-            try { this.engine?.stop(); } catch { /* ignore */ }
+        if (ownsCurrentRun && stopEngine && this.engine) {
+            this.pendingCancellation = this.cancelEngine(this.engine);
+            void this.pendingCancellation.catch(() => {});
         }
         if (wasRunning) this.publishExit(settlement, 0);
         return settlement.promise;
@@ -1930,22 +2181,62 @@ export class BrowserRuntimeSession implements RuntimeSession {
         return this.activeSettlement?.promise ?? this.idleSettlement;
     }
 
-    stop(): void {
-        // Preserve the 0.1 void API while new consumers can await the exact
-        // same per-start settlement through stopAndWait().
-        void this.stopAndWait();
+    stop(options?: RuntimeStopOptions): void {
+        void this.stopAndWait(options).catch(error => console.error('[web-ide] runtime stop failed', error));
     }
 
-    stopAndWait(): Promise<RuntimeOutcome> {
-        this.preparationGeneration++;
+    stopAndWait(options?: RuntimeStopOptions): Promise<RuntimeOutcome> {
+        const reseed = options?.reason === 'user' && this.running && !this.currentIsDebug && !this.streamInterceptor
+            && this.profile.preserveCompilerOnCancel && this.profile.eagerCompilerReseedAfterStop;
+        const generation = ++this.preparationGeneration;
+        const foregroundIntent = this.foregroundIntentGeneration;
+        this.finishForeground();
         const warmup = this.warmupState;
-        const draining = this.cancelWarmupAndWait();
+        const preparation = this.compilerPreparation;
+        const draining = this.cancelWarmup(true);
         const unsettled = this.activeSettlement && !this.activeSettlement.settled;
         const settlement = this.requestStop();
-        if (!unsettled && !warmup && this.profile.engineOptions?.cpp) {
-            try { this.engine?.stop(); } catch { /* ignore */ }
-        }
-        return warmup ? draining.then(() => settlement) : settlement;
+        const idleCancellation = !unsettled && !warmup && !preparation && this.profile.engineOptions?.cpp && this.engine
+            ? this.cancelEngine(this.engine) : Promise.resolve();
+        const drained = !warmup && !preparation && !this.profile.preserveCompilerOnCancel
+            ? settlement : Promise.all([draining, idleCancellation, settlement, this.pendingCancellation]).then(([, , outcome]) => outcome);
+        if (reseed) void drained.then(() => {
+            // One queued maintenance job; foreground work before dispatch takes priority.
+            if (this.disposed || this.suspended || generation !== this.preparationGeneration
+                || foregroundIntent !== this.foregroundIntentGeneration || this.releases.size || this.foregroundActivity || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+            void this.prepareCompilerFor('post-stop').then(result => {
+                if (result.status === 'failed') this.reportWarmupFailure(result);
+            });
+        }, () => {});
+        return drained;
+    }
+
+    suspendRuntime(): Promise<void> {
+        if (this.disposed) return this.disposalPromise?.then(() => {}) ?? Promise.resolve();
+        if (this.suspended) return this.suspensionPromise ?? Promise.resolve();
+        this.suspended = true;
+        this.abortReleases();
+        const initialization = this.engineInit;
+        const stopping = this.stopAndWait({ reason: 'teardown' });
+        this.suspensionPromise = (async () => {
+            await stopping;
+            if (initialization) try { await initialization; } catch { /* late factory is disposed */ }
+            await this.lateDisposal;
+            const engine = this.engine;
+            if (engine && !this.disposed && typeof engine.releaseCompilerResources === 'function') {
+                await engine.releaseCompilerResources();
+            }
+        })();
+        void this.suspensionPromise.catch(() => {});
+        return this.suspensionPromise;
+    }
+
+    async resumeRuntime(): Promise<void> {
+        const suspension = this.suspensionPromise;
+        await suspension;
+        if (this.disposed || suspension !== this.suspensionPromise) return;
+        this.suspended = false;
+        this.suspensionPromise = undefined;
     }
 
     private assertDebuggingSupported(): void {
@@ -1955,58 +2246,64 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     dispose(): void {
-        void this.disposeAndWait();
+        void this.disposeAndWait().catch(error => console.error('[web-ide] runtime disposal failed', error));
     }
 
     disposeAndWait(): Promise<RuntimeOutcome> {
         if (this.disposalPromise) return this.disposalPromise;
-
-        const hadUnsettledStart = Boolean(
-            this.activeSettlement && !this.activeSettlement.settled,
-        );
-        const initialization = this.engineInit;
-        const hadWarmup = Boolean(this.warmupState);
         this.disposed = true;
-        this.breakpointOverlays.clear();
-        this.breakpointClearTombstones.clear();
-        const warmup = this.cancelWarmupAndWait();
+        this.detachForegroundIntent();
+        this.abortReleases();
         this.preparationGeneration++;
-        const settlement = this.requestStop();
-        if (!hadUnsettledStart && !hadWarmup) {
-            try { this.engine?.stop(); } catch { /* ignore */ }
-        }
-
+        this.finishForeground();
+        const initialization = this.engineInit;
+        const engine = this.engine;
+        // Permanently retire the engine before invoking callbacks that may throw.
+        const retirement = engine ? this.disposeEngine(engine) : Promise.resolve();
+        const drains: Promise<unknown>[] = [retirement, this.engineRetirement];
+        try { drains.push(this.cancelWarmup(true)); } catch (error) { drains.push(Promise.reject(error)); }
+        try { drains.push(this.requestStop(false)); } catch (error) { drains.push(Promise.reject(error)); }
+        if (initialization) drains.push(initialization.catch(() => {}));
         this.disposalPromise = (async () => {
-            const outcome = await settlement;
-            await warmup;
-            if (initialization) {
-                try { await initialization; } catch { /* disposal rejects adoption */ }
-            }
-            this.cancelScheduledTasks();
-            this.debugConfiguration = null;
-            if (this.engine) this.releaseEngineHostServices(this.engine, false);
-            if (this.engine) this.releaseEngineHostDevice(this.engine);
-            this.hostServices.clear();
-            this.hostDeviceRegistration = undefined;
-            this.runtimeFileTree = emptyDirectory();
-            this.runtimeBinaryFiles = {};
-            this.runtimeCppArtifacts = undefined;
-            this.runtimePathByWorkspacePath.clear();
-            this.workspacePathByRuntimePath.clear();
-            this.userRuntimePaths.clear();
-            this.streamInterceptor = undefined;
-            if (this.engine) {
-                this.engine.fs = emptyDirectory();
-                if ('binaryFiles' in this.engine) {
-                    const artifacts = this.engine as ArtifactEngine;
-                    artifacts.binaryFiles = {};
-                    artifacts.cppArtifacts = undefined;
+            const results = await Promise.allSettled(drains);
+            if (this.lateDisposal) results.push(...await Promise.allSettled([this.lateDisposal]));
+            try {
+                this.cancelScheduledTasks();
+                this.debugConfiguration = null;
+                if (engine) {
+                    this.releaseEngineHostServices(engine, false);
+                    this.releaseEngineHostDevice(engine);
                 }
+            } finally {
+                this.hostServices.clear();
+                this.hostDeviceRegistration = undefined;
+                this.activeBreakpoints = {};
+                this.breakpointOverlays.clear();
+                this.breakpointClearTombstones.clear();
+                this.debugCapture = undefined;
+                this.debugSnapshot = undefined;
+                this.inputBuf = '';
+                this.pchCompilerOutput = '';
+                this.stderrLineBuf = '';
+                this.runtimeFileTree = emptyDirectory();
+                this.runtimeBinaryFiles = {};
+                this.runtimeCppArtifacts = undefined;
+                this.runtimePathByWorkspacePath.clear();
+                this.workspacePathByRuntimePath.clear();
+                this.userRuntimePaths.clear();
+                this.streamInterceptor = undefined;
+                if (engine) {
+                    engine.fs = emptyDirectory();
+                    engine.binaryFiles = {};
+                    engine.cppArtifacts = undefined;
+                }
+                this.engine = null;
+                this.engineInit = null;
+                this.engineInitToken = null;
             }
-            this.engine = null;
-            this.engineInit = null;
-            this.engineInitToken = null;
-            return outcome;
+            const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+            if (failures.length) throw new AggregateError(failures, 'Runtime disposal failed');
+            return this.activeSettlement?.promise ?? { type: 'stopped' as const };
         })();
         return this.disposalPromise;
     }

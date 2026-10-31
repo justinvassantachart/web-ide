@@ -68,7 +68,9 @@ export const coreWorkbenchPlugin: IDEPlugin = {
         group: 'run',
         tone: 'danger',
         order: 100,
-        when: ({ runState }) => runState === 'running',
+        // Foreground preparation is cancellable before a guest has started.
+        // Initial warmup does not set the foreground isCompiling state.
+        when: ({ runState, isCompiling }) => isCompiling || runState === 'running',
         execute: ({ execution }) => execution.stop(),
       },
     ],

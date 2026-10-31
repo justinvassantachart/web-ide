@@ -64,10 +64,8 @@ describe('EngineProvider runtime cleanup', () => {
     renderProvider({ disposeAndWait } as unknown as RuntimeSession)
 
     reactHarness.cleanups[0]?.()
-    await Promise.resolve()
-
     expect(disposeAndWait).toHaveBeenCalledTimes(1)
-    expect(warn).toHaveBeenCalledWith('[web-ide] runtime cleanup failed', error)
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('[web-ide] runtime cleanup failed', error))
     warn.mockRestore()
   })
 })

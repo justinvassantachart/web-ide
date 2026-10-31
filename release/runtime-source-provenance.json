@@ -4,12 +4,18 @@
   "records": [
     {
       "id": "clangd",
-      "assets": ["clangd.js", "clangd.wasm"],
+      "assets": [
+        "clangd.js",
+        "clangd.wasm"
+      ],
       "relationship": "configuration-and-recipe-only",
       "source": {
         "repository": "https://github.com/Guyutongxue/clangd-in-browser",
         "commit": "4acd71dec6428906271e922f119d794344e0d35e",
-        "paths": ["build.sh", "LICENSE"]
+        "paths": [
+          "build.sh",
+          "LICENSE"
+        ]
       },
       "inputs": [
         "llvm-project llvmorg-21.1.0",
@@ -23,34 +29,54 @@
     },
     {
       "id": "debugger-sh-llvm",
-      "assets": ["debugger-sh.llvm-core.wasm", "debugger-sh.llvm-resources.tar.gz"],
-      "relationship": "exact-host-git-blob-match-with-strong-inferred-build-provenance",
+      "assets": [
+        "debugger-sh.llvm-core.wasm",
+        "debugger-sh.llvm-resources.tar.gz"
+      ],
+      "relationship": "exact-host-git-blob-and-npm-package-match-with-source-backed-reproduction-candidate",
       "source": {
         "repository": "https://github.com/fabioibanez/website",
         "commit": "ab3ee50b4b70a6bbef70d7bcb2b1d4aad773793f",
-        "paths": ["gh-pages-assets/llvm.core.wasm", "gh-pages-assets/llvm-resources.tar.gz"]
+        "paths": [
+          "gh-pages-assets/llvm.core.wasm",
+          "gh-pages-assets/llvm-resources.tar.gz"
+        ]
       },
       "inputs": [
-        "YoWASP/clang ab5516d6821f586c6c6af2eca1a264b63057627f",
+        "Exact artifact package: @yowasp/clang@22.0.0-git20542-10; registry tarball SHA-256 6230ea1afa9691fa065935cf68c01642ff9b31c183fe8ac64cdfda025df06009",
+        "Compiler bytes: 75532134 bytes, SHA-256 24fbed474c7b5b4968fd73fc4827440b93fb351c1b6264516130300eff3e7bf5; exact match to package/gen/llvm.core.wasm",
+        "Served compressed sysroot: 4243142 bytes, SHA-256 8745c6af23fd841fa507d0c73f6b6b8e8da1b4ec216a6339739a28b38ff7227b; decompressed payload: 29665280 bytes, SHA-256 79eef0c336fe55cf03ff8f5b42b784c8168f929a3603138b2c6301f4601e4c86; exact match to package/gen/llvm-resources.tar",
+        "Source-backed reproduction candidate: YoWASP/clang 409b7dfdbd5ed12545eed706808fd423f1f692c6",
         "YoWASP/llvm-project 9560ae0f2cc440e4fc891fddbc119da6f56daa59",
         "wasi-libc 2fc32bc81b9f07f8d9525edea59bfbaf760c06d6",
-        "wasi-sdk 32"
+        "wasi-sdk 29, wasi-sdk-29.0-x86_64-linux.tar.gz, release SHA-256 87d1d1a2879d139cdc624b968efad3d4a97b8078cdff95e63ac88ecafd1a0171",
+        "Reproduction recipe configuration: MinSizeRel with assertions; @bytecodealliance/jco 1.15.1 and @yowasp/runtime 11.0.67"
       ],
       "limitations": [
-        "The host repository has no compiler build recipe or signed checksum manifest tying the two committed blobs to the inferred YoWASP invocation.",
+        "The compiler and decompressed sysroot are byte-identical to the exact npm package. Registry metadata provides no gitHead or retrieved signed historical build attestation tying that package to the source-backed reproduction candidate.",
+        "The SDK 29 recipe is strongly corroborated by release history and packaging inputs; historical byte-for-byte build reproducibility is not established. The vendored SDK 32 recipe postdates npm publication and is not shipping provenance.",
+        "The original gzip wrapper compression command is unknown, although its decompressed payload is verified against the exact npm package.",
         "The 2466-entry resources archive omits license and notice files; reviewed source license texts are retained separately."
       ]
     },
     {
       "id": "debugger-sh-python",
-      "assets": ["debugger-sh.python-3.11.3.tar.gz", "debugger-sh.python-3.11.3.wasm"],
+      "assets": [
+        "debugger-sh.python-3.11.3.tar.gz",
+        "debugger-sh.python-3.11.3.wasm"
+      ],
       "relationship": "exact-host-git-blob-match",
       "source": {
         "repository": "https://github.com/taybenlor/runno",
         "commit": "b610e3b58a3485e3b1ca070e2a4319e104463c33",
-        "paths": ["langs/python-3.11.3.tar.gz", "langs/python-3.11.3.wasm"]
+        "paths": [
+          "langs/python-3.11.3.tar.gz",
+          "langs/python-3.11.3.wasm"
+        ]
       },
-      "inputs": ["CPython 3.11.3"],
+      "inputs": [
+        "CPython 3.11.3"
+      ],
       "limitations": [
         "The Runno repository does not provide a checksum-bound build recipe or exact CPython source commit for these binary files.",
         "The eight-entry standard-library archive omits license files; the exact CPython 3.11.3 license and Runno MIT license are retained separately."
@@ -84,7 +110,10 @@
       "source": {
         "repository": "https://github.com/microsoft/monaco-editor",
         "commit": "npm:monaco-editor@0.56.0",
-        "paths": ["LICENSE", "ThirdPartyNotices.txt"]
+        "paths": [
+          "LICENSE",
+          "ThirdPartyNotices.txt"
+        ]
       },
       "inputs": [
         "monaco-editor@0.56.0 npm integrity sha512-sXboRm3BeBeLm938eaiyLMe0OxzfXIlZvbv4ir/jVgQy1zDhWjgmny0WoN45fuDKhCCQsYMbBJrv/A6jd8aCUg=="

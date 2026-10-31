@@ -25,6 +25,7 @@ import { generateCycloneDx } from './sbom.mjs'
 import { sourceArchiveBytes, verifyReleaseSourceState } from './source-state.mjs'
 import { validateCycloneDx } from './validate-cyclonedx.mjs'
 import { beginEmptyDirectoryTransaction } from './transactional-output.mjs'
+import { PREFLIGHT_ENGINE_VARIABLE, rejectPreflightEngineCandidate, verifyPreflightEngineCandidate } from './preflight-engine-candidate.mjs'
 
 const outputInput = process.env.WEB_IDE_RELEASE_OUTPUT_DIR
 if (!outputInput) throw new TypeError('WEB_IDE_RELEASE_OUTPUT_DIR is required')
@@ -34,6 +35,7 @@ try {
 const configuration = await loadReleaseConfiguration()
 const forkInput = await loadEngineForkInput()
 const preflightRemoteInput = process.env.WEB_IDE_RELEASE_PREFLIGHT_REMOTE
+if (!preflightRemoteInput) rejectPreflightEngineCandidate()
 const preflightRemote = preflightRemoteInput
   ? await assertExternalOutputPath(preflightRemoteInput, 'Preflight fixture remote')
   : null
@@ -43,6 +45,9 @@ const source = await verifyReleaseSourceState(
   repositoryRoot,
   sourceOptions,
 )
+const preflightEngineCandidate = process.env[PREFLIGHT_ENGINE_VARIABLE]
+  ? await verifyPreflightEngineCandidate(process.env[PREFLIGHT_ENGINE_VARIABLE], forkInput, preflightRemote)
+  : undefined
 let expectedPublicationInventory
 outputTransaction = await beginEmptyDirectoryTransaction(outputInput, 'Release output directory', {
   beforePublish: async ({ inventory }) => {
@@ -98,6 +103,8 @@ const candidate = await buildDeterministicCandidates({
   outputDirectory,
   sourceCommit: source.commit,
   configuration: { ...configuration, sourceDateEpoch: source.sourceDateEpoch },
+  preflightEngineCandidate,
+  fixtureRemote: preflightRemote,
 })
 const provenancePath = path.join(outputDirectory, 'bundle-provenance.json')
 await writeFile(provenancePath, candidate.provenanceBytes, { flag: 'wx' })
@@ -125,7 +132,7 @@ const sbom = await generateCycloneDx({
   forkInput,
 })
 await validateCycloneDx(sbom)
-await writeCanonicalJSON(path.join(outputDirectory, 'web-ide-0.8.1.cdx.json'), sbom)
+await writeCanonicalJSON(path.join(outputDirectory, 'web-ide-0.9.0.cdx.json'), sbom)
 
 const shippedLicenseText = await readFile(path.join(repositoryRoot, 'THIRD_PARTY_LICENSES.txt'), 'utf8')
 if (candidate.licenseTextBytes.toString('utf8') !== shippedLicenseText) {
@@ -156,7 +163,7 @@ const artifactFiles = [
   'runtime-source-provenance.json',
   'third-party-licenses.json',
   'THIRD_PARTY_LICENSES.txt',
-  'web-ide-0.8.1.cdx.json',
+  'web-ide-0.9.0.cdx.json',
 ]
 const artifacts = []
 for (const fileName of artifactFiles.sort()) {
@@ -176,6 +183,7 @@ const state = {
       mode: 'disposable-local-remote',
       remote: preflightRemote,
       finalizable: false,
+      ...(preflightEngineCandidate ? { engineCandidate: preflightEngineCandidate.receipt } : {}),
     },
   } : {}),
 }

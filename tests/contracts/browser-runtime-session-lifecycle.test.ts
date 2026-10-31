@@ -118,7 +118,7 @@ class FakeDebugger {
 class FakeEngine {
   fs: Record<string, unknown> = {}
   declare binaryFiles: Record<string, Uint8Array>
-  declare cppArtifacts?: { precompiledHeader?: string }
+  declare cppArtifacts?: { precompiledHeader?: string; cacheCertificate?: string }
   readonly stdout = new FakeDataStream()
   readonly stderr = new FakeDataStream()
   readonly stdin = { write: vi.fn(() => Promise.resolve()) }
@@ -136,6 +136,7 @@ class FakeEngine {
     return invocation.promise
   })
 
+  readonly dispose = vi.fn(async () => { this.stop() })
   readonly stop = vi.fn((): void => {
     if (this.settleRunOnStop) this.activeRun()?.resolve({ type: 'stopped' })
   })
@@ -414,7 +415,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     adapter.events.exit.subscribe(exit)
     await adapter.prepare({ files: workspace, mode,
       binaryFiles: { '/sysroot/headers.pch': new Uint8Array([1]) },
-      cppArtifacts: { precompiledHeader: '/sysroot/headers.pch', fallbackToSource: true },
+      cppArtifacts: { precompiledHeader: '/sysroot/headers.pch', fallbackToSource: true, cacheCertificate: '{ "schema": 1 }\n' },
     })
     const running = adapter.start({ mode })
     await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
@@ -423,6 +424,7 @@ describe('BrowserRuntimeSession run lifecycle', () => {
     await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2))
     expect(exit).not.toHaveBeenCalled()
     expect(engine.cppArtifacts?.precompiledHeader).toBeUndefined()
+    expect(engine.cppArtifacts?.cacheCertificate).toBe('{ "schema": 1 }\n')
     if (mode === 'debug') expect(commands(engine, 'initialize')).toHaveLength(2)
     engine.complete({ type: 'completed', exitCode: 0 })
     await running

@@ -272,3 +272,123 @@ describe('public Web IDE instance facade', () => {
     expect(activeFlush).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('runtime activity and lifecycle bridge', () => {
+  function bridge() {
+    return {
+      identity: {},
+      warmup: vi.fn(async () => ({ status: 'completed' as const, diagnostics: [] })),
+      cancel: vi.fn(async () => {}),
+      shutdown: vi.fn(async () => {}),
+      suspend: vi.fn(async () => {}),
+      resume: vi.fn(async () => {}),
+      release: vi.fn(async (_options?: { signal?: AbortSignal }): Promise<'released' | 'cancelled'> => _options?.signal?.aborted ? 'cancelled' : 'released'),
+    }
+  }
+
+  it('release is lazy and unsupported providers are not stopped', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    expect(await controller.handle.releaseCompilerResources()).toBe('released')
+    const cancel = vi.fn(async () => {})
+    controller.attachRuntimeWarmup({ warmup: async () => ({ status: 'completed', diagnostics: [] }), cancel })
+    expect(await controller.handle.releaseCompilerResources()).toBe('cancelled')
+    expect(cancel).not.toHaveBeenCalled()
+    const abort = new AbortController()
+    abort.abort()
+    expect(await controller.handle.releaseCompilerResources({ signal: abort.signal })).toBe('cancelled')
+  })
+
+  it('defers hidden release across delayed outer transforms and aborts it on foreground intent', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    const runtime = bridge()
+    controller.attachRuntimeWarmup(runtime)
+    const finishWarmup = controller.acquireRuntimeActivity(false)!
+    const release = controller.handle.releaseCompilerResources()
+    await Promise.resolve()
+    expect(runtime.release).not.toHaveBeenCalled()
+    const finishForeground = controller.acquireRuntimeActivity(true)!
+    expect(await release).toBe('cancelled')
+    finishWarmup()
+    const second = controller.handle.releaseCompilerResources()
+    await Promise.resolve()
+    expect(runtime.release).not.toHaveBeenCalled()
+    finishForeground()
+    expect(await second).toBe('released')
+    expect(runtime.release).toHaveBeenCalledOnce()
+  })
+
+  it('shutdown fences synchronously and drains idempotently independently from failed persistence', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    const runtime = bridge()
+    controller.attachRuntimeWarmup(runtime)
+    controller.attachWorkspaceLifecycle({ flush: async () => {}, close: async () => { throw new Error('save failed') } })
+    await expect(controller.handle.close()).rejects.toThrow('save failed')
+    expect(runtime.shutdown).not.toHaveBeenCalled()
+    const finish = controller.acquireRuntimeActivity(true)!
+    const shutdown = controller.handle.shutdownRuntime()
+    expect(runtime.shutdown).toHaveBeenCalledOnce()
+    expect(controller.handle.shutdownRuntime()).toBe(shutdown)
+    expect(controller.acquireRuntimeActivity(true)).toBeUndefined()
+    let settled = false
+    void shutdown.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    finish()
+    await shutdown
+    expect(await controller.handle.releaseCompilerResources()).toBe('released')
+  })
+
+  it('suspension is reversible and a stale resume cannot open permanent shutdown', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    const runtime = bridge()
+    controller.attachRuntimeWarmup(runtime)
+    const finish = controller.acquireRuntimeActivity(true)!
+    const suspension = controller.handle.suspendRuntime()
+    expect(runtime.suspend).toHaveBeenCalledOnce()
+    expect(controller.acquireRuntimeActivity(true)).toBeUndefined()
+    const resumed = controller.handle.resumeRuntime()
+    finish()
+    await Promise.all([suspension, resumed])
+    const activity = controller.acquireRuntimeActivity(true)
+    expect(activity).toBeTypeOf('function')
+    activity!()
+    await controller.handle.shutdownRuntime()
+    await controller.handle.resumeRuntime()
+    expect(controller.acquireRuntimeActivity(true)).toBeUndefined()
+    expect(runtime.resume).toHaveBeenCalledOnce()
+  })
+
+  it('a distinct StrictMode session can attach while a stale detach cannot retire it', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    const first = bridge()
+    const detachFirst = controller.attachRuntimeWarmup(first)
+    await controller.handle.shutdownRuntime()
+    controller.attachRuntimeWarmup(first)
+    expect(controller.acquireRuntimeActivity(true)).toBeUndefined()
+    const second = bridge()
+    controller.attachRuntimeWarmup(second)
+    detachFirst()
+    await vi.waitFor(() => {
+      const release = controller.acquireRuntimeActivity(false)
+      expect(release).toBeTypeOf('function')
+      release?.()
+    })
+    const finish = controller.acquireRuntimeActivity(true)
+    expect(finish).toBeTypeOf('function')
+    finish!()
+    expect(await controller.handle.warmup!()).toMatchObject({ status: 'completed' })
+    expect(second.warmup).toHaveBeenCalledOnce()
+  })
+
+  it('does not reopen a handle closed before its first runtime attachment', async () => {
+    const controller = createWebIDEInstanceController(workbench, panelLayout)
+    await controller.handle.shutdownRuntime()
+    const arriving = bridge()
+    controller.attachRuntimeWarmup(arriving)
+    expect(arriving.shutdown).toHaveBeenCalledOnce()
+    expect(controller.acquireRuntimeActivity(true)).toBeUndefined()
+    expect((await controller.handle.warmup!()).status).toBe('skipped')
+    await controller.handle.shutdownRuntime()
+  })
+
+})

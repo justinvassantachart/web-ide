@@ -6,6 +6,8 @@ import type { EngineOptions } from 'debugger-sh'
 export interface CppRuntimeProviderOptions {
   /** One Engine belongs to exactly this account/project; recreate the provider on scope change. */
   readonly cpp: NonNullable<EngineOptions['cpp']>
+  readonly preserveCompilerOnCancel?: boolean
+  readonly eagerCompilerReseedAfterStop?: boolean
 }
 
 function createPythonEntrypointLauncher(runtimePath: string): string {
@@ -31,6 +33,7 @@ const cppCapabilities = {
   stdin: true,
   graphics: false,
   memoryVisualization: true,
+  compilerPreparation: 1,
 } as const satisfies RuntimeCapabilities
 
 const pythonCapabilities = {
@@ -48,18 +51,22 @@ const cppPreparationErrorPattern =
   /(^[^\s:]+:\d+:\d+:\s+(?:fatal\s+)?error:|^wasm-ld:\s+error:|^\d+\s+errors?\s+generated\.)/
 
 export function createCppRuntimeProvider(options?: CppRuntimeProviderOptions): RuntimeProvider {
-  const engineOptions = options === undefined ? undefined : structuredClone(options)
+  const engineOptions = options === undefined ? undefined : { cpp: structuredClone(options.cpp) }
+  const capabilities = options?.preserveCompilerOnCancel
+    ? { ...cppCapabilities, compileOnlyJoin: 1 as const } : cppCapabilities
   return {
   id: 'web-ide.runtime.cpp',
   label: 'C/C++',
   languageIds: ['c', 'cpp'],
-  capabilities: cppCapabilities,
+  capabilities,
   createSession: () =>
     new BrowserRuntimeSession({
       id: 'web-ide.runtime.cpp',
       languageIds: ['c', 'cpp'],
       engineLanguage: 'c',
-      capabilities: cppCapabilities,
+      capabilities,
+      preserveCompilerOnCancel: options?.preserveCompilerOnCancel === true,
+      eagerCompilerReseedAfterStop: options?.eagerCompilerReseedAfterStop === true,
       preparationErrorPattern: cppPreparationErrorPattern,
       debugFallbackPath: '/main.cpp',
       emitResumeOnCommand: true,

@@ -16,6 +16,7 @@ const harness = vi.hoisted(() => {
           pendingRunIsPreparing = false
         }
       },
+      acquireActivity: () => () => {},
       getGeneration: () => generation,
       getPendingRun: () => pendingRun,
       isPreparing: (task: Promise<void>) =>

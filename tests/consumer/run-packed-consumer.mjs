@@ -8,6 +8,7 @@ import { verifyHostDeviceBrowser } from './host-device-browser.mjs'
 import { withVerifiedPackedCandidate } from './packed-candidate.mjs'
 import { validateConsumerFixtureValues } from '../../scripts/release/consumer-fixture.mjs'
 import { loadEngineForkInput } from '../../scripts/release/engine-fork-input.mjs'
+import { verifyInstalledReceiptToolchain, verifyReceiptConsumerEmission } from '../../scripts/release/receipt-toolchain.mjs'
 import { settleOperations } from '../../scripts/release/process-utils.mjs'
 
 const fixtureRoot = path.dirname(fileURLToPath(import.meta.url))
@@ -157,25 +158,31 @@ try {
   })
   const copiedManifest = JSON.parse(await readFile(path.join(temporaryConsumer, 'package.json'), 'utf8'))
   const copiedLock = JSON.parse(await readFile(path.join(temporaryConsumer, 'package-lock.json'), 'utf8'))
+  const engineInput = await loadEngineForkInput()
   validateConsumerFixtureValues(
     copiedManifest,
     copiedLock,
     copiedLock.packages?.['node_modules/web-ide']?.integrity,
-    await loadEngineForkInput(),
+    engineInput,
   )
   await withVerifiedPackedCandidate(
     { candidatePath: candidateTarball, consumerRoot: temporaryConsumer },
     async () => {
       if (!run(npmExecutable, ['ci', '--ignore-scripts', '--no-fund', '--no-audit'])) {
         process.exitCode ||= 1
-      } else if (!verifySingleReactIdentity()) {
-        process.exitCode ||= 1
-      } else if (!run(npmExecutable, ['audit', '--omit=dev', '--audit-level=low'])) {
-        process.exitCode ||= 1
-      } else if (!run(npmExecutable, ['run', 'build'])) {
-        process.exitCode ||= 1
-      } else if (process.env.WEB_IDE_HOST_DEVICE_BROWSER === '1') {
-        await verifyHostDeviceBrowser(temporaryConsumer, npmEnvironment)
+      } else {
+        const installedReceipt = await verifyInstalledReceiptToolchain(path.join(temporaryConsumer, 'node_modules/debugger-sh'), engineInput.engine.receiptToolchain)
+        if (!verifySingleReactIdentity()) {
+          process.exitCode ||= 1
+        } else if (!run(npmExecutable, ['audit', '--omit=dev', '--audit-level=low'])) {
+          process.exitCode ||= 1
+        } else if (!run(npmExecutable, ['run', 'build'])) {
+          process.exitCode ||= 1
+        } else {
+          const emission = await verifyReceiptConsumerEmission(path.join(temporaryConsumer, 'dist'), installedReceipt)
+          process.stdout.write(`Packed consumer receipt assets: ${JSON.stringify(emission)}\n`)
+          if (process.env.WEB_IDE_HOST_DEVICE_BROWSER === '1') await verifyHostDeviceBrowser(temporaryConsumer, npmEnvironment)
+        }
       }
     },
   )

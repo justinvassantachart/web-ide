@@ -2,6 +2,9 @@ import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promis
 import os from 'node:os'
 import path from 'node:path'
 
+import { createPreflightCheckout } from './preflight-source.mjs'
+import { loadEngineForkInput } from './engine-fork-input.mjs'
+import { PREFLIGHT_ENGINE_VARIABLE, seedPreflightEngineCache, verifyInstalledPreflightEngine, verifyPreflightEngineCandidate } from './preflight-engine-candidate.mjs'
 import { git, run, settleOperations } from './process-utils.mjs'
 import { readJSON, readRegularFileSnapshot, repositoryRoot } from './release-utils.mjs'
 import { beginEmptyDirectoryTransaction } from './transactional-output.mjs'
@@ -53,7 +56,11 @@ const tagEnvironment = {
   ], 'Preflight Git fixture setup')
   await git(['init', '--quiet', '--bare', '--initial-branch=main', bareRemote], { env: tagEnvironment })
   const canonicalBareRemote = await realpath(bareRemote)
-  await git(['clone', '--quiet', repositoryRoot, checkout], { env: tagEnvironment })
+  const engineCandidatePath = process.env[PREFLIGHT_ENGINE_VARIABLE]
+  const engineCandidate = engineCandidatePath
+    ? await verifyPreflightEngineCandidate(engineCandidatePath, await loadEngineForkInput(), canonicalBareRemote)
+    : undefined
+  await createPreflightCheckout({ source: repositoryRoot, checkout, sourceCommit, env: tagEnvironment })
   const existingTag = await git(['tag', '--list', configuration.sourceTag], {
     cwd: checkout,
     env: tagEnvironment,
@@ -92,17 +99,22 @@ const tagEnvironment = {
     writeFile(safeEnvironment.npm_config_globalconfig, '', { encoding: 'utf8', flag: 'wx' }),
     writeFile(safeEnvironment.npm_config_userconfig, '', { encoding: 'utf8', flag: 'wx' }),
   ], 'Preflight npm configuration setup')
+  if (engineCandidate) await seedPreflightEngineCache(engineCandidate, {
+    directory: fixtureRoot, cwd: checkout, env: safeEnvironment, fixtureRemote: canonicalBareRemote,
+  })
   await run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], {
     cwd: checkout,
     env: safeEnvironment,
     inherit: true,
   })
+  if (engineCandidate) await verifyInstalledPreflightEngine(engineCandidate, checkout)
   await run(process.execPath, ['scripts/release/generate-release-candidate.mjs'], {
     cwd: checkout,
     env: {
       ...safeEnvironment,
       WEB_IDE_RELEASE_OUTPUT_DIR: candidateDirectory,
       WEB_IDE_RELEASE_PREFLIGHT_REMOTE: canonicalBareRemote,
+      ...(engineCandidatePath ? { [PREFLIGHT_ENGINE_VARIABLE]: engineCandidatePath } : {}),
     },
     inherit: true,
   })
@@ -112,6 +124,7 @@ const tagEnvironment = {
       ...safeEnvironment,
       WEB_IDE_RELEASE_OUTPUT_DIR: candidateDirectory,
       WEB_IDE_RELEASE_PREFLIGHT_REMOTE: canonicalBareRemote,
+      ...(engineCandidatePath ? { [PREFLIGHT_ENGINE_VARIABLE]: engineCandidatePath } : {}),
     },
     inherit: true,
   })

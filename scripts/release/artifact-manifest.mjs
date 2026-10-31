@@ -146,6 +146,7 @@ function engineEvidence(forkInput, lockEntry) {
     distribution: { ...engine.distribution },
     lock: assertEngineLockEntry(lockEntry, forkInput, `${ENGINE_LOCK_PATH} lock entry`),
     embeddedWasm: { ...engine.embeddedWasm },
+    ...(engine.receiptToolchain ? { receiptToolchain: { ...engine.receiptToolchain } } : {}),
   }
 }
 
@@ -197,7 +198,7 @@ function validateRuntime(runtime, forkInput) {
   assertExactKeys(
     runtime.engine,
     ['name', 'version', 'registryPublished', 'source', 'build', 'distribution', 'lock', 'embeddedWasm'],
-    [],
+    ['receiptToolchain'],
     'artifact manifest runtime.engine',
   )
   if (
@@ -379,7 +380,7 @@ export async function createArtifactManifest({
   const evidenceNames = {
     'bundle-provenance': 'bundle-provenance.json',
     'candidate-state': 'candidate-state.json',
-    'cyclonedx-sbom': 'web-ide-0.8.1.cdx.json',
+    'cyclonedx-sbom': 'web-ide-0.9.0.cdx.json',
     'deterministic-builds': 'deterministic-builds.json',
     'license-inventory': 'third-party-licenses.json',
     'package-inspection': 'package-inspection.json',

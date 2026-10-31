@@ -40,6 +40,7 @@ export async function revalidateReleaseCandidate({
   configuration,
   source,
   sourceOptions = {},
+  preflightEngineCandidate,
 }) {
   const forkInput = await loadEngineForkInput()
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'web-ide-release-revalidate-'))
@@ -48,6 +49,8 @@ export async function revalidateReleaseCandidate({
       outputDirectory: temporaryDirectory,
       sourceCommit: source.commit,
       configuration: { ...configuration, sourceDateEpoch: source.sourceDateEpoch },
+      preflightEngineCandidate,
+      fixtureRemote: sourceOptions.nonreleaseFixtureRemote,
     })
     const candidatePath = path.join(outputDirectory, configuration.releaseAssetFilename)
     const candidateBytes = await readFile(candidatePath)
@@ -127,8 +130,8 @@ export async function revalidateReleaseCandidate({
     })
     await validateCycloneDx(expectedSbom)
     const sbom = await readCanonicalJSON(
-      path.join(outputDirectory, 'web-ide-0.8.1.cdx.json'),
-      'web-ide-0.8.1.cdx.json',
+      path.join(outputDirectory, 'web-ide-0.9.0.cdx.json'),
+      'web-ide-0.9.0.cdx.json',
     )
     await validateCycloneDx(sbom)
     assertCanonicalEqual(sbom, expectedSbom, 'CycloneDX SBOM')
