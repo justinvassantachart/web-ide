@@ -72,7 +72,7 @@ export function WorkbenchLayout() {
                 >
                   <SidebarPanel />
                 </ResizablePanel>
-                <ResizableHandle withHandle />
+                <ResizableHandle />
               </>
             )}
 
@@ -86,7 +86,7 @@ export function WorkbenchLayout() {
               <EditorTerminalPanel />
             </ResizablePanel>
 
-            <ResizableHandle key="right-separator" withHandle />
+            <ResizableHandle key="right-separator" />
 
             <ResizablePanel
               key="right"

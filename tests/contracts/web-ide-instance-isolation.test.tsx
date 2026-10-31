@@ -98,7 +98,8 @@ vi.mock('@monaco-editor/react', async () => {
     KeyCode: { F9: 68 },
     MarkerSeverity: { Error: 8, Warning: 4, Info: 2, Hint: 1 },
     editor: {
-      MouseTargetType: { GUTTER_GLYPH_MARGIN: 2 },
+      MouseTargetType: { GUTTER_GLYPH_MARGIN: 2, GUTTER_LINE_NUMBERS: 3 },
+      TrackedRangeStickiness: { NeverGrowsWhenTypingAtEdges: 1 },
       getModels: () => [...harness.models.values()].filter((model) => !model.isDisposed()),
       getModel: (uri: { toString(): string }) => harness.models.get(uri.toString()) ?? null,
       setModelMarkers: vi.fn(),

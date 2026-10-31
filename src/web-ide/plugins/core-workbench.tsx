@@ -33,6 +33,9 @@ export const coreWorkbenchPlugin: IDEPlugin = {
           && runtimeCapabilities.memoryVisualization !== false,
       },
     ],
+    // Launch commands stay visible for the whole run and are disabled while
+    // the runtime is busy; Stop appears beside them for the whole run (and
+    // while a preparation is still compiling) and shares the pipeline's stop.
     commands: [
       {
         id: 'workbench.run',
@@ -42,10 +45,13 @@ export const coreWorkbenchPlugin: IDEPlugin = {
         group: 'run',
         tone: 'success',
         order: 10,
-        when: ({ runState }) => runState === 'idle',
-        enabled: ({ runtimeReady, isCompiling }) => runtimeReady && !isCompiling,
-        disabledReason: ({ runtimeReady }) =>
-          runtimeReady ? undefined : 'Compiler is still downloading…',
+        enabled: ({ runState, runtimeReady, isCompiling }) =>
+          runState === 'idle' && runtimeReady && !isCompiling,
+        disabledReason: ({ runState, runtimeReady, isCompiling }) =>
+          !runtimeReady ? 'Compiler is still downloading…'
+            : isCompiling ? 'Preparing the current run…'
+              : runState !== 'idle' ? 'A program is already running. Stop it first.'
+                : undefined,
         execute: ({ execution }) => execution.start('run'),
       },
       {
@@ -55,9 +61,14 @@ export const coreWorkbenchPlugin: IDEPlugin = {
         surface: 'toolbar',
         group: 'run',
         order: 20,
-        when: ({ runState, runtimeCapabilities }) =>
-          runState === 'idle' && runtimeCapabilities.debug,
-        enabled: ({ runtimeReady, isCompiling }) => runtimeReady && !isCompiling,
+        when: ({ runtimeCapabilities }) => runtimeCapabilities.debug,
+        enabled: ({ runState, runtimeReady, isCompiling }) =>
+          runState === 'idle' && runtimeReady && !isCompiling,
+        disabledReason: ({ runState, runtimeReady, isCompiling }) =>
+          !runtimeReady ? 'Compiler is still downloading…'
+            : isCompiling ? 'Preparing the current run…'
+              : runState !== 'idle' ? 'A program is already running. Stop it first.'
+                : undefined,
         execute: ({ execution }) => execution.start('debug'),
       },
       {
@@ -70,7 +81,7 @@ export const coreWorkbenchPlugin: IDEPlugin = {
         order: 100,
         // Foreground preparation is cancellable before a guest has started.
         // Initial warmup does not set the foreground isCompiling state.
-        when: ({ runState, isCompiling }) => isCompiling || runState === 'running',
+        when: ({ runState, isCompiling }) => runState !== 'idle' || isCompiling,
         execute: ({ execution }) => execution.stop(),
       },
     ],

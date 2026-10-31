@@ -34,17 +34,10 @@ interface ToolbarAction {
     icon: string
     onClick: () => void
     disabled?: boolean
-    /** VS Code debug icon colors: blue actions, green restart, red stop. */
+    /** VS Code debugIcon.* colors (per theme, see index.css): blue actions, green restart, red stop. */
     tone: 'blue' | 'green' | 'red' | 'plain'
     /** Extra classes on the icon glyph (e.g. mirroring). */
     iconClassName?: string
-}
-
-const TONE_CLASS: Record<ToolbarAction['tone'], string> = {
-    blue: 'text-[#75beff]',
-    green: 'text-[#89d185]',
-    red: 'text-[#f48771]',
-    plain: 'text-foreground',
 }
 
 // Drag behavior for the pill. Positions are px offsets inside the
@@ -203,7 +196,8 @@ export function DebugToolbar() {
                 <button
                     type="button"
                     aria-label={a.label}
-                    className={`nova-debug-toolbar-btn ${TONE_CLASS[a.tone]}`}
+                    className="nova-debug-toolbar-btn"
+                    data-tone={a.tone}
                     disabled={a.disabled}
                     onClick={a.onClick}
                 >
@@ -235,8 +229,8 @@ export function DebugToolbar() {
                         role="button"
                         aria-label="Move debug toolbar (drag; double-click to reset)"
                         className={
-                            'h-[26px] w-[14px] grid place-items-center select-none touch-none ' +
-                            'text-muted-foreground hover:text-foreground ' +
+                            'h-[22px] w-[20px] grid place-items-center select-none touch-none ' +
+                            'text-foreground opacity-50 hover:opacity-100 ' +
                             (dragging ? 'cursor-grabbing' : 'cursor-grab')
                         }
                     >

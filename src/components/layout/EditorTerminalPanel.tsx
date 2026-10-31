@@ -121,24 +121,25 @@ export function EditorTerminalPanel() {
                     data-web-ide-region="terminal-content"
                 >
                     <section className="web-ide-terminal-panel" aria-label="Terminal panel" aria-hidden={mode === 'hidden'} style={{ visibility: mode === 'hidden' ? 'hidden' : undefined }}>
-                        <div className="web-ide-terminal-header">
-                            <div role="tablist" aria-label="Terminal panels" className="web-ide-terminal-tabs">
+                        <div className="web-ide-panel-title web-ide-terminal-header">
+                            <div role="tablist" aria-label="Terminal panels" className="web-ide-panel-tabs">
                                 <button
                                     id={tabId}
                                     role="tab"
                                     type="button"
                                     aria-selected="true"
                                     aria-controls={panelId}
-                                    className="web-ide-terminal-tab"
+                                    className="web-ide-panel-tab"
                                     onClick={() => terminal.current?.focus()}
                                 >Terminal</button>
                             </div>
-                            <div className="web-ide-terminal-actions">
-                                <button type="button" aria-label="Clear terminal" title="Clear Terminal" onClick={() => terminal.current?.clear()}>
+                            <div className="web-ide-panel-actions">
+                                <button type="button" className="web-ide-panel-action" aria-label="Clear terminal" title="Clear Terminal" onClick={() => terminal.current?.clear()}>
                                     <Codicon name="clear-all" />
                                 </button>
                                 <button
                                     type="button"
+                                    className="web-ide-panel-action"
                                     aria-label={mode === 'maximized' ? 'Restore terminal panel' : 'Maximize terminal panel'}
                                     title={mode === 'maximized' ? 'Restore Panel Size' : 'Maximize Panel Size'}
                                     aria-pressed={mode === 'maximized'}
@@ -149,7 +150,7 @@ export function EditorTerminalPanel() {
                                 >
                                     <Codicon name={mode === 'maximized' ? 'screen-normal' : 'screen-full'} />
                                 </button>
-                                <button type="button" aria-label="Hide terminal panel" title="Hide Panel (Ctrl+`)" onClick={hide}>
+                                <button type="button" className="web-ide-panel-action" aria-label="Hide terminal panel" title="Hide Panel (Ctrl+`)" onClick={hide}>
                                     <Codicon name="close" />
                                 </button>
                             </div>

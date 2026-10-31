@@ -1,25 +1,17 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.9.0` source candidate is
-licensed under MIT. The npm manifest deliberately remains `private: true`: this
-checkpoint does not configure an npm publication. The distribution path is an
-exact integrity-checked tarball attached to an immutable release in the owner's
-public `justinvassantachart/web-ide` repository. This candidate adds permanent
-runtime disposal, compiler release/suspend/resume, foreground-priority
-compile-only warmup and optional validated cache inputs. The standard C++
-provider retains its conservative defaults.
-It retains the optional debug formatter contributions and shared Pretty/Raw
-presentation in Variables and Graph. Existing runtime providers remain
-supported; course-specific formatters are companion plugins. The Stanford
-companion compatibility target is `0.6.0`, with an exact Web IDE `0.9.0`
-peer and engine `0.3.15-webide.0.9.0.1`. These target versions are not published
-releases. The completed `0.8.1` release and its evidence remain unchanged.
+Web IDE's source repository is public and its `0.10.0` UI candidate is
+licensed under MIT. The npm manifest remains `private: true`; distribution uses
+an integrity-checked tarball on the public `justinvassantachart/web-ide` release
+channel. This candidate updates workbench themes, toolbar and panel layout,
+breakpoint presentation, and terminal chrome. It keeps the published 0.9.0
+engine `debugger-sh@0.3.15-webide.0.9.0.1` and existing runtime contracts.
 
-Release metadata preparation does not establish an accepted engine artifact.
-The committed engine input now binds the exact local `0.3.15-webide.0.9.0.1` candidate
-archive and embedded runtime bytes. Its planned immutable URL is not yet
-published. The consumer fixture binds the `0.9.0` candidate integrity before
-preflight; no provisional digest or local dependency path is a production pin.
+The release metadata and consumer lock bind the new UI package separately from
+the unchanged engine. The four release gates, deterministic builds and final
+asset verification below are still required. CS106B and THS must separately
+validate their exact host/companion dependency graphs before deployment; this
+UI release does not reduce the embedded engine asset or establish Safari support.
 
 The candidate retains the 0.7.3 Python host byte device and the 0.7.2 compiler
 diagnostic correction. The 0.7.0 release introduced
@@ -78,7 +70,7 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.9.0-source` tag object peeled to that exact commit. The immutable
+`web-ide-v0.10.0-source` tag object peeled to that exact commit. The immutable
 `web-ide-v0.8.1-source` identity remains unchanged. The immutable
 `web-ide-v0.7.3-source` and `web-ide-v0.7.2-source` identities remain unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint is retained unchanged and did not produce a
@@ -206,7 +198,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.9.0-source` tag at that commit, and use an
+and push the annotated `web-ide-v0.10.0-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while

@@ -8,54 +8,79 @@
 /* Tailwind 4 @theme block — declares CSS variables under :root *and*
    generates utilities (bg-background, text-foreground, …) that reference
    them via var(). Note: do NOT add `inline` here — that would inline the
-   raw value into every utility, defeating runtime theme swapping. */
+   raw value into every utility, defeating runtime theme swapping.
+
+   Dark values are VS Code's Dark Modern theme
+   (microsoft/vscode/extensions/theme-defaults/themes/dark_modern.json plus
+   the dark_plus/dark_vs tokens it inherits); each token names the VS Code
+   color it stands in for. The sidebar, explorer, activity bar and terminal
+   keep their own scoped copies of the same values. */
 @theme {
-  --color-background: oklch(0.145 0 0);
-  --color-foreground: oklch(0.925 0 0);
-  --color-card: oklch(0.17 0 0);
-  --color-card-foreground: oklch(0.925 0 0);
-  --color-popover: oklch(0.17 0 0);
-  --color-popover-foreground: oklch(0.925 0 0);
-  --color-primary: oklch(0.75 0.12 230);
-  --color-primary-foreground: oklch(0.15 0 0);
-  --color-secondary: oklch(0.25 0 0);
-  --color-secondary-foreground: oklch(0.925 0 0);
-  --color-muted: oklch(0.25 0 0);
-  --color-muted-foreground: oklch(0.6 0 0);
-  --color-accent: oklch(0.25 0 0);
-  --color-accent-foreground: oklch(0.925 0 0);
-  --color-destructive: oklch(0.55 0.2 27);
-  --color-destructive-foreground: oklch(0.925 0 0);
-  --color-border: oklch(0.3 0 0);
-  --color-input: oklch(0.3 0 0);
-  --color-ring: oklch(0.55 0.12 230);
-  --color-sidebar: oklch(0.17 0 0);
-  --color-sidebar-foreground: oklch(0.925 0 0);
-  --color-sidebar-primary: oklch(0.75 0.12 230);
-  --color-sidebar-primary-foreground: oklch(0.15 0 0);
-  --color-sidebar-accent: oklch(0.25 0 0);
-  --color-sidebar-accent-foreground: oklch(0.925 0 0);
-  --color-sidebar-border: oklch(0.3 0 0);
-  --color-sidebar-ring: oklch(0.55 0.12 230);
+  --color-background: #1f1f1f;            /* editor.background, tab.activeBackground */
+  --color-foreground: #cccccc;            /* foreground, editor.foreground */
+  --color-card: #202020;                  /* editorWidget.background */
+  --color-card-foreground: #cccccc;
+  --color-popover: #202020;               /* editorHoverWidget.background */
+  --color-popover-foreground: #cccccc;
+  --color-primary: #0078d4;               /* button.background, focusBorder, *.activeBorder */
+  --color-primary-foreground: #ffffff;    /* button.foreground */
+  --color-secondary: #313131;             /* input.background */
+  --color-secondary-foreground: #cccccc;
+  --color-muted: #2b2b2b;                 /* button.secondaryHoverBackground */
+  --color-muted-foreground: #9d9d9d;      /* descriptionForeground, tab.inactiveForeground */
+  --color-accent: #2a2d2e;                /* list.hoverBackground */
+  --color-accent-foreground: #cccccc;
+  --color-destructive: #f85149;           /* errorForeground */
+  --color-destructive-foreground: #ffffff;
+  --color-border: #2b2b2b;                /* sideBar.border, panel.border, tab.border, … */
+  --color-input: #3c3c3c;                 /* input.border */
+  --color-ring: #0078d4;                  /* focusBorder */
+  --color-sidebar: #181818;               /* sideBar.background */
+  --color-sidebar-foreground: #cccccc;
+  --color-sidebar-primary: #0078d4;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #2a2d2e;
+  --color-sidebar-accent-foreground: #cccccc;
+  --color-sidebar-border: #2b2b2b;
+  --color-sidebar-ring: #0078d4;
 
-  /* Nova-specific surface layers — three elevations on top of background
-     so panels feel like a coherent stack (deep ▸ rail ▸ chrome ▸ hover). */
-  --color-rail: oklch(0.165 0 0);
-  --color-chrome: oklch(0.2 0 0);
-  --color-row-hover: oklch(0.23 0 0);
-  --color-row-active: oklch(0.27 0.02 230);
+  /* Workbench surfaces. `chrome` is every non-editor part: title bar, tab
+     strip, side bars, panel, status bar (all #181818 in Dark Modern). */
+  --color-rail: #181818;                  /* activityBar.background */
+  --color-chrome: #181818;                /* sideBar/panel/statusBar/titleBar.background */
+  --color-row-hover: #2a2d2e;             /* list.hoverBackground */
+  --color-row-active: #04395e;            /* list.activeSelectionBackground */
 
-  /* Semantic accents used by the debug panels (pointers, addresses, types). */
-  --color-accent-pointer: oklch(0.8 0.12 230);
-  --color-accent-string: oklch(0.85 0.1 200);
-  --color-accent-number: oklch(0.85 0.1 30);
-  --color-accent-type: oklch(0.7 0.05 270);
+  /* Debug value colors: debugTokenExpression.* */
+  --color-accent-pointer: #4daafc;        /* textLink.foreground */
+  --color-accent-string: #ce9178;         /* debugTokenExpression.string */
+  --color-accent-number: #b5cea8;         /* debugTokenExpression.number */
+  --color-accent-type: #4a90e2;           /* debugTokenExpression.type */
 }
 
 .web-ide-root {
   --radius: 0.5rem;
-  --color-scrollbar-thumb: oklch(0.3 0 0);
-  --color-scrollbar-thumb-hover: oklch(0.4 0 0);
+  /* scrollbarSlider.background / hoverBackground / activeBackground */
+  --color-scrollbar-thumb: rgba(121, 121, 121, 0.4);
+  --color-scrollbar-thumb-hover: rgba(100, 100, 100, 0.7);
+  --color-scrollbar-thumb-active: rgba(191, 191, 191, 0.4);
+  --color-sash-hover: #0078d4;            /* sash.hoverBorder = focusBorder */
+  --color-toolbar-hover: #5a5d5e50;       /* toolbar.hoverBackground */
+  --color-toolbar-active: #68696a50;      /* toolbar.activeBackground */
+  --color-tab-active-foreground: #ffffff; /* tab.activeForeground */
+  --color-button-border: #ffffff1a;       /* button.border */
+  --color-button-secondary: transparent;  /* button.secondaryBackground */
+  --color-button-secondary-hover: #2b2b2b;
+  --color-button-success: #388a34;        /* debugIcon.startForeground (light) */
+  --color-button-success-hover: #2f7a2c;
+  --color-button-danger: #c72e0f;         /* statusBarItem.errorBackground (light) */
+  --color-button-danger-hover: #b02a0e;
+  --color-status-debugging: #0078d4;      /* statusBar.debuggingBackground */
+  --color-status-debugging-foreground: #ffffff;
+  --color-debug-toolbar: #181818;         /* debugToolBar.background */
+  --color-debug-icon-blue: #75beff;       /* debugIcon.continue/stepOver/… */
+  --color-debug-icon-green: #89d185;      /* debugIcon.start/restartForeground */
+  --color-debug-icon-red: #f48771;        /* debugIcon.stopForeground */
 }
 
 /* ── Light (VS Code Light Modern) ─────────────────────────────────
@@ -65,44 +90,58 @@
 [data-theme="light"] .web-ide-root {
   --color-background: #ffffff;
   --color-foreground: #3b3b3b;
-  --color-card: #ffffff;
+  --color-card: #f8f8f8;
   --color-card-foreground: #3b3b3b;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #1f1f1f;
+  --color-popover: #f8f8f8;
+  --color-popover-foreground: #3b3b3b;
   --color-primary: #005fb8;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #e4e6f1;
-  --color-secondary-foreground: #1f1f1f;
+  --color-secondary: #e5e5e5;
+  --color-secondary-foreground: #3b3b3b;
   --color-muted: #f2f2f2;
   --color-muted-foreground: #616161;
   --color-accent: #f2f2f2;
-  --color-accent-foreground: #1f1f1f;
-  --color-destructive: #d13438;
+  --color-accent-foreground: #3b3b3b;
+  --color-destructive: #f85149;
   --color-destructive-foreground: #ffffff;
   --color-border: #e5e5e5;
   --color-input: #cecece;
   --color-ring: #005fb8;
   --color-sidebar: #f8f8f8;
-  --color-sidebar-foreground: #1f1f1f;
+  --color-sidebar-foreground: #3b3b3b;
   --color-sidebar-primary: #005fb8;
   --color-sidebar-primary-foreground: #ffffff;
   --color-sidebar-accent: #f2f2f2;
-  --color-sidebar-accent-foreground: #1f1f1f;
+  --color-sidebar-accent-foreground: #3b3b3b;
   --color-sidebar-border: #e5e5e5;
   --color-sidebar-ring: #005fb8;
 
   --color-rail: #f8f8f8;
   --color-chrome: #f8f8f8;
   --color-row-hover: #f2f2f2;
-  --color-row-active: #cde6f5;
+  --color-row-active: #e8e8e8;
 
   --color-accent-pointer: #005fb8;
-  --color-accent-string: #0451a5;
+  --color-accent-string: #a31515;
   --color-accent-number: #098658;
-  --color-accent-type: #267f99;
+  --color-accent-type: #4a90e2;
 
   --color-scrollbar-thumb: rgba(100, 100, 100, 0.4);
   --color-scrollbar-thumb-hover: rgba(100, 100, 100, 0.7);
+  --color-scrollbar-thumb-active: rgba(0, 0, 0, 0.6);
+  --color-sash-hover: #005fb8;
+  --color-toolbar-hover: #b8b8b850;
+  --color-toolbar-active: #a6a6a650;
+  --color-tab-active-foreground: #3b3b3b;
+  --color-button-border: #0000001a;
+  --color-button-secondary: #e5e5e5;
+  --color-button-secondary-hover: #cccccc;
+  --color-status-debugging: #fd716c;
+  --color-status-debugging-foreground: #000000;
+  --color-debug-toolbar: #f3f3f3;
+  --color-debug-icon-blue: #007acc;
+  --color-debug-icon-green: #388a34;
+  --color-debug-icon-red: #a1260d;
 }
 
 .web-ide-root,
@@ -110,10 +149,12 @@
   border-color: var(--color-border);
 }
 
+/* VS Code's workbench font stack (style.css) at its 13px UI size. */
 .web-ide-root {
   background: var(--color-background);
   color: var(--color-foreground);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+  font-size: 13px;
 }
 
 .web-ide-root {
@@ -123,96 +164,332 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbars */
+/* ── Scrollbars (VS Code scrollbars.css + scrollbarSlider.*) ──────
+   10px sliders that are invisible until the pointer is over the scrollable
+   region, then fade in. VS Code also fades them out 800ms after the pointer
+   leaves; a plain `:hover` approximation keeps this in CSS only. */
 .web-ide-root ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
-
-.web-ide-root ::-webkit-scrollbar-track {
+.web-ide-root ::-webkit-scrollbar-track,
+.web-ide-root ::-webkit-scrollbar-corner {
   background: transparent;
 }
-
 .web-ide-root ::-webkit-scrollbar-thumb {
-  background: var(--color-scrollbar-thumb);
-  border-radius: 3px;
+  background: transparent;
 }
-
+.web-ide-root :hover::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+}
 .web-ide-root ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-thumb-hover);
 }
+.web-ide-root ::-webkit-scrollbar-thumb:active {
+  background: var(--color-scrollbar-thumb-active);
+}
 
-/* Nova — shared panel chrome utilities.
-   Use these everywhere a panel needs a section header (Explorer, Variables,
-   Call Stack, Graph) so the typographic vocabulary stays in one place. */
+/* ── Sashes (VS Code sash.css) ───────────────────────────────────
+   The separator element is the 1px part border. Its `::after` is VS Code's
+   4px sash hit area centered on that border; `react-resizable-panels` sets
+   the resize cursor (ew/ns-resize) while the pointer is inside it. After VS
+   Code's 300ms hover delay the sash fills with `sash.hoverBorder`, and it
+   stays filled for the whole drag even when the pointer outruns the sash.
+   The library reports those states on `data-separator`
+   (inactive | hover | active | focus | disabled) and sets `aria-orientation`
+   "vertical" between side-by-side panels, "horizontal" between stacked ones. */
+.web-ide-sash {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--color-border);
+  outline: none;
+}
+.web-ide-sash[aria-orientation="vertical"] {
+  width: 1px;
+  height: 100%;
+}
+.web-ide-sash[aria-orientation="horizontal"] {
+  height: 1px;
+  width: 100%;
+}
+.web-ide-sash::after {
+  content: '';
+  position: absolute;
+  z-index: 35;
+  background: transparent;
+  transition: background-color 0.1s ease-out;
+}
+.web-ide-sash[aria-orientation="vertical"]::after {
+  top: 0;
+  bottom: 0;
+  left: -1.5px;
+  width: 4px;
+}
+.web-ide-sash[aria-orientation="horizontal"]::after {
+  left: 0;
+  right: 0;
+  top: -1.5px;
+  height: 4px;
+}
+.web-ide-sash[data-separator="hover"]::after {
+  transition-delay: 300ms;
+}
+/* `:focus-visible` rather than the library's "focus" state: a finished mouse
+   drag leaves DOM focus on the separator, and VS Code's sash does not stay
+   lit after a drag. Keyboard focus still shows the sash. */
+.web-ide-sash[data-separator="hover"]::after,
+.web-ide-sash[data-separator="active"]::after,
+.web-ide-sash:focus-visible::after {
+  background: var(--color-sash-hover);
+}
+
+/* ── Top toolbar (VS Code title bar) ─────────────────────────────── */
+.web-ide-toolbar {
+  display: flex;
+  align-items: center;
+  height: 35px;                      /* titleBar height */
+  padding: 0 8px 0 12px;
+  gap: 8px;
+  background: var(--color-chrome);   /* titleBar.activeBackground */
+  border-bottom: 1px solid var(--color-border); /* titleBar.border */
+  flex-shrink: 0;
+  user-select: none;
+}
+.web-ide-toolbar-brand {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--color-foreground);
+}
+.web-ide-toolbar-commands {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* VS Code's `.monaco-text-button` (button.css: 4px 8px padding, 4px radius,
+   1px `button.border`, 13px workbench text) with three tones. Default is
+   `button.secondary*`; success and danger are filled like the primary
+   button but in VS Code's run green and error red, so Run and Stop read at
+   a glance. Disabled buttons keep their place at opacity .4 (`.monaco-button.disabled`). */
+.web-ide-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--color-button-border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--color-foreground);
+  background: var(--color-button-secondary);
+  transition: background-color 0.1s ease-out;
+}
+.web-ide-toolbar-button:hover:not(:disabled) {
+  background: var(--color-button-secondary-hover);
+}
+.web-ide-toolbar-button[data-tone="success"] {
+  color: #ffffff;
+  background: var(--color-button-success);
+  border-color: transparent;
+}
+.web-ide-toolbar-button[data-tone="success"]:hover:not(:disabled) {
+  background: var(--color-button-success-hover);
+}
+.web-ide-toolbar-button[data-tone="danger"] {
+  color: #ffffff;
+  background: var(--color-button-danger);
+  border-color: transparent;
+}
+.web-ide-toolbar-button[data-tone="danger"]:hover:not(:disabled) {
+  background: var(--color-button-danger-hover);
+}
+.web-ide-toolbar-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.web-ide-toolbar-button:focus-visible {
+  outline: 1px solid var(--color-ring);
+  outline-offset: 1px;
+}
+.web-ide-toolbar-button .codicon {
+  font-size: 16px;
+}
+
+/* ── Panel title bars (VS Code paneCompositePart.css / panelpart.css) ─
+   Shared by the terminal header and the right-hand contribution column:
+   35px tall on `panel.background`, 11px uppercase tabs with 10px side
+   padding, `panelTitle.inactiveForeground` text, and a 1px
+   `panelTitle.activeBorder` underline 2px above the bottom edge, inset by
+   the tab padding. Action icons on the right are 22px with a 6px radius and
+   `toolbar.hoverBackground` on hover (actionbar.css). */
+.web-ide-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 35px;
+  min-height: 35px;
+  padding: 0 8px 0 0;
+  background: var(--color-chrome);
+  color: var(--color-foreground);
+  flex-shrink: 0;
+  user-select: none;
+}
+.web-ide-panel-tabs {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.web-ide-panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+.web-ide-panel-tab {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted-foreground);   /* panelTitle.inactiveForeground */
+  font: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.web-ide-panel-tab:hover,
+.web-ide-panel-tab[aria-selected="true"] {
+  color: var(--color-foreground);         /* panelTitle.activeForeground */
+}
+.web-ide-panel-tab[aria-selected="true"]::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 2px;
+  height: 1px;
+  background: var(--color-primary);       /* panelTitle.activeBorder */
+}
+.web-ide-panel-tab:focus-visible {
+  outline: 1px solid var(--color-ring);
+  outline-offset: -1px;
+}
+.web-ide-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.web-ide-panel-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;                     /* cornerRadius-medium */
+  color: var(--color-foreground);         /* icon.foreground */
+  background: transparent;
+  cursor: pointer;
+}
+.web-ide-panel-action:hover {
+  background: var(--color-toolbar-hover);
+}
+.web-ide-panel-action:active {
+  background: var(--color-toolbar-active);
+}
+.web-ide-panel-action:focus-visible {
+  outline: 1px solid var(--color-ring);
+  outline-offset: -1px;
+}
+.web-ide-panel-action .codicon {
+  font-size: 16px;
+}
+
+/* Shared pane header inside a view (VS Code paneviewlet.css `.pane-header`):
+   22px, 11px bold uppercase in the view foreground. */
 .nova-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.75rem;
+  gap: 8px;
+  min-height: 22px;
+  padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-chrome);
   flex-shrink: 0;
 }
 .nova-panel-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: var(--color-muted-foreground);
+  color: var(--color-foreground);
 }
 .nova-section-label {
   padding: 0.25rem 0.75rem;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--color-foreground);
   text-transform: uppercase;
 }
 
-/* ── Monaco debug decorations — match VS Code dark+ ──────────────
-   VS Code reference values:
-   - breakpoint dot:           debugIcon.breakpointForeground  #E51400
-   - paused (top stack frame): editor.stackFrameHighlightBackground #ffff0033
-   - paused glyph:             yellow arrow  #ffcc00                       */
+/* ── Monaco debug decorations — match VS Code ────────────────────
+   Monaco renders one `.cgmr` box per decorated glyph-margin line, sized
+   lineHeight × lineHeight with its content flex-centered (glyphMargin.css).
+   Editor.tsx puts the same codicons on it that VS Code uses
+   (debugIcons.ts: debug-breakpoint, debug-hint, debug-stackframe), so these
+   rules only need colors and the two VS Code behaviors below. Nothing here
+   resizes or offsets the cell, which keeps the gutter aligned at any line
+   height. Reference values:
+   - debugIcon.breakpointForeground                  #E51400
+   - debugIcon.breakpointCurrentStackframeForeground #FFCC00 dark / #BE8700 light
+   - editor.stackFrameHighlightBackground            #ffff0033 dark / #ffff6673 light
+   - hover hint: same glyph at opacity .4 with a pointer cursor
+     (debug.contribution.css); a set breakpoint keeps the arrow cursor. */
 .debug-line-highlight {
   background-color: rgba(255, 255, 0, 0.2) !important;
 }
-
-/* Breakpoint dot — plain filled circle, centered in the glyph margin.
-   VS Code does not animate or glow these; familiarity beats flair. */
-.breakpoint-dot {
-  width: 9px !important;
-  height: 9px !important;
-  margin-left: 6px;
-  margin-top: 6.5px;
-  border-radius: 50%;
-  background: #e51400;
-  cursor: pointer;
+[data-theme="light"] .debug-line-highlight {
+  background-color: rgba(255, 255, 102, 0.45) !important;
 }
 
-/* Ghost breakpoint (faded dot while hovering the glyph margin) */
-.breakpoint-ghost {
-  width: 9px !important;
-  height: 9px !important;
-  margin-left: 6px;
-  margin-top: 6.5px;
-  border-radius: 50%;
-  background: #e51400;
-  opacity: 0.32;
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-breakpoint,
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-hint {
+  color: #e51400;
+}
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-hint {
   cursor: pointer;
 }
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-hint:not(.codicon-debug-breakpoint):not(.codicon-debug-stackframe) {
+  opacity: 0.4;
+}
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-stackframe {
+  color: #ffcc00;
+}
+[data-theme="light"] .monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-stackframe {
+  color: #be8700;
+}
 
-/* Paused-line glyph — VS Code's yellow stack-frame arrow */
-.debug-paused-glyph {
-  width: 0 !important;
-  height: 0 !important;
-  margin-left: 5px;
-  margin-top: 5.5px;
-  border-top: 5.5px solid transparent;
-  border-bottom: 5.5px solid transparent;
-  border-left: 9px solid #ffcc00;
-  z-index: 10;
+/* Paused on a breakpoint line: Monaco merges both same-z-index glyphs into
+   one element. Pin the arrow as the glyph (stylesheet order would otherwise
+   decide) and overlay VS Code's small debug-stackframe-dot in breakpoint red. */
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-breakpoint.codicon-debug-stackframe::before {
+  content: "\eb8b";
+}
+.monaco-editor .glyph-margin-widgets .cgmr.codicon-debug-breakpoint.codicon-debug-stackframe::after {
+  content: "\eb8a";
+  font-family: codicon;
+  position: absolute;
+  color: #e51400;
 }
 
 /* Public owner-scoped source presentation. Shape and color both distinguish
@@ -229,32 +506,35 @@
   background-color: color-mix(in srgb, #f14c4c 18%, transparent) !important;
   box-shadow: inset 3px 0 #f14c4c;
 }
-.source-presentation-current-glyph,
-.source-presentation-historical-glyph,
-.source-presentation-error-glyph {
-  width: 9px !important;
-  height: 9px !important;
-  margin-left: 6px;
-  margin-top: 6px;
+/* Plugin glyphs draw a 9px shape as a pseudo-element inside Monaco's
+   flex-centered cell rather than shrinking the cell itself. */
+.monaco-editor .glyph-margin-widgets .cgmr.source-presentation-current-glyph::before,
+.monaco-editor .glyph-margin-widgets .cgmr.source-presentation-historical-glyph::before,
+.monaco-editor .glyph-margin-widgets .cgmr.source-presentation-error-glyph::before {
+  content: '';
+  display: block;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
 }
-.source-presentation-current-glyph {
+.monaco-editor .glyph-margin-widgets .cgmr.source-presentation-current-glyph::before {
   border-radius: 50%;
   background: #4fc1ff;
 }
-.source-presentation-historical-glyph {
+.monaco-editor .glyph-margin-widgets .cgmr.source-presentation-historical-glyph::before {
   border-radius: 50%;
   border: 2px solid #c586c0;
-  background: transparent;
 }
-.source-presentation-error-glyph {
+.monaco-editor .glyph-margin-widgets .cgmr.source-presentation-error-glyph::before {
   background: #f14c4c;
   transform: rotate(45deg) scale(0.8);
 }
 
-/* When paused ON a breakpoint line, VS Code layers the arrow over the
-   red dot; our glyph wins via z-index above. */
-
-/* ── Floating debug toolbar (VS Code style) ─────────────────────── */
+/* ── Floating debug toolbar (VS Code debugToolBar.css) ───────────
+   28px pill on `debugToolBar.background` with the large (8px) corner radius
+   and the workbench's large shadow; 22px icon actions (16px glyph + 3px
+   padding, 6px radius) spaced 4px apart with `toolbar.hoverBackground`.
+   Icon colors are VS Code's debugIcon.* per theme. */
 .nova-debug-toolbar {
   position: absolute;
   top: 6px;
@@ -263,20 +543,21 @@
   z-index: 30;
   display: flex;
   align-items: center;
-  padding: 2px 4px;
-  background: var(--color-chrome);
+  height: 28px;
+  padding: 0 4px 0 2px;
+  background: var(--color-debug-toolbar);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.36);
 }
 .nova-debug-toolbar[data-dragging] {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
   opacity: 0.95;
 }
 .nova-debug-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 4px;
 }
 .nova-debug-toolbar-group + .nova-debug-toolbar-group {
   border-left: 1px solid var(--color-border);
@@ -284,22 +565,35 @@
   padding-left: 4px;
 }
 .nova-debug-toolbar-btn {
-  width: 28px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
 }
 .nova-debug-toolbar-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
+  background: var(--color-toolbar-hover);
+}
+.nova-debug-toolbar-btn:active:not(:disabled) {
+  background: var(--color-toolbar-active);
 }
 .nova-debug-toolbar-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.4;
   cursor: default;
 }
+.nova-debug-toolbar-btn[data-tone="blue"] { color: var(--color-debug-icon-blue); }
+.nova-debug-toolbar-btn[data-tone="green"] { color: var(--color-debug-icon-green); }
+.nova-debug-toolbar-btn[data-tone="red"] { color: var(--color-debug-icon-red); }
+.nova-debug-toolbar-btn[data-tone="plain"] { color: var(--color-foreground); }
 
-/* ── Editor tab strip (VS Code style) ───────────────────────────── */
+/* ── Editor tab strip (VS Code multieditortabscontrol.css + Dark Modern) ─
+   35px strip on `editorGroupHeader.tabsBackground` with a
+   `editorGroupHeader.tabsBorder` bottom edge. Tabs are the "fit" sizing:
+   120px minimum, 10px left padding, 1px `tab.border` on the right, and a
+   28px close-action column whose icon only appears on hover or for the
+   active tab. The active tab takes `tab.activeBackground` (the editor
+   color) with a 1px `tab.activeBorderTop`, so it joins the editor below. */
 .nova-tab-strip {
   display: flex;
   align-items: stretch;
@@ -317,50 +611,62 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 6px 0 10px;
+  min-width: 120px;
+  padding: 0 0 0 10px;
   font-size: 13px;
-  color: var(--color-muted-foreground);
-  background: color-mix(in srgb, var(--color-chrome) 70%, var(--color-background));
-  border-right: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);          /* tab.inactiveForeground */
+  background: var(--color-chrome);               /* tab.inactiveBackground */
+  border-right: 1px solid var(--color-border);   /* tab.border */
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
   position: relative;
 }
-.nova-tab.active {
-  background: var(--color-background);
-  color: var(--color-foreground);
+.nova-tab:hover {
+  background: var(--color-background);           /* tab.hoverBackground */
 }
-/* Dark Modern's tab.activeBorderTop accent */
+.nova-tab.active {
+  background: var(--color-background);           /* tab.activeBackground */
+  color: var(--color-tab-active-foreground);     /* tab.activeForeground */
+}
 .nova-tab.active::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 1.5px;
-  background: var(--color-primary);
+  height: 1px;
+  background: var(--color-primary);              /* tab.activeBorderTop */
 }
 .nova-tab-label {
-  font-family: var(--font-sans);
+  flex: 1;
 }
 .nova-tab-close {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
+  width: 28px;
+  height: 100%;
+  margin-left: auto;
   color: inherit;
   opacity: 0;
   cursor: pointer;
 }
+.nova-tab-close .codicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+}
 .nova-tab:hover .nova-tab-close,
 .nova-tab.active .nova-tab-close {
-  opacity: 0.8;
+  opacity: 0.5;
 }
 .nova-tab-close:hover {
   opacity: 1;
-  background: color-mix(in srgb, var(--color-foreground) 14%, transparent);
+}
+.nova-tab-close:hover .codicon {
+  background: var(--color-toolbar-hover);
 }
 
 /* xterm v6 pins .xterm-viewport to black in its stock stylesheet and
@@ -371,20 +677,27 @@
   background-color: transparent !important;
 }
 
-/* ── Status bar (VS Code style) ─────────────────────────────────── */
+/* ── Status bar (VS Code statusbarpart.css + Dark Modern) ────────
+   22px on `statusBar.background` with a 1px `statusBar.border` top edge;
+   12px items with 5px padding and 3px margins. Debug sessions switch to
+   `statusBar.debuggingBackground` / `.debuggingForeground`. */
 .nova-status-bar {
   height: 22px;
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  background: #007acc;
-  color: #ffffff;
+  background: var(--color-chrome);
+  color: var(--color-foreground);
+  border-top: 1px solid var(--color-border);
   font-size: 12px;
+  line-height: 22px;
   user-select: none;
   flex-shrink: 0;
 }
 .nova-status-bar.debugging {
-  background: #cc6633; /* VS Code statusBar.debuggingBackground */
+  background: var(--color-status-debugging);
+  color: var(--color-status-debugging-foreground);
+  border-top-color: var(--color-status-debugging);
 }
 .nova-status-group {
   display: flex;
@@ -394,6 +707,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 8px;
+  padding: 0 5px;
+  margin: 0 3px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }

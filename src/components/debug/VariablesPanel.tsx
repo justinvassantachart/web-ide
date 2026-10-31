@@ -47,7 +47,7 @@ export function VariablesPanel() {
         null
 
     return (
-        <aside className="flex flex-col h-full min-h-0 bg-background text-foreground">
+        <aside className="flex flex-col h-full min-h-0 bg-[var(--color-chrome)] text-foreground">
             {frames.length > 0 && (
                 <>
                     <div className="nova-panel-header">
@@ -93,7 +93,7 @@ export function VariablesPanel() {
 
 function EmptyState({ children }: { children: React.ReactNode }) {
     return (
-        <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-background">
+        <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-[var(--color-chrome)]">
             {children}
         </div>
     )

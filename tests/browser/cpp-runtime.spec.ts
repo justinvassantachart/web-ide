@@ -37,6 +37,10 @@ test('runs and debugs C++ with the production runtime', async ({ page }) => {
 
   await debugCommand.click()
   await expect(statusBar).toContainText('Paused at main.cpp:9')
+  await expect(runCommand).toBeVisible()
+  await expect(runCommand).toBeDisabled()
+  await expect(debugCommand).toBeDisabled()
+  await expect(page.locator('[data-command-id="workbench.stop"]')).toBeEnabled()
   await expect(page.getByRole('toolbar', { name: 'Debug controls' })).toBeVisible()
 
   // debugger-sh 0.3.15 cannot remove native breakpoints from a live C++

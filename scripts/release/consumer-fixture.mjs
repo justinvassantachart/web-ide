@@ -68,7 +68,7 @@ const EXPECTED_MANIFEST = {
 
 function expectedCandidateNode(forkInput) {
   return {
-    version: '0.9.0',
+    version: '0.10.0',
     resolved: CANDIDATE_REFERENCE,
     integrity: CANDIDATE_INTEGRITY_PLACEHOLDER,
     license: 'MIT',

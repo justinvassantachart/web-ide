@@ -340,10 +340,12 @@
     --vsx-sideBarSectionHeader-foreground: #1f1f1f;
     --vsx-sideBarSectionHeader-border: #e5e5e5;
 
-    --vsx-list-hoverBackground: #e8e8e8;
+    /* Light Modern overrides the list defaults: a grey active selection
+       with black text instead of the classic blue. */
+    --vsx-list-hoverBackground: #f2f2f2;
     --vsx-list-hoverForeground: #1f1f1f;
-    --vsx-list-activeSelectionBackground: #0060c0;
-    --vsx-list-activeSelectionForeground: #ffffff;
+    --vsx-list-activeSelectionBackground: #e8e8e8;
+    --vsx-list-activeSelectionForeground: #000000;
     --vsx-list-inactiveSelectionBackground: #e4e6f1;
     --vsx-list-inactiveSelectionForeground: #1f1f1f;
     --vsx-list-focusOutline: #005fb8;

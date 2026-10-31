@@ -160,7 +160,8 @@ describe('default C++ Web IDE composition', () => {
     } satisfies IDEWorkbenchSnapshot
 
     expect(debugCommand?.when?.(snapshot)).toBe(false)
-    expect(manager.commands.get('workbench.run')?.when?.(snapshot)).toBe(true)
+    // Run has no visibility predicate: it is always offered and only disabled.
+    expect(manager.commands.get('workbench.run')?.when?.(snapshot) ?? true).toBe(true)
     expect(manager.panels.get('variables')?.when?.(snapshot)).toBe(false)
     expect(manager.panels.get('graph')?.when?.(snapshot)).toBe(false)
   })

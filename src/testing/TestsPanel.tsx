@@ -47,14 +47,14 @@ export function TestsPanel({ source }: Pick<IDEPanelServices, 'source'>) {
     }
     try { if (error) source.replaceDecorations([{ path, line, ...(column ? { column } : {}), kind: 'error' }]); source.reveal({ path, line, ...(column ? { column } : {}) }) } catch { /* Invalid/stale locations are inert. */ }
   }
-  return <aside aria-label="Tests" className="flex flex-col h-full min-h-0 bg-background text-foreground">
-    <div className="nova-panel-header flex-wrap gap-1">
+  return <aside aria-label="Tests" className="flex flex-col h-full min-h-0 bg-[var(--color-chrome)] text-foreground">
+    <div className="nova-panel-header flex-wrap gap-1 py-0.5">
       <span className="nova-panel-label mr-auto">Tests</span>
-      <Button size="sm" variant="ghost" disabled={!controller || busy} onClick={() => void controller?.discover()}>Refresh</Button>
-      <Button size="sm" variant="ghost" disabled={!controller || busy} onClick={() => run('run', true)}>Run All</Button>
-      <Button size="sm" variant="ghost" disabled={!controller || busy || !selected.length} onClick={() => run('run')}>Run Selected</Button>
-      <Button size="sm" variant="ghost" disabled={!controller || busy || !selected.length} onClick={() => run('debug')}>Debug Selected</Button>
-      <Button size="sm" variant="ghost" disabled={!active} onClick={() => void controller?.stop()}>Stop</Button>
+      <Button size="xs" variant="ghost" disabled={!controller || busy} onClick={() => void controller?.discover()}>Refresh</Button>
+      <Button size="xs" variant="ghost" disabled={!controller || busy} onClick={() => run('run', true)}>Run All</Button>
+      <Button size="xs" variant="ghost" disabled={!controller || busy || !selected.length} onClick={() => run('run')}>Run Selected</Button>
+      <Button size="xs" variant="ghost" disabled={!controller || busy || !selected.length} onClick={() => run('debug')}>Debug Selected</Button>
+      <Button size="xs" variant="ghost" disabled={!active} onClick={() => void controller?.stop()}>Stop</Button>
     </div>
     <div role="status" className="px-3 py-2 text-xs font-mono space-y-1">
       {snapshot.stale && <div className="text-amber-500">Stale results — source changed after this run started. Locations refer to the executed source.</div>}

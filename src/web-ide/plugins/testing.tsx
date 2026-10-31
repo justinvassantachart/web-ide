@@ -15,10 +15,14 @@ export const testingPlugin: IDEPlugin = {
         surface: 'toolbar',
         group: 'run',
         order: 30,
-        when: ({ runState, testingAvailable }) =>
-          testingAvailable && runState === 'idle',
-        enabled: ({ runtimeReady, isCompiling, testingAvailable }) =>
-          testingAvailable && runtimeReady && !isCompiling,
+        when: ({ testingAvailable }) => testingAvailable,
+        enabled: ({ runState, runtimeReady, isCompiling, testingAvailable }) =>
+          testingAvailable && runState === 'idle' && runtimeReady && !isCompiling,
+        disabledReason: ({ runState, runtimeReady, isCompiling }) =>
+          !runtimeReady ? 'Compiler is still downloading…'
+            : isCompiling ? 'Preparing the current run…'
+              : runState !== 'idle' ? 'A program is already running. Stop it first.'
+                : undefined,
         execute: ({ execution }) => execution.start('test'),
       },
     ],

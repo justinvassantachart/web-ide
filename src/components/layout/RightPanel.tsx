@@ -67,43 +67,37 @@ export function RightPanel() {
     }
 
     return (
-        <div className="flex flex-col h-full min-w-0 bg-background" data-web-ide-region="panel-content">
-            <div
-                className="flex min-w-0 shrink-0 overflow-x-auto overflow-y-hidden border-b border-border bg-[var(--color-chrome)] h-9 px-1 items-stretch"
-                role="tablist"
-                aria-label="Workbench panels"
-            >
-                {panels.map((panel, panelIndex) => {
-                    const isSelected = selected?.id === panel.id
-                    const tabId = `${controller.domIdPrefix}-tab-${panelIndex}`
-                    const panelId = `${controller.domIdPrefix}-tabpanel-${panelIndex}`
-                    return (
-                    <button
-                        key={panel.id}
-                        type="button"
-                        id={tabId}
-                        role="tab"
-                        aria-selected={isSelected}
-                        aria-controls={panelId}
-                        tabIndex={isSelected ? 0 : -1}
-                        onClick={() => setActiveTab(panel.id)}
-                        onKeyDown={(event) => selectFromKeyboard(event, panelIndex)}
-                        className={`relative shrink-0 px-4 text-[11px] font-medium uppercase tracking-wider transition-colors ${
-                            isSelected
-                                ? 'text-foreground'
-                                : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                    >
-                        {panel.title}
-                        {isSelected && (
-                            <span
-                                aria-hidden="true"
-                                className="absolute left-2 right-2 -bottom-px h-[2px] bg-primary rounded-full"
-                            />
-                        )}
-                    </button>
-                    )
-                })}
+        <div className="flex flex-col h-full min-w-0 bg-[var(--color-chrome)]" data-web-ide-region="panel-content">
+            {/* VS Code's panel title bar: 35px, 11px uppercase tabs with a 1px
+                `panelTitle.activeBorder` underline (index.css `.web-ide-panel-*`). */}
+            <div className="web-ide-panel-title">
+                <div
+                    className="web-ide-panel-tabs"
+                    role="tablist"
+                    aria-label="Workbench panels"
+                >
+                    {panels.map((panel, panelIndex) => {
+                        const isSelected = selected?.id === panel.id
+                        const tabId = `${controller.domIdPrefix}-tab-${panelIndex}`
+                        const panelId = `${controller.domIdPrefix}-tabpanel-${panelIndex}`
+                        return (
+                            <button
+                                key={panel.id}
+                                type="button"
+                                id={tabId}
+                                role="tab"
+                                aria-selected={isSelected}
+                                aria-controls={panelId}
+                                tabIndex={isSelected ? 0 : -1}
+                                onClick={() => setActiveTab(panel.id)}
+                                onKeyDown={(event) => selectFromKeyboard(event, panelIndex)}
+                                className="web-ide-panel-tab"
+                            >
+                                {panel.title}
+                            </button>
+                        )
+                    })}
+                </div>
             </div>
 
             <div

@@ -6,6 +6,7 @@ import { ExecutedSourceDialog, type ExecutedSource } from '@/testing/ExecutedSou
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { EditorTabs } from './EditorTabs'
+import { defineMonacoThemes, monacoThemeName } from './monaco-themes'
 import { WorkspaceModelViews } from './workspace-model-view'
 import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
@@ -26,6 +27,18 @@ import {
 // the user flips between files we leave each model's gutter/line state intact
 // rather than re-running every effect against a stale, file-A-shaped set.
 type DecoIds = { bp: string[]; step: string[]; source: string[] }
+
+// Glyph-margin classes mirror VS Code's debug contribution: the same codicons
+// (debug-breakpoint / debug-hint / debug-stackframe) centered by Monaco in a
+// lineHeight-square cell, so the gutter looks right at any line height. The
+// trailing legacy names are stable hooks for tests and host styling.
+const BREAKPOINT_GLYPH_CLASS = 'codicon codicon-debug-breakpoint breakpoint-dot'
+const BREAKPOINT_HINT_GLYPH_CLASS = 'codicon codicon-debug-hint breakpoint-ghost'
+const STACK_FRAME_GLYPH_CLASS = 'codicon codicon-debug-stackframe debug-paused-glyph'
+// VS Code gives breakpoint and stack-frame glyphs z-index 9999. Monaco merges
+// same-z-index glyphs on a line (arrow + dot when paused on a breakpoint) and
+// drops lower ones, so the hover hint never renders over a set breakpoint.
+const DEBUG_GLYPH_Z_INDEX = 9999
 
 export function Editor() {
     const { activeFile, activeFileContent, setActiveFile } = useWorkbenchEditorStore()
@@ -219,14 +232,23 @@ export function Editor() {
         editorInstance.onDidFocusEditorWidget(armLanguageTooling)
         editorInstance.onKeyDown(armLanguageTooling)
 
+        const MouseTargetType = monacoInstance.editor.MouseTargetType
+        // The loader's Monaco enum and the `monaco-editor` event typings come
+        // from two declaration files, so a plain comparison cannot narrow.
+        const isGutterTarget = (
+            target: editor.IMouseTarget,
+            ...types: editor.MouseTargetType[]
+        ): target is editor.IMouseTargetMargin => types.includes(target.type)
+
         // Breakpoints toggle on the glyph margin ONLY — in VS Code, clicking
         // a line number selects the line, and mixing the two makes mis-clicks
-        // set surprise breakpoints.
+        // set surprise breakpoints. Like VS Code, a click in the empty margin
+        // below the last line does nothing.
         editorInstance.onMouseDown((e: editor.IEditorMouseEvent) => {
             if (!e.target || !e.target.position) return
-            const MouseTargetType = monacoInstance.editor.MouseTargetType
 
-            if (e.target.type === MouseTargetType.GUTTER_GLYPH_MARGIN) {
+            if (isGutterTarget(e.target, MouseTargetType.GUTTER_GLYPH_MARGIN)
+                && !e.target.detail.isAfterLines) {
                 if (!engine.capabilities.breakpoints) return
                 const line = e.target.position.lineNumber
                 const file = instance.editorStore.getState().activeFile
@@ -238,29 +260,41 @@ export function Editor() {
             }
         })
 
+        // Breakpoint hint, mirroring VS Code's breakpointEditorContribution:
+        // the faded dot appears while hovering the glyph margin *or* the line
+        // numbers (clicking still only toggles on the glyph margin), never
+        // below the last line, and never on a line whose glyph margin already
+        // shows a non-debug decoration. On a line that has a breakpoint the
+        // hint is still added but Monaco renders only the higher z-index
+        // breakpoint glyph, so the cursor stays an arrow there, as in VS Code.
         editorInstance.onMouseMove((e: editor.IEditorMouseEvent) => {
-            if (!e.target || !e.target.position) return
             const model = editorInstance.getModel()
             if (!model) return
-            const MouseTargetType = monacoInstance.editor.MouseTargetType
-            const isGutter = e.target.type === MouseTargetType.GUTTER_GLYPH_MARGIN
+            const target = e.target
+            let hintLine = -1
 
-            if (isGutter) {
-                if (!engine.capabilities.breakpoints) return
-                const line = e.target.position.lineNumber
-                const file = instance.editorStore.getState().activeFile
-                const bps = instance.debugStore.getState().breakpoints
-                const fileBps = file ? bps[file] || [] : []
-
-                if (!fileBps.includes(line)) {
-                    ghostIdsRef.current = model.deltaDecorations(ghostIdsRef.current, [{
-                        range: new monacoInstance.Range(line, 1, line, 1),
-                        options: { isWholeLine: false, glyphMarginClassName: 'breakpoint-ghost' },
-                    }])
-                    return
-                }
+            if (
+                engine.capabilities.breakpoints
+                && target.position
+                && isGutterTarget(target, MouseTargetType.GUTTER_GLYPH_MARGIN, MouseTargetType.GUTTER_LINE_NUMBERS)
+                && !target.detail.isAfterLines
+            ) {
+                const line = target.position.lineNumber
+                const marginFreeFromNonDebugDecorations = model.getLineDecorations(line).every(
+                    ({ options }) => !options.glyphMarginClassName
+                        || options.glyphMarginClassName.includes('codicon-debug-'),
+                )
+                if (marginFreeFromNonDebugDecorations) hintLine = line
             }
-            ghostIdsRef.current = model.deltaDecorations(ghostIdsRef.current, [])
+
+            ghostIdsRef.current = model.deltaDecorations(ghostIdsRef.current, hintLine === -1 ? [] : [{
+                range: new monacoInstance.Range(hintLine, 1, hintLine, 1),
+                options: {
+                    isWholeLine: false,
+                    glyphMarginClassName: BREAKPOINT_HINT_GLYPH_CLASS,
+                    stickiness: monacoInstance.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                },
+            }])
         })
 
         editorInstance.onMouseLeave(() => {
@@ -300,7 +334,12 @@ export function Editor() {
             if (!model) continue
             const decos = (lines ?? []).map((line) => ({
                 range: new monaco.Range(line, 1, line, 1),
-                options: { isWholeLine: false, glyphMarginClassName: 'breakpoint-dot' },
+                options: {
+                    isWholeLine: false,
+                    glyphMarginClassName: BREAKPOINT_GLYPH_CLASS,
+                    zIndex: DEBUG_GLYPH_Z_INDEX,
+                    stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                },
             }))
             const ids = getDecoIds(path)
             ids.bp = model.deltaDecorations(ids.bp, decos)
@@ -357,7 +396,9 @@ export function Editor() {
                     options: {
                         isWholeLine: true,
                         className: 'debug-line-highlight',
-                        glyphMarginClassName: 'debug-paused-glyph',
+                        glyphMarginClassName: STACK_FRAME_GLYPH_CLASS,
+                        zIndex: DEBUG_GLYPH_Z_INDEX,
+                        stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
                     },
                 }])
                 if (currentFile === activeFile) {
@@ -543,15 +584,20 @@ export function Editor() {
                     saveViewState={false}
                     defaultValue={activeFileContent}
                     language={lang}
-                    theme={theme === 'light' ? 'vs' : 'vs-dark'}
+                    theme={monacoThemeName(theme)}
+                    beforeMount={defineMonacoThemes}
                     onChange={handleChange}
                     onMount={handleMount}
                     options={{
                         glyphMargin:
                             engine.capabilities.breakpoints
                             || sourcePresentation.decorations.length > 0,
-                        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                        fontSize: 14, lineHeight: 22,
+                        // Monaco's own defaults are VS Code's: the platform
+                        // monospace stack (Menlo / Consolas / Droid Sans Mono)
+                        // and a line height derived from the font size, so the
+                        // glyph margin, line numbers and gutter keep VS Code's
+                        // proportions on every platform.
+                        fontSize: 14,
                         minimap: { enabled: false },
                         scrollBeyondLastLine: false,
                         padding: { top: 8 },

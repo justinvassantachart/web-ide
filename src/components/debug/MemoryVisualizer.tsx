@@ -312,12 +312,12 @@ export function MemoryVisualizer() {
     // zoom/pan and re-fit the whole picture. Placeholders only show when
     // there is genuinely nothing to look at.
     if (debugMode === 'idle')
-        return <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-background">Click <span className="text-primary mx-1">Debug</span> to inspect memory</div>
+        return <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-[var(--color-chrome)]">Click <span className="text-primary mx-1">Debug</span> to inspect memory</div>
     if (debugMode === 'compiling' || (debugMode === 'running' && nodes.length === 0))
-        return <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-background">{debugMode === 'compiling' ? 'Compiling…' : 'Running…'}</div>
+        return <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-[var(--color-chrome)]">{debugMode === 'compiling' ? 'Compiling…' : 'Running…'}</div>
 
     return (
-        <div className="w-full h-full bg-background">
+        <div className="w-full h-full bg-[var(--color-chrome)]">
             <ReactFlow
                 nodes={nodes}
                 edges={edges}

@@ -69,7 +69,9 @@ test('debugs Python with production assets and clean browser diagnostics', async
   // worker rather than only in the fake lifecycle suite.
   await debugCommand.click()
   await expect(statusBar).toContainText('Paused at main.py:3')
-  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  // Both the floating debug toolbar and the workbench toolbar offer Stop.
+  await page.getByRole('toolbar', { name: 'Debug controls' })
+    .getByRole('button', { name: 'Stop', exact: true }).click()
   await expect(statusBar).toContainText('Ready')
   await expect(page.getByRole('toolbar', { name: 'Debug controls' })).toHaveCount(0)
 

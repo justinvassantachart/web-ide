@@ -39,7 +39,7 @@ it('preflights the captured feature commit without changing real main, branch, f
   expect(await sourceGit(['rev-parse', 'HEAD'])).toBe(sourceCommit)
   // Exercise the actual strict validator after synthetic-origin publication;
   // checking the captured commit alone missed the single-branch fetch refspec.
-  const bare = path.join(root, 'origin.git'), sourceTag = 'web-ide-v0.9.0-source'
+  const bare = path.join(root, 'origin.git'), sourceTag = 'web-ide-v0.10.0-source'
   await git(['init', '--quiet', '--bare', '--initial-branch=main', bare], { env })
   await cloned(['remote', 'set-url', 'origin', bare])
   await cloned(['tag', '-a', sourceTag, '-m', 'NON-RELEASE source fixture'])

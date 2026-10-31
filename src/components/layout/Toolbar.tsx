@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { Codicon } from '@/components/ui/codicon'
-import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useEngine } from '@/engine/engine-context'
@@ -84,9 +83,9 @@ export function Toolbar() {
     )
 
     return (
-        <div className="flex items-center h-10 px-3 gap-2 border-b border-border bg-[var(--color-chrome)]">
+        <div className="web-ide-toolbar" role="toolbar" aria-label="Workbench toolbar">
             {host?.chrome?.brand !== false && configuration.brand !== false && (
-                <span className="font-bold text-sm tracking-[0.18em] text-foreground select-none">
+                <span className="web-ide-toolbar-brand">
                     {configuration.brand ?? 'WEB·IDE'}
                 </span>
             )}
@@ -104,34 +103,28 @@ export function Toolbar() {
                 </div>
             )}
 
-            {/* Commands are contributed declaratively; execution state stays in
-                the status bar and debug stepping stays in the floating toolbar. */}
+            {/* Commands are contributed declaratively and styled only by their
+                public `tone`, so a host command such as a graphics "Run in
+                Window" gets the same chrome as the built-ins. Commands that are
+                not applicable right now stay in place, disabled, instead of
+                disappearing; the contributed Stop takes the danger tone. */}
             {toolbarCommands.length > 0 && (
-                <div className="flex gap-1.5">
+                <div className="web-ide-toolbar-commands">
                     {toolbarCommands.map((command) => {
                         const enabled = command.enabled?.(workbenchSnapshot) ?? true
                         const reason = enabled ? undefined : command.disabledReason?.(workbenchSnapshot)
-                        const variant = command.tone === 'danger' ? 'destructive' : 'outline'
-                        const className = command.tone === 'success'
-                            ? 'bg-[oklch(0.65_0.18_145)] hover:bg-[oklch(0.7_0.18_145)] text-black gap-1 font-semibold'
-                            : 'gap-1'
-                        const iconClass = command.id === 'workbench.debug'
-                            ? 'text-primary'
-                            : command.id === 'workbench.test'
-                                ? 'text-emerald-500'
-                                : undefined
                         const button = (
-                            <Button
+                            <button
+                                type="button"
                                 data-command-id={command.id}
-                                size="sm"
-                                variant={variant}
+                                data-tone={command.tone ?? 'default'}
+                                className="web-ide-toolbar-button"
                                 onClick={() => void command.execute(commandContext)}
                                 disabled={!enabled}
-                                className={className}
                             >
-                                {command.icon && <Codicon name={command.icon} size={14} className={iconClass} />}
+                                {command.icon && <Codicon name={command.icon} />}
                                 {command.title}
-                            </Button>
+                            </button>
                         )
                         if (!reason) return <span key={command.id}>{button}</span>
                         return (
