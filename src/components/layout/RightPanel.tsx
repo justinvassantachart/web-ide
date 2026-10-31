@@ -60,10 +60,19 @@ export function RightPanel() {
         const nextPanel = panels[nextIndex]
         if (!nextPanel) return
         setActiveTab(nextPanel.id)
-        const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+        const tablist = event.currentTarget.parentElement
+        const tabs = tablist?.querySelectorAll<HTMLButtonElement>(
             '[role="tab"]',
         )
-        tabs?.[nextIndex]?.focus()
+        const nextTab = tabs?.[nextIndex]
+        if (!tablist || !nextTab) return
+        // Browser focus scrolling may leave a partially visible tab clipped.
+        // Reveal it within the tab strip without scrolling the panel contents.
+        nextTab.focus({ preventScroll: true })
+        const strip = tablist.getBoundingClientRect()
+        const tab = nextTab.getBoundingClientRect()
+        if (tab.right > strip.right) tablist.scrollLeft += tab.right - strip.right
+        else if (tab.left < strip.left) tablist.scrollLeft += tab.left - strip.left
     }
 
     return (

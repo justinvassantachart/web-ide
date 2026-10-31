@@ -38,6 +38,12 @@
     background: var(--terminal-background);
     color: var(--terminal-foreground);
 }
+.web-ide-terminal-panel .web-ide-panel-tab {
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .web-ide-terminal-panel .web-ide-panel-tab[aria-selected="true"]::after {
     background: var(--terminal-active-border);
 }
