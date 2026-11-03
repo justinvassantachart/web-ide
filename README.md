@@ -524,6 +524,14 @@ panel/Python library/world/protocol, and is supplied by the host. It does not
 provide or import a Python interpreter; the host composes it with any selected
 Python runtime provider. Web IDE does not maintain a closed plugin catalog.
 
+Python 2D graphics follow the same model. The separately maintained
+`@web-ide/python-graphics` companion (sibling `../web-ide-python-graphics`
+repository) contributes a Graphics panel and a `graphics` Python library over
+the public `registerHostDevice` byte device and execution-only resources. It
+owns its protocol, renderer, and Python helper, is verified against exact
+web-ide release tarballs, and is composed by the host alongside the built-in
+Python runtime provider.
+
 ## Local development
 
 The library's consumer runtime supports Node `^20.19.0` or `>=22.12.0`,
