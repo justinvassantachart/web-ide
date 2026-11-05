@@ -239,6 +239,45 @@ describe('built-in runtime providers', () => {
     await running
   })
 
+  it('prints grouped source and measured cache updates directly to the terminal', async () => {
+    const engine = new FakeEngine()
+    const statistics = {
+      operationId: 1,
+      latest: { operation: 'run', cache: { hits: 1, misses: 0, hit_sources: ['stale.cpp'] }, compilerModule: { hits: 0 } },
+    }
+    Object.assign(engine, { cacheStats: statistics })
+    engineCreate.mockResolvedValueOnce(engine)
+    const session = createSession(cppRuntimeProvider)
+    const output: string[] = []
+    session.events.stdout.subscribe(text => output.push(text))
+    await session.prepare({ files: { '/workspace/main.cpp': 'int main() {}', '/workspace/helpers.cpp': 'void helper() {}', '/workspace/value.hpp': '#pragma once' }, mode: 'run' })
+    expect(output.join('')).toContain('Initializing execution environment...')
+    const running = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    expect(output.join('')).toContain('[build] Building main.cpp, helpers.cpp…')
+    expect(output.join('')).not.toMatch(/value.hpp|Cache hits|stale.cpp/)
+    statistics.operationId++
+    statistics.latest = { operation: 'run', cache: { hits: 1, misses: 1, hit_sources: ['helpers.cpp'] }, compilerModule: { hits: 1 } }
+    engine.complete()
+    await running
+    expect(output.at(-1)).toContain('[build] Cache hits: helpers.cpp (1) · Cache misses: 1 · compiler loaded from cache')
+  })
+
+  it('does not print cache results from a previous engine operation', async () => {
+    const engine = new FakeEngine()
+    Object.assign(engine, { cacheStats: { operationId: 1, latest: { operation: 'run', cache: { hits: 1, hit_sources: ['stale.cpp'] } } } })
+    engineCreate.mockResolvedValueOnce(engine)
+    const session = createSession(cppRuntimeProvider)
+    const stdout = vi.fn()
+    session.events.stdout.subscribe(stdout)
+    await session.prepare({ files: { '/workspace/main.cpp': 'int main() {}' }, mode: 'run' })
+    const running = session.start({ mode: 'run' })
+    await vi.waitFor(() => expect(engine.run).toHaveBeenCalledTimes(1))
+    engine.complete()
+    await running
+    expect(stdout.mock.calls.flat().join('')).not.toContain('Cache hits')
+  })
+
   it('validates complete legacy plans and entrypoints at the shared path bound before state changes', async () => {
     const engine = new FakeEngine()
     engineCreate.mockResolvedValueOnce(engine)

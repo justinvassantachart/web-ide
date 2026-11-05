@@ -41,6 +41,12 @@ type RuntimeErrorOutcome = Extract<RuntimeOutcome, { type: 'error' }>;
 const pchRejectionPattern = /(?:fatal )?error:[^\r\n]*(?:precompiled header|PCH file|AST file)/i;
 let nextDebugInstance = 0;
 
+function buildFileList(paths: readonly string[]): string {
+    const names = paths.slice(0, 16).map(path => path.replace(/^\/workspace\//, '').replace(/^\//, '')
+        .replace(/\p{Cc}/gu, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`));
+    return names.join(', ') + (paths.length > 16 ? ` and ${paths.length - 16} more files` : '');
+}
+
 interface DapResponse {
     type?: string;
     success?: boolean;
@@ -811,7 +817,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.streamInterceptor = next.plan.streamInterceptor;
         this.onClearTerminal.emit();
         if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
-        this.emitStream('stdout', '\x1b[1;34mInitializing execution environment...\x1b[0m\r\n');
+        this.emitStream('stdout', `\x1b[1;34m${this.engine ? 'Execution environment ready' : 'Initializing execution environment...'}\x1b[0m\r\n`);
         if (!current()) return { success: false, errors: ['Execution preparation was cancelled'] };
         this.runtimePathByWorkspacePath.clear();
         for (const [path, runtimePath] of next.runtimePathByWorkspacePath) this.runtimePathByWorkspacePath.set(path, runtimePath);
@@ -1429,6 +1435,13 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 // debugger-sh attaches its DAP transport while run() starts.
                 // Start the worker before initialize so its transport and
                 // source map are ready for the first breakpoint request.
+                const cacheOperation = engine.cacheStats?.operationId;
+                const sources = (this.runtimeCppArtifacts?.sources ?? [...this.userRuntimePaths])
+                    .filter(path => /\.(?:c|cc|cpp|cxx|c\+\+)$/i.test(path));
+                this.emitStream('stdout', this.profile.engineLanguage === 'c'
+                    ? `\x1b[90m[build] Building ${buildFileList(sources) || 'C/C++ sources'}…\x1b[0m\r\n`
+                    : '\x1b[90m[build] Starting Python…\x1b[0m\r\n');
+                if (!this.isSessionCurrent(session)) return;
                 runPromise = engine.run();
                 this.currentRun = runPromise;
                 this.currentRunSettlement = settlement;
@@ -1461,6 +1474,18 @@ export class BrowserRuntimeSession implements RuntimeSession {
                     if (!this.isSessionCurrent(session)) return;
                 }
                 if (result.type === 'completed') {
+                    // Cache receipts arrive only when this engine job settles.
+                    // Group them into one line, using this job's measured results.
+                    const statistics = this.profile.engineLanguage === 'c' ? engine.cacheStats : undefined;
+                    if (statistics?.operationId !== cacheOperation && statistics?.latest?.operation === 'run') {
+                        const { cache, compilerModule } = statistics.latest;
+                        const details: string[] = [];
+                        if (cache?.hits) details.push(`Cache hits: ${buildFileList(cache.hit_sources)} (${cache.hits})`);
+                        if (cache?.misses) details.push(`Cache misses: ${cache.misses}`);
+                        if (compilerModule?.hits) details.push('compiler loaded from cache');
+                        if (details.length) this.emitStream('stdout', `\r\n\x1b[90m[build] ${details.join(' · ')}\x1b[0m\r\n`);
+                    }
+                    if (!this.isSessionCurrent(session)) return;
                     outcome = { type: 'completed', exitCode: result.exitCode };
                 } else if (result.type === 'error') {
                     outcome = {

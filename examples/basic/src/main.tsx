@@ -8,7 +8,7 @@ import {
   type WebIDEHost,
   type WorkspaceFiles,
 } from 'web-ide'
-import { cppRuntimePlugin, pythonRuntimePlugin } from 'web-ide/runtimes'
+import { cppRuntimePlugin, createCppRuntimeProvider, pythonRuntimePlugin } from 'web-ide/runtimes'
 import { cppTestingPlugin, pythonTestingPlugin, testingPlugin } from 'web-ide/testing'
 import { canvasPlugin, coreWorkbenchPlugin } from 'web-ide/plugins'
 import { ExampleApplication } from './ExampleApplication'
@@ -21,6 +21,7 @@ import 'web-ide/styles.css'
 
 const searchParams = new URLSearchParams(window.location.search)
 const useCppRuntime = searchParams.get('runtime') === 'cpp'
+const showBuildStatusFixture = useCppRuntime && searchParams.get('build-status') === 'multi-file'
 const useCppTests = useCppRuntime && ['framework', 'timeout'].includes(searchParams.get('tests') ?? '')
 const useTimeoutTest = useCppRuntime && searchParams.get('tests') === 'timeout'
 const useFailingPythonTest = searchParams.get('tests') === 'failing'
@@ -29,6 +30,20 @@ const showLifecycleProbe = searchParams.get('lifecycle') === 'probe'
 const showExecutionSourceProbe = searchParams.get('source') === 'probe'
 const showOPFSHierarchyProbe = searchParams.get('workspace-probe') === 'opfs-hierarchy'
 const layoutMode = searchParams.get('layout') as LayoutBrowserMode | null
+
+const buildStatusRuntimePlugin: IDEPlugin = {
+  id: 'web-ide.example.build-status-runtime',
+  contributes: {
+    runtimeProviders: [createCppRuntimeProvider({
+      cpp: {
+        scope: { accountId: 'basic-example', projectId: 'build-status' },
+        objectCache: true,
+        retainWorker: true,
+        cacheCompilerModule: true,
+      },
+    })],
+  },
+}
 
 const executionOnlyResourcePlugin: IDEPlugin = {
   id: 'web-ide.example.execution-resource',
@@ -64,8 +79,9 @@ const configuration: WebIDEConfiguration = useCppRuntime
       runtimeProvider: 'web-ide.runtime.cpp',
       testing: { timeoutMs: useTimeoutTest ? 200 : 60000 },
       brand: 'WEB·IDE',
+      ...(showBuildStatusFixture ? { initialLayout: { panelContentPercent: 60 } } : {}),
       plugins: [
-        cppRuntimePlugin,
+        showBuildStatusFixture ? buildStatusRuntimePlugin : cppRuntimePlugin,
         cppTestingPlugin,
         testingPlugin,
         ...(useExecutionOnlyResource ? [executionOnlyResourcePlugin] : []),
@@ -92,6 +108,13 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
   ? { '/workspace/node/child.cpp': 'initial child\n' }
   : useCppRuntime
     ? {
+      ...(showBuildStatusFixture ? {
+        '/workspace/helpers.cpp': [
+          'int doubleValue(int value) {',
+          '    return value * 2;',
+          '}',
+        ].join('\n'),
+      } : {}),
       ...(useCppTests ? { '/workspace/tests.cpp': useTimeoutTest
         ? '#include "webide_test.h"\nSTUDENT_TEST("infinite loop") { while (true) {} }'
         : [
@@ -110,10 +133,12 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
       '/workspace/main.cpp': [
         '#include <iostream>',
         '',
-        'int doubleValue(int value) {',
-        '    int result = value * 2;',
-        '    return result;',
-        '}',
+        ...(showBuildStatusFixture ? ['int doubleValue(int value);'] : [
+          'int doubleValue(int value) {',
+          '    int result = value * 2;',
+          '    return result;',
+          '}',
+        ]),
         '',
         'int main() {',
         '    int seed = 5;',
@@ -176,7 +201,8 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
 const workspaceId = showOPFSHierarchyProbe
   ? 'browser-opfs-hierarchy-v1'
   : useCppRuntime
-    ? `basic-example-cpp-v2-${searchParams.get('tests') ?? 'ordinary'}`
+    ? showBuildStatusFixture ? 'basic-example-cpp-build-status-v1'
+      : `basic-example-cpp-v2-${searchParams.get('tests') ?? 'ordinary'}`
     : showExecutionSourceProbe
       ? 'basic-example-python-execution-source-v1'
       : useFailingPythonTest
