@@ -1,5 +1,5 @@
 import type { DebugChildPage, DebugPageRequest, DebugValueRef } from '../web-ide/contracts/debug-presentation'
-import type { VariableNode } from '../web-ide/contracts/runtime'
+import type { ObservedReferencedObject, VariableNode } from '../web-ide/contracts/runtime'
 import { boundedDebugPage } from '../web-ide/core/debug-presentation'
 
 export interface DapVariable {
@@ -44,6 +44,45 @@ export function classifyDebugType(type: string): NonNullable<VariableNode['typeK
     }
   }
   return depth === 0 ? kind : 'unknown'
+}
+
+/** Derive a physical view from this pause's bounded capture, without native reads.
+ * The pinned adapter emits a pointer's target as its value, its storage as
+ * memoryReference, and a single named dereference child at the target address.
+ * An address (or an unreadable struct's @address metadata) alone is not evidence.
+ */
+export function observeReferencedObjects(roots: readonly VariableNode[]): ObservedReferencedObject[] {
+  const stackStorage = new Set<number>()
+  const markStackStorage = (value: VariableNode) => {
+    if (value.address !== undefined) stackStorage.add(value.address)
+    if (!value.isPointer && value.typeKind !== 'reference') value.members?.forEach(markStackStorage)
+  }
+  roots.forEach(markStackStorage)
+
+  const readable = (value: VariableNode): boolean => value.availability !== 'unavailable'
+    && (String(value.value).startsWith('@')
+      ? (value.members?.some(readable) ?? false)
+      : String(value.value).length > 0)
+  const observations = new Map<number, { value: VariableNode; depth: number }>()
+  const visit = (value: VariableNode, depth: number) => {
+    const target = value.pointsTo
+    const dereference = value.members?.length === 1 ? value.members[0] : undefined
+    if (value.isPointer && value.availability !== 'unavailable' && target !== undefined && target > 0
+        && !stackStorage.has(target) && dereference?.name === `*${value.name}`
+        && dereference.address === target && readable(dereference)) {
+      const previous = observations.get(target)
+      // Aliases and cycles keep independent formatter refs, but share one card.
+      // Prefer the most complete captured view, then the shallowest occurrence.
+      const members = dereference.members?.length ?? 0
+      const previousMembers = previous?.value.members?.length ?? 0
+      if (!previous || members > previousMembers || (members === previousMembers && depth < previous.depth)) {
+        observations.set(target, { value: dereference, depth })
+      }
+    }
+    value.members?.forEach(child => visit(child, depth + 1))
+  }
+  roots.forEach(value => visit(value, 0))
+  return [...observations].map(([address, { value }]) => ({ address, value }))
 }
 
 /** Private native handles and budgets are owned by exactly one pause. */
@@ -157,7 +196,7 @@ export class DebugValueCapture {
     const node: VariableNode = {
       debugRef: ref, debugOrdinal: ordinal, name: String(raw.name ?? ''), type, value,
       typeKind, isStruct: handle > 0 && typeKind !== 'pointer',
-      availability: /^<(?:error:|unavailable>|optimized out>)/i.test(value) ? 'unavailable' : 'available',
+      availability: /^<(?:error:|unavailable>|optimized out>|unknown>)/i.test(value) ? 'unavailable' : 'available',
     }
     if (this.nativeMemory) {
       node.address = address(raw.memoryReference)

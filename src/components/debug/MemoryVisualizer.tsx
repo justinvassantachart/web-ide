@@ -11,21 +11,22 @@ import { DebugPresentationToggle } from './DebugPresentationToggle'
 import { useDebugPresentationService } from '@/web-ide/react/debug-presentation-state'
 import { placeStackFrames, placeHeapNodes, rowsToHeight, type Point } from './graph-layout'
 
-function StackFrameNode({ data }: { data: { id: string; label: string; isActive: boolean; variables: MemoryValue[]; variablesMessage?: string } }) {
+function StackFrameNode({ data }: { data: { id: string; label: string; isActive: boolean; variables: MemoryValue[]; variablesMessage?: string; representedAddresses: ReadonlySet<number> } }) {
     const updateNodeInternals = useUpdateNodeInternals()
     useLayoutEffect(() => { updateNodeInternals(data.id) }, [data, updateNodeInternals])
     return (
-        <div className={`flex flex-col rounded-md border bg-card min-w-[260px] shadow-2xl overflow-visible ${data.isActive ? 'border-primary' : 'border-border'}`}>
+        <div className={`flex flex-col rounded-md border bg-card w-[260px] shadow-2xl overflow-visible ${data.isActive ? 'border-primary' : 'border-border'}`}>
             {data.isActive && <div className="absolute -top-[1px] -left-[1px] -right-[1px] h-[2px] bg-primary rounded-t-md" />}
             <div className="px-3 py-2 bg-[var(--color-chrome)] border-b border-border flex justify-between items-center rounded-t-md">
-                <span className="text-foreground font-bold text-[11px] font-mono uppercase tracking-wider">{data.label}</span>
-                {data.isActive && <span className="bg-primary text-primary-foreground text-[9px] px-1.5 rounded-sm font-bold tracking-wider">PAUSED</span>}
+                <span className="min-w-0 truncate mr-2 text-foreground font-bold text-[11px] font-mono uppercase tracking-wider" title={data.label}>{data.label}</span>
+                {data.isActive && <span className="shrink-0 bg-primary text-primary-foreground text-[9px] px-1.5 rounded-sm font-bold tracking-wider">PAUSED</span>}
             </div>
             <div className="flex flex-col w-full" role="tree" aria-label={`${data.label} values`}>
                 {data.variables.length === 0 ? (
                     <div className="p-2 text-xs text-muted-foreground italic text-center">{data.variablesMessage ?? 'No variables'}</div>
                 ) : data.variables.map((variable, index) => {
-                    return <VariableRow key={variable.debugRef ?? `${data.id}.${index}`} variable={variable} depth={0} graph />
+                    return <VariableRow key={variable.debugRef ?? `${data.id}.${index}`} variable={variable} depth={0} graph
+                        representedAddresses={data.representedAddresses} />
                 })}
                 {data.variables.length > 0 && data.variablesMessage && <div role="status" className="p-2 text-xs text-muted-foreground">{data.variablesMessage}</div>}
             </div>
@@ -35,20 +36,24 @@ function StackFrameNode({ data }: { data: { id: string; label: string; isActive:
     )
 }
 
-function HeapNode({ data }: { data: { id: string; label: string; ptr: number; members: MemoryValue[] } }) {
+function HeapNode({ data }: { data: { id: string; label: string; ptr: number; members: MemoryValue[]; observedValue?: MemoryValue; representedAddresses: ReadonlySet<number> } }) {
     const updateNodeInternals = useUpdateNodeInternals()
     useLayoutEffect(() => { updateNodeInternals(data.id) }, [data, updateNodeInternals])
     return (
-        <div className="flex flex-col rounded-md border border-primary/40 bg-card min-w-[220px] shadow-2xl overflow-visible relative">
+        <div className="flex flex-col rounded-md border border-primary/40 bg-card w-[220px] shadow-2xl overflow-visible relative">
             <div className="px-3 py-2 bg-[var(--color-chrome)] border-b border-primary/30 flex justify-between items-center rounded-t-md">
                 <span className="text-primary font-mono text-[10px] uppercase tracking-wider truncate mr-2" title={data.label}>{data.label}</span>
-                <span className="text-muted-foreground font-mono text-[10px]">0x{data.ptr.toString(16).padStart(6, '0')}</span>
+                <span className="shrink-0 text-muted-foreground font-mono text-[10px]">0x{data.ptr.toString(16).padStart(6, '0')}</span>
             </div>
             <div className="flex flex-col w-full" role="tree" aria-label={`${data.label} values`}>
-                {data.members.length === 0 ? (
+                {data.observedValue ? (
+                    <VariableRow variable={data.observedValue} depth={0} graph defaultExpanded
+                        representedAddresses={data.representedAddresses} />
+                ) : data.members.length === 0 ? (
                     <div className="p-2 text-xs text-muted-foreground italic text-center">Raw Data</div>
                 ) : data.members.map((member, index) => {
-                    return <VariableRow key={member.debugRef ?? `${data.id}.${index}`} variable={member} depth={0} graph />
+                    return <VariableRow key={member.debugRef ?? `${data.id}.${index}`} variable={member} depth={0} graph
+                        representedAddresses={data.representedAddresses} />
                 })}
             </div>
             <Handle type="target" position={Position.Left} id="target" className="!w-2 !h-2 !bg-primary !border-0 !-left-1 opacity-80" />
@@ -98,13 +103,13 @@ function SeparatorOverlay({ separatorX }: { separatorX: number }) {
             />
             <text
                 x={screenX + 16}
-                y={20}
+                y={55}
                 fill="oklch(0.6 0 0)"
                 fontSize={10}
                 fontFamily="monospace"
                 textAnchor="start"
             >
-                REPORTED MEMORY OBJECTS
+                OBSERVED REFERENCED OBJECTS
             </text>
         </svg>
     )
@@ -169,8 +174,43 @@ export function MemoryVisualizer() {
                 }
             }
         }
+        // These are observations from native dereferences, not an allocation
+        // inventory. Stack roots retain priority when a pointer aliases them.
+        const objectCards = new Map<number, {
+            id: string; label: string; ptr: number; members: MemoryValue[]; observedValue?: MemoryValue
+        }>()
+        for (const object of snapshot.observedReferencedObjects ?? []) {
+            if (addressMap.has(object.address) || objectCards.has(object.address)) continue
+            objectCards.set(object.address, {
+                id: `object-${object.address}`, label: object.value.type, ptr: object.address,
+                members: [], observedValue: object.value,
+            })
+        }
+        // Keep older providers' explicitly reported memory objects compatible.
+        for (const allocation of snapshot.heapAllocations) {
+            if (addressMap.has(allocation.ptr) || objectCards.has(allocation.ptr)) continue
+            objectCards.set(allocation.ptr, {
+                id: `heap-${allocation.ptr}`, label: allocation.typeName, ptr: allocation.ptr,
+                members: allocation.members,
+            })
+        }
+        for (const object of objectCards.values()) {
+            addressMap.set(object.ptr, { nodeId: object.id, handleId: 'target' })
+        }
+        const representedAddresses = new Set(addressMap.keys())
+        // A hidden stack field already has a home. Suppress its duplicate
+        // dereference, but only add an edge once its own row becomes visible.
+        const stackValues = snapshot.frames.flatMap(frame => frame.variables)
+        const seenStackValues = new Set<MemoryValue>()
+        while (stackValues.length && seenStackValues.size < 1000) {
+            const value = stackValues.pop()!
+            if (seenStackValues.has(value)) continue
+            seenStackValues.add(value)
+            if (value.address !== undefined && value.address > 0) representedAddresses.add(value.address)
+            if (!value.isPointer && value.typeKind !== 'reference') stackValues.push(...(value.members ?? []))
+        }
         const visible = new Map<string, MemoryValue[]>()
-        const collect = (values: MemoryValue[], id: string, depth = 0, seen = new Set<string>()) => {
+        const collect = (values: MemoryValue[], id: string, defaultExpanded = false, depth = 0, seen = new Set<string>()) => {
             const rows = visible.get(id) ?? []
             visible.set(id, rows)
             for (const value of values) {
@@ -182,23 +222,24 @@ export function MemoryVisualizer() {
                     addressMap.set(value.address, { nodeId: id, handleId: `${ref}-target` })
                 }
                 const stateKey = `${ref}:${presentationMode}`
-                if (!expandedValues[stateKey] || depth >= 8) continue
+                const separateTarget = value.isPointer && value.pointsTo !== undefined
+                    && representedAddresses.has(value.pointsTo)
+                if (!(expandedValues[stateKey] ?? defaultExpanded) || separateTarget || depth >= 8) continue
                 const pages = visiblePages[stateKey] ?? 1
                 for (let page = 0; page < pages; page++) {
                     const result = service.getPresentation(ref, { start: page * 100, count: 100 }, presentationMode)
                     for (const child of result?.children ?? []) {
                         for (const childRef of [child.keyValue, child.value]) {
                             const childValue = childRef && service.readValue(childRef)
-                            if (childValue) collect([childValue], id, depth + 1, seen)
+                            if (childValue) collect([childValue], id, false, depth + 1, seen)
                         }
                     }
                 }
             }
         }
         for (const frame of snapshot.frames) collect(frame.variables, frame.id)
-        for (const alloc of snapshot.heapAllocations) {
-            addressMap.set(alloc.ptr, { nodeId: `heap-${alloc.ptr}`, handleId: 'target' })
-            collect(alloc.members, `heap-${alloc.ptr}`)
+        for (const object of objectCards.values()) {
+            collect(object.observedValue ? [object.observedValue] : object.members, object.id, !!object.observedValue)
         }
         const extractEdges = (id: string, active: boolean) => {
             for (const value of visible.get(id) ?? []) {
@@ -220,39 +261,63 @@ export function MemoryVisualizer() {
                 id: frameData.id, type: 'stackFrame', position: { x: 0, y: 0 },
                 draggable: false,
                 data: { id: frameData.id, label: `${frameData.funcName}()`, isActive: frameData.isActive,
-                    variables: frameData.variables, variablesMessage: frameData.variablesMessage },
+                    variables: frameData.variables, variablesMessage: frameData.variablesMessage, representedAddresses },
             })
             extractEdges(frameData.id, frameData.isActive)
         })
 
-        snapshot.heapAllocations.forEach((alloc) => {
-            const nodeId = `heap-${alloc.ptr}`
+        for (const object of objectCards.values()) {
             rawNodes.push({
-                id: nodeId, type: 'heapNode', position: { x: 0, y: 0 },
+                id: object.id, type: 'heapNode', position: { x: 0, y: 0 },
                 draggable: true,
-                data: { id: nodeId, label: alloc.typeName, ptr: alloc.ptr, members: alloc.members },
+                data: { ...object, representedAddresses },
             })
-            extractEdges(nodeId, false)
-        })
+            extractEdges(object.id, false)
+        }
+
+        // A formatter can hide raw implementation pointers. Keep captured
+        // observations available, but only show cards reached by visible rows.
+        // Explicit legacy allocation inventories remain independently visible.
+        const reachable = new Set(snapshot.frames.map(frame => frame.id))
+        for (const allocation of snapshot.heapAllocations) {
+            const card = objectCards.get(allocation.ptr)
+            if (card) reachable.add(card.id)
+        }
+        const targetsBySource = new Map<string, string[]>()
+        for (const edge of rawEdges) {
+            const targets = targetsBySource.get(edge.source) ?? []
+            targets.push(edge.target)
+            targetsBySource.set(edge.source, targets)
+        }
+        const pending = [...reachable]
+        for (let index = 0; index < pending.length; index++) {
+            for (const target of targetsBySource.get(pending[index]) ?? []) {
+                if (reachable.has(target)) continue
+                reachable.add(target)
+                pending.push(target)
+            }
+        }
+        const graphNodes = rawNodes.filter(node => reachable.has(node.id))
+        const graphEdges = rawEdges.filter(edge => reachable.has(edge.source) && reachable.has(edge.target))
 
         // Incremental placement: stack frames re-stack deterministically in
         // their fixed column (their DAP ids change every pause anyway); heap
         // nodes flow through the persistent position map so existing ones
         // never move and new ones are placed collision-free around them.
-        const stackSpecs = rawNodes
+        const stackSpecs = graphNodes
             .filter(n => n.type === 'stackFrame')
             .map(n => ({ id: n.id, height: rowsToHeight(visible.get(n.id)?.length ?? 0) }))
         const stackPositions = placeStackFrames(stackSpecs)
 
-        const heapSpecs = rawNodes
+        const heapSpecs = graphNodes
             .filter(n => n.type === 'heapNode')
             .map(n => ({ id: n.id, height: rowsToHeight(visible.get(n.id)?.length ?? 0) }))
         const heapIds = new Set(heapSpecs.map(s => s.id))
-        const heapEdges = rawEdges
+        const heapEdges = graphEdges
             .filter(e => heapIds.has(e.source) && heapIds.has(e.target))
             .map(e => ({ source: e.source, target: e.target }))
         // Rank-0 roots: heap nodes pointed to straight from stack variables.
-        const roots = rawEdges
+        const roots = graphEdges
             .filter(e => !heapIds.has(e.source) && heapIds.has(e.target))
             .map(e => e.target)
         const heapPositions = placeHeapNodes({
@@ -268,13 +333,13 @@ export function MemoryVisualizer() {
         for (const [id, pos] of heapPositions) merged.set(id, pos)
         setPositions(merged)
 
-        setNodes(rawNodes.map(n => ({
+        setNodes(graphNodes.map(n => ({
             ...n,
             position: (n.type === 'stackFrame' ? stackPositions.get(n.id) : heapPositions.get(n.id))
                 ?? { x: 0, y: 0 },
         })))
-        setEdges(rawEdges)
-        setSeparatorX(findSeparatorX(rawNodes))
+        setEdges(graphEdges)
+        setSeparatorX(findSeparatorX(graphNodes))
     }
 
     // Only allow position changes for heap nodes - block stack node drags.
@@ -333,8 +398,9 @@ export function MemoryVisualizer() {
                 <Background gap={16} size={0.5} color="oklch(0.25 0 0)" />
                 <Panel position="top-left" className="!m-0 !p-0">
                     <div className="flex gap-6 px-4 py-2">
-                        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-                            Frames · indented rows are logical members · arrows show addresses
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground"
+                            title="Frames and observed referenced objects. Indented rows are logical members; arrows show pointer targets.">
+                            Pointer graph
                         </span>
                     </div>
                 </Panel>

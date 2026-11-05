@@ -73,6 +73,9 @@ export class DebugPresentationService implements Disposable {
     for (const allocation of snapshot?.memorySnapshot?.heapAllocations ?? []) {
       for (const value of allocation.members) this.capture(value, this.values)
     }
+    for (const object of snapshot?.memorySnapshot?.observedReferencedObjects ?? []) {
+      this.capture(object.value, this.values)
+    }
     this.invalidate()
   }
 

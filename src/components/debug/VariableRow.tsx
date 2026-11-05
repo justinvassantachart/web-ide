@@ -12,22 +12,27 @@ export type VariableRowProps = {
     label?: string
     detail?: string
     graph?: boolean
+    /** Graph cards own these targets; keep their dereferences out of other cards. */
+    representedAddresses?: ReadonlySet<number>
+    defaultExpanded?: boolean
     ancestors?: readonly DebugValueRef[]
 }
 
 /** Both views render the same logical rows and keep expansion at instance scope. */
-export function VariableRow({ variable, depth, label, detail, graph = false, ancestors = [] }: VariableRowProps) {
+export function VariableRow({ variable, depth, label, detail, graph = false, representedAddresses, defaultExpanded = false, ancestors = [] }: VariableRowProps) {
     const service = useDebugPresentationService()
     const ref = service.getRef(variable)
     const captured = service.readValue(ref) ?? variable
     const mode = useWorkbenchDebugStore(state => state.presentationMode)
     const stateKey = `${ref}:${mode}`
-    const expanded = useWorkbenchDebugStore(state => state.expandedValues[stateKey] ?? false)
+    const expanded = useWorkbenchDebugStore(state => state.expandedValues[stateKey] ?? defaultExpanded)
     const pages = useWorkbenchDebugStore(state => state.visiblePages[stateKey] ?? 1)
     const setExpanded = useWorkbenchDebugStore(state => state.setValueExpanded)
     const summary = useDebugPresentation(ref, { start: 0, count: 0 })
     const cycle = ancestors.includes(ref)
-    const expandable = !cycle && depth < 8 && (summary?.total !== undefined
+    const separateTarget = graph && variable.isPointer && variable.pointsTo !== undefined
+        && representedAddresses?.has(variable.pointsTo)
+    const expandable = !cycle && !separateTarget && depth < 8 && (summary?.total !== undefined
         ? summary.total > 0
         : (captured.members?.length ?? 0) > 0 || captured.isStruct === true || captured.childrenInfo?.complete === false)
     const name = label ?? variable.name
@@ -52,12 +57,14 @@ export function VariableRow({ variable, depth, label, detail, graph = false, anc
                 }}
                 className="relative group flex w-full items-center gap-1.5 px-2 py-1 rounded-sm font-mono text-[11.5px] text-left hover:bg-[var(--color-row-hover)] focus-visible:outline focus-visible:outline-primary"
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
-                title={variable.address !== undefined ? `Address 0x${variable.address.toString(16)}` : undefined}>
+                title={variable.address !== undefined ? `Address 0x${variable.address.toString(16)}` : undefined}
+                aria-description={variable.isPointer && variable.address !== undefined
+                    ? 'The address is the pointer’s storage; its displayed value is the target address.' : undefined}>
                 <Codicon name="chevron-right" size={12} className="shrink-0 text-muted-foreground"
                     style={{ visibility: expandable ? 'visible' : 'hidden', transform: expanded ? 'rotate(90deg)' : undefined }} />
-                <span className="shrink-0 max-w-[40%] text-foreground truncate" title={name}>{name}</span>
+                <span className={`${graph ? 'min-w-0' : 'shrink-0'} max-w-[40%] text-foreground truncate`} title={name}>{name}</span>
                 <span className="min-w-0 max-w-[25%] flex-1 text-[10px] text-[var(--color-accent-type)] truncate opacity-80" title={variable.type}>{variable.type}</span>
-                <span className={`ml-auto min-w-0 max-w-[55%] shrink-0 text-right truncate ${valueClass}`} title={value}>{value.slice(0, 512)}</span>
+                <span className={`ml-auto min-w-0 max-w-[55%] ${graph ? '' : 'shrink-0'} text-right truncate ${valueClass}`} title={value}>{value.slice(0, 512)}</span>
                 {graph && variable.address !== undefined && variable.address > 0 && <Handle type="target" position={Position.Left}
                     id={`${ref}-target`} className="!w-1 !h-1 !bg-transparent !border-0 !left-0 !opacity-0" />}
                 {graph && (variable.isPointer || variable.typeKind === 'reference') && variable.pointsTo !== undefined && variable.pointsTo !== 0 && <Handle type="source"
@@ -70,15 +77,17 @@ export function VariableRow({ variable, depth, label, detail, graph = false, anc
             {expanded && expandable && (
                 <div role="group">
                     {Array.from({ length: pages }, (_, index) => <ValuePage key={index} valueRef={ref} pageIndex={index}
-                        depth={depth + 1} graph={graph} ancestors={nextAncestors} stateKey={stateKey} last={index === pages - 1} />)}
+                        depth={depth + 1} graph={graph} representedAddresses={representedAddresses}
+                        ancestors={nextAncestors} stateKey={stateKey} last={index === pages - 1} />)}
                 </div>
             )}
         </div>
     )
 }
 
-function ValuePage({ valueRef, pageIndex, depth, graph, ancestors, stateKey, last }: {
+function ValuePage({ valueRef, pageIndex, depth, graph, representedAddresses, ancestors, stateKey, last }: {
     valueRef: DebugValueRef; pageIndex: number; depth: number; graph: boolean
+    representedAddresses?: ReadonlySet<number>
     ancestors: readonly DebugValueRef[]; stateKey: string; last: boolean
 }) {
     const service = useDebugPresentationService()
@@ -98,9 +107,10 @@ function ValuePage({ valueRef, pageIndex, depth, graph, ancestors, stateKey, las
                 const value = service.readValue(child.value)
                 const key = child.keyValue && service.readValue(child.keyValue)
                 return <div key={child.key}>
-                    {key && <VariableRow variable={key} label={`${child.label} key`} depth={depth} graph={graph} ancestors={ancestors} />}
+                    {key && <VariableRow variable={key} label={`${child.label} key`} depth={depth} graph={graph}
+                        representedAddresses={representedAddresses} ancestors={ancestors} />}
                     {value ? <VariableRow variable={value} label={key ? `${child.label} value` : child.label} detail={child.detail}
-                        depth={depth} graph={graph} ancestors={ancestors} />
+                        depth={depth} graph={graph} representedAddresses={representedAddresses} ancestors={ancestors} />
                         : <div className="px-6 text-[11px] text-muted-foreground">{child.label}: unavailable</div>}
                 </div>
             })}
