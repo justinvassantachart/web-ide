@@ -1,17 +1,19 @@
 # Publishing readiness
 
-Web IDE's source repository is public and its `0.10.0` UI candidate is
+Web IDE's source repository is public and its `0.10.1` patch candidate is
 licensed under MIT. The npm manifest remains `private: true`; distribution uses
 an integrity-checked tarball on the public `justinvassantachart/web-ide` release
-channel. This candidate updates workbench themes, toolbar and panel layout,
-breakpoint presentation, and terminal chrome. It keeps the published 0.9.0
-engine `debugger-sh@0.3.15-webide.0.9.0.1` and existing runtime contracts.
+channel. This candidate restores the bounded C++ graph of observed referenced
+objects alongside logical formatter presentations and adds terminal build
+progress. It preserves compiler warming, worker lifecycle behavior, and the
+published engine `debugger-sh@0.3.15-webide.0.9.0.1`. Pointer observations do not
+establish allocation size, ownership, or liveness.
 
-The release metadata and consumer lock bind the new UI package separately from
+The release metadata and consumer lock bind the new patch package separately from
 the unchanged engine. The four release gates, deterministic builds and final
 asset verification below are still required. CS106B and THS must separately
 validate their exact host/companion dependency graphs before deployment; this
-UI release does not reduce the embedded engine asset or establish Safari support.
+patch does not reduce the embedded engine asset or establish Safari support.
 
 The candidate retains the 0.7.3 Python host byte device and the 0.7.2 compiler
 diagnostic correction. The 0.7.0 release introduced
@@ -70,7 +72,8 @@ The repository now contains fail-closed release tooling; this source state is
 not itself a released artifact. A final candidate can be generated only from a
 clean `main` whose HEAD equals both local and live `origin/main`, using Node
 `24.11.1`/npm `11.6.2`, with a pushed annotated
-`web-ide-v0.10.0-source` tag object peeled to that exact commit. The immutable
+`web-ide-v0.10.1-source` tag object peeled to that exact commit. The published
+`web-ide-v0.10.0-source` identity remains unchanged. The immutable
 `web-ide-v0.8.1-source` identity remains unchanged. The immutable
 `web-ide-v0.7.3-source` and `web-ide-v0.7.2-source` identities remain unchanged. The initial
 `web-ide-v0.7.1-source` checkpoint is retained unchanged and did not produce a
@@ -198,7 +201,7 @@ WEB_IDE_RELEASE_OUTPUT_DIR=/absolute/empty/external/preflight \
 ```
 
 For the real candidate, push the final source commit to `origin/main`, create
-and push the annotated `web-ide-v0.10.0-source` tag at that commit, and use an
+and push the annotated `web-ide-v0.10.1-source` tag at that commit, and use an
 absent or empty plain directory outside the repository. Generation is staged
 beside that path.
 Publication exclusively reserves the target name, verifies its inode while
