@@ -206,6 +206,44 @@ gated by the same immutable workbench snapshot used by commands. The packaged
 Variables and Graph panels therefore disappear for a run-only runtime rather
 than presenting impossible debugging affordances.
 
+### Captured values and the native object graph
+
+Variables and Graph share the same pause-scoped raw values and Pretty/Raw
+formatter service. Graph additionally uses `MemorySnapshot.observedReferencedObjects`
+to show separately captured pointer targets. These are **observed referenced
+objects**, not proven heap allocations. The native debugger reports a pointer's
+storage in `memoryReference`, its target in the displayed pointer value, and a
+dereference child at that target. A card requires that captured dereference and
+readable value data; a numeric address or struct address metadata alone does not
+create one. `heapAllocations` remains available for providers that actually report
+allocations; the built-in native DAP runtime leaves it empty.
+
+Cards are deduplicated by observed address within a pause, preferring the most
+complete captured view. Distinct raw value identities remain intact for logical
+formatters. Targets already captured as stack values stay on the stack. Graph
+pointer rows connect to represented targets instead of repeating their
+dereference trees; ordinary Variables expansion still exposes those trees.
+Null pointers have no target card or edge. Aliases share a target and cycles
+connect existing cards without recursively creating objects.
+Only objects reachable from visible pointer/reference rows are shown, so Pretty
+formatters do not expose disconnected implementation details. Expanding raw
+fields can reveal more observed cards. Explicit legacy allocation inventories
+retain their existing visibility.
+
+This is a bounded view of debugger-exposed values, not a memory allocation
+inventory. A readable target does not establish allocation size, ownership,
+liveness, or whether it is heap, static, or another kind of storage. Freed but
+still readable memory cannot be distinguished from live memory. Hidden native
+container internals, unreported targets, empty metadata-only objects, and
+unreadable/optimized/unknown values may have no separate card. Different typed views at
+the same address share a card; no extent or subobject ownership is inferred.
+Arrows to stack fields require those fields to be visible. The existing capture
+limits remain 100 children per page, 1,000 values, 250 requests, and depth eight.
+Object discovery uses only those captured values and makes no extra native
+requests. Initial pauses and lazy updates use the same derivation; session/pause
+guards and presentation epochs reject stale work after resume, stop, rerun,
+or session replacement, and history never reads the current debugger.
+
 `WebIDEConfiguration.initialLayout` is the narrow host-owned initial
 presentation boundary. Its exact contributed activity and panel IDs are
 validated before a

@@ -41,12 +41,13 @@ export interface VariableNode {
   value: string | number
   /** Numeric representation supplied by native runtimes, when meaningful. */
   rawValue?: number
-  /** Address in the runtime's native address space, when available. */
+  /** Address of this value's storage, when available; not a pointer's target. */
   address?: number
   /** Native storage size in bytes, when available. */
   size?: number
   /** Whether this value represents a native pointer. */
   isPointer?: boolean
+  /** Pointer/referent target address, distinct from the value's own storage. */
   pointsTo?: number
   pointeeType?: string
   isStruct?: boolean
@@ -59,6 +60,13 @@ export interface HeapAllocation {
   typeName: string
   label: string
   members: VariableNode[]
+}
+
+/** A captured native dereference, not evidence of an allocation or its lifetime. */
+export interface ObservedReferencedObject {
+  address: number
+  /** The captured value retains its pause-scoped identity and formatter data. */
+  value: VariableNode
 }
 
 export interface StackFrame {
@@ -77,7 +85,10 @@ export interface StackFrame {
 
 export interface MemorySnapshot {
   frames: StackFrame[]
+  /** Allocations explicitly reported by a provider; native DAP does not supply these. */
   heapAllocations: HeapAllocation[]
+  /** Readable referenced values; no size, ownership, or liveness is implied. */
+  observedReferencedObjects?: ObservedReferencedObject[]
 }
 
 export interface DebugPauseState {

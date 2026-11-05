@@ -31,7 +31,7 @@ import type {
 } from '@/web-ide/contracts/runtime';
 import type { Disposable } from '@/web-ide/core/disposable';
 import { validateRuntimeHostServiceV1 } from './host-service';
-import { DebugValueCapture } from './debug-values';
+import { DebugValueCapture, observeReferencedObjects } from './debug-values';
 import type { DebugChildPage, DebugPageRequest, DebugValueRef } from '../web-ide/contracts/debug-presentation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1739,7 +1739,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
             debugSnapshot: { id: capture.id, revision: capture.revision },
             callStack,
             memorySnapshot: this.debugSnapshot.memorySnapshot
-                ? { frames: callStack, heapAllocations: [] }
+                ? { frames: callStack, heapAllocations: [], observedReferencedObjects: observeReferencedObjects(callStack.flatMap(frame => frame.variables)) }
                 : null,
         };
         this.onDebugSnapshotUpdated.emit(this.debugSnapshot);
@@ -1850,7 +1850,10 @@ export class BrowserRuntimeSession implements RuntimeSession {
             file: this.toWorkspacePath(frames[0]?.source?.path),
             callStack,
             // DAP provides object addresses, not allocation ownership or sizes.
-            memorySnapshot: supportsMemoryVisualization ? { frames: callStack, heapAllocations: [] } : null,
+            memorySnapshot: supportsMemoryVisualization ? {
+                frames: callStack, heapAllocations: [],
+                observedReferencedObjects: observeReferencedObjects(callStack.flatMap(frame => frame.variables)),
+            } : null,
             nextKnownTypes: {},
         };
         this.onDebugPaused.emit(this.debugSnapshot);

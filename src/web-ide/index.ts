@@ -94,6 +94,7 @@ export type {
   DrawCommand,
   HeapAllocation,
   MemorySnapshot,
+  ObservedReferencedObject,
   RuntimeBreakpointMap,
   RuntimeCapabilities,
   RuntimeDiagnostic,

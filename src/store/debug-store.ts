@@ -16,6 +16,7 @@ function boundedHistory(history: DebugPauseState[], preserve?: DebugPauseState):
         const seen = new Set<object>()
         const pending = state.callStack.flatMap(frame => frame.variables)
         pending.push(...(state.memorySnapshot?.heapAllocations.flatMap(allocation => allocation.members) ?? []))
+        pending.push(...(state.memorySnapshot?.observedReferencedObjects?.map(object => object.value) ?? []))
         while (pending.length && seen.size <= MAX_HISTORY_NODES) {
             const value = pending.pop()!
             if (seen.has(value)) continue

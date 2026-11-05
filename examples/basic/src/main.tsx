@@ -18,9 +18,11 @@ import {
   type LayoutBrowserMode,
 } from './LayoutBrowserFixture'
 import 'web-ide/styles.css'
+import cppReferencedObjectsSource from '../../../tests/browser/fixtures/cpp-referenced-objects.cpp?raw'
 
 const searchParams = new URLSearchParams(window.location.search)
 const useCppRuntime = searchParams.get('runtime') === 'cpp'
+const showCppReferenceGraph = useCppRuntime && searchParams.get('cppReferenceGraph') === '1'
 const showBuildStatusFixture = useCppRuntime && searchParams.get('build-status') === 'multi-file'
 const useCppTests = useCppRuntime && ['framework', 'timeout'].includes(searchParams.get('tests') ?? '')
 const useTimeoutTest = useCppRuntime && searchParams.get('tests') === 'timeout'
@@ -130,7 +132,7 @@ const initialFiles: WorkspaceFiles = showOPFSHierarchyProbe
           'STUDENT_TEST("inactive test") {}',
           '#endif',
         ].join('\n') } : {}),
-      '/workspace/main.cpp': [
+      '/workspace/main.cpp': showCppReferenceGraph ? cppReferencedObjectsSource : [
         '#include <iostream>',
         '',
         ...(showBuildStatusFixture ? ['int doubleValue(int value);'] : [
@@ -202,6 +204,7 @@ const workspaceId = showOPFSHierarchyProbe
   ? 'browser-opfs-hierarchy-v1'
   : useCppRuntime
     ? showBuildStatusFixture ? 'basic-example-cpp-build-status-v1'
+      : showCppReferenceGraph ? 'basic-example-cpp-reference-graph-v1'
       : `basic-example-cpp-v2-${searchParams.get('tests') ?? 'ordinary'}`
     : showExecutionSourceProbe
       ? 'basic-example-python-execution-source-v1'
