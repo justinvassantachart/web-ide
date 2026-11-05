@@ -22,14 +22,16 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-The current source prepares version 0.10.0 with updated light/dark workbench
-colors, editor themes, toolbar and panel layout, breakpoint glyphs, and terminal
-chrome. Run, Debug and Tests remain visible and disabled while busy; Stop is
-available during compilation and paused debugging. The engine remains
-`debugger-sh@0.3.15-webide.0.9.0.1`, with the runtime behavior from 0.9.0.
+The current source prepares version 0.10.1, restoring separate observed
+referenced objects and pointer edges in the C++ Graph while retaining logical
+formatter presentations. Readable pointer targets are observations, not proof
+of heap allocation, ownership, size, or liveness. The patch also reports compiler
+startup and source-build progress in the terminal. It preserves the 0.10.0
+workbench and compiler warming behavior, with the unchanged engine
+`debugger-sh@0.3.15-webide.0.9.0.1`.
 
 The most recent published package before this candidate is
-[0.9.0](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.9.0).
+[0.10.0](https://github.com/justinvassantachart/web-ide/releases/tag/web-ide-v0.10.0).
 A version in source alone does not establish publication or downstream compatibility.
 The package remains `private: true` and is not published to the npm registry.
 Use the exact release tarball and checksum in the
