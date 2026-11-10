@@ -41,7 +41,7 @@ const STACK_FRAME_GLYPH_CLASS = 'codicon codicon-debug-stackframe debug-paused-g
 const DEBUG_GLYPH_Z_INDEX = 9999
 
 export function Editor() {
-    const { activeFile, activeFileContent, setActiveFile } = useWorkbenchEditorStore()
+    const { activeFile, activeFileContent, setActiveFile, focusRequest } = useWorkbenchEditorStore()
     const { currentLine, currentFile, debugMode, breakpoints, toggleBreakpoint } = useWorkbenchDebugStore()
     const instance = useWorkbenchInstance()
     const { workspace } = instance
@@ -80,6 +80,7 @@ export function Editor() {
 
     const lastDebugState = useRef({ file: null as string | null, line: null as number | null })
     const lastSourceReveal = useRef(0)
+    const lastFocusRequest = useRef(0)
 
     // The controller reconciles its store before publishing the feed. This
     // equality-guarded fallback also uses range edits, so a later React effect
@@ -492,6 +493,14 @@ export function Editor() {
         editorInstance.revealPositionInCenter({ lineNumber, column })
         editorInstance.focus()
     }, [activeFile, editorReady, revealRequest])
+
+    // File activation asks for focus without changing the model's saved caret
+    // or selection. It also works when the already-active file is opened again.
+    useEffect(() => {
+        if (!editorReady || focusRequest === lastFocusRequest.current) return
+        lastFocusRequest.current = focusRequest
+        editorRef.current?.focus()
+    }, [activeFile, editorReady, focusRequest])
 
     const handleChange = useCallback((value: string | undefined) => {
         if (value === undefined || !activeFile) return

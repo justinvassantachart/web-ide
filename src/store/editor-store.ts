@@ -9,6 +9,9 @@ export interface EditorState {
     // 1-based caret position mirrored from Monaco for the status bar.
     cursorLine: number
     cursorColumn: number
+    // Explicit user activation is distinct from store reconciliation or edits.
+    focusRequest: number
+    requestFocus: () => void
     setActiveFile: (path: string, content: string) => void
     // Add a tab WITHOUT changing focus (no-op if already open). For
     // programmatic tab management by hosts — e.g. a guided activity keeping its
@@ -34,6 +37,8 @@ const createEditorState = (
     openFiles: [],
     cursorLine: 1,
     cursorColumn: 1,
+    focusRequest: 0,
+    requestFocus: () => set((s) => ({ focusRequest: s.focusRequest + 1 })),
 
     setActiveFile: (path, content) => set((s) => ({
         activeFile: path,

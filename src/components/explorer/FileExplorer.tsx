@@ -265,7 +265,7 @@ export function FileExplorer() {
     const expandedDirs = useWorkbenchFilesStore((s) => s.expandedDirs)
     const toggleDir = useWorkbenchFilesStore((s) => s.toggleDir)
     const expandDir = useWorkbenchFilesStore((s) => s.expandDir)
-    const { activeFile, setActiveFile } = useWorkbenchEditorStore()
+    const { activeFile, setActiveFile, requestFocus } = useWorkbenchEditorStore()
     const instance = useWorkbenchInstance()
     const host = useIDEHost()
     const readOnly = host?.workspace?.readOnly === true
@@ -301,9 +301,10 @@ export function FileExplorer() {
             toggleDir(node.path)
         } else {
             setActiveFile(node.path, instance.workspace.readFile(node.path))
+            requestFocus()
         }
         setFocusedPath(node.path)
-    }, [instance, toggleDir, setActiveFile])
+    }, [instance, toggleDir, setActiveFile, requestFocus])
 
     const handleRename = useCallback((node: VFSNode, name: string) => {
         if (readOnly) return
@@ -348,6 +349,7 @@ export function FileExplorer() {
                 instance.workspace.createFileLocal(newPath, '')
                 host?.events?.emit('file_create', { path: newPath, kind: 'file' })
                 setActiveFile(newPath, '')
+                requestFocus()
             }
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Could not create this file. Try another name.')
@@ -357,7 +359,7 @@ export function FileExplorer() {
         if (parent) expandDir(parent)
         setCreating(null)
         treeRef.current?.focus()
-    }, [host, expandDir, instance, readOnly, setActiveFile])
+    }, [host, expandDir, instance, readOnly, setActiveFile, requestFocus])
 
     const startCreate = useCallback((parent: string) => {
         if (readOnly) return

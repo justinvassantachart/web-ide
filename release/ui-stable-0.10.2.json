@@ -12,7 +12,7 @@
   "releaseTag": "web-ide-v0.10.2",
   "assetFilename": "web-ide-0.10.2.tgz",
   "engine": "debugger-sh@0.3.15-webide.0.9.0.1",
-  "scope": "Stable maintenance version of the approved UI implementation plus two confirmed compact UI corrections: explicit source navigation selects Code without remounting panes; Monaco retains its own coordinated quick-input width and position so Go to Line stays within narrow editors.",
+  "scope": "Stable maintenance version of the approved UI implementation plus confirmed compact UI corrections: explicit source navigation and Explorer file activation select and focus Code without remounting panes or discarding the saved caret; Monaco retains its own coordinated quick-input width and position so Go to Line stays within narrow editors.",
   "historicalTooling": "The release/release-input.json, strict main-only canonical finalizer and committed tests/consumer fixture remain bound to0.10.1. This maintenance release uses independent exact-package comparison and a fresh0.10.2 consumer proof; no historical evidence is rebound.",
   "currentMain": "Concurrent newer development on main is preserved; this older maintenance branch is not merged into main.",
   "retainedPreFixCheckpoint": {

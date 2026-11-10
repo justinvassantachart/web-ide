@@ -19,7 +19,7 @@ import { usePanelLayout } from './panel-layout-context'
 import '@/components/sidebar/sidebar.css'
 import { useSidebarLayout } from './sidebar-layout-context'
 import { useWorkbenchTheme } from './use-workbench-theme'
-import { useWorkbenchInstance } from './workbench-instance-context'
+import { useWorkbenchEditorStore, useWorkbenchInstance } from './workbench-instance-context'
 import { useSourcePresentationState } from './source-presentation-state'
 
 /** Reusable workbench UI. Runtime and contribution providers sit above it. */
@@ -34,12 +34,14 @@ export function WorkbenchLayout() {
   const [compact, setCompact] = useState(false)
   const { revealRequest } = useSourcePresentationState()
   const revealSequence = revealRequest?.sequence ?? 0
-  const [compactSelection, setCompactSelection] = useState({ view: 'code', revealSequence })
+  const focusRequest = useWorkbenchEditorStore((state) => state.focusRequest)
+  const [compactSelection, setCompactSelection] = useState({ view: 'code', revealSequence, focusRequest })
   // An explicit source request must expose Code in the same render in which
   // the editor focuses its target. Choosing another pane acknowledges that
   // sequence; unrelated decoration changes cannot steal the user's view.
-  const compactView = compactSelection.revealSequence === revealSequence ? compactSelection.view : 'code'
-  const setCompactView = (view: string) => setCompactSelection({ view, revealSequence })
+  const compactView = compactSelection.revealSequence === revealSequence && compactSelection.focusRequest === focusRequest
+    ? compactSelection.view : 'code'
+  const setCompactView = (view: string) => setCompactSelection({ view, revealSequence, focusRequest })
   const compactId = useId()
   const responsive = configuration.responsive
   const breakpoint = responsive === false ? 0 : responsive?.breakpoint ?? 900
