@@ -5,6 +5,7 @@ export type {
   IDEHostEvents,
   IDEWorkspace,
   IDEWorkspacePersistence,
+  IDEWorkspaceDocumentPersistence,
   WebIDEHost,
   WorkspaceFiles,
   WorkspaceSaveContext,
@@ -16,3 +17,6 @@ export type {
   IDEEventType,
   IDESessionMode,
 } from './web-ide/contracts/events'
+
+export type { WorkspaceDocumentV2, WorkspaceAssetRefV1, WorkspaceAssetPort } from './assets/contracts'
+export type { WorkspaceApplyDocumentV2, WorkspaceApplyLocalDocumentV2, WorkspaceDocumentChangeV2, IDEWorkspaceDocumentFeed } from './web-ide/contracts/workspace'

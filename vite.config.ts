@@ -67,6 +67,7 @@ export default defineConfig({
       entry: {
         index: path.resolve(import.meta.dirname, 'src/index.ts'),
         host: path.resolve(import.meta.dirname, 'src/host.ts'),
+        assets: path.resolve(import.meta.dirname, 'src/assets.ts'),
         plugins: path.resolve(import.meta.dirname, 'src/plugins.ts'),
         runtimes: path.resolve(import.meta.dirname, 'src/runtimes.ts'),
         testing: path.resolve(import.meta.dirname, 'src/testing.ts'),

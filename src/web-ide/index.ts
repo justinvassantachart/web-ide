@@ -67,6 +67,7 @@ export type {
   IDEHostEvents,
   IDEWorkspace,
   IDEWorkspacePersistence,
+  IDEWorkspaceDocumentPersistence,
   WebIDEHost,
   WorkspaceFiles,
   WorkspaceSaveContext,
@@ -76,6 +77,10 @@ export type {
   IDEWorkspaceFeed,
   IDEWorkspacePersistenceStatusFeed,
   WorkspaceApplyTransactionV1,
+  WorkspaceApplyDocumentV2,
+  WorkspaceApplyLocalDocumentV2,
+  WorkspaceDocumentChangeV2,
+  IDEWorkspaceDocumentFeed,
   WorkspaceChangeV1,
   WorkspaceMutationKind,
   WorkspaceMutationPolicy,
@@ -161,3 +166,5 @@ export type {
   DebugValueRef,
 } from './contracts/debug-presentation'
 export { DebugPresentationService } from './core/debug-presentation'
+
+export type { WorkspaceDocumentV2, WorkspaceAssetRefV1, WorkspaceAssetPort } from '../assets/contracts'

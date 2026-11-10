@@ -1,5 +1,5 @@
 import type { RuntimeExecutionPlan } from '@/web-ide/contracts/runtime'
-import { normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
+import { canonicalRuntimeFilePath, normalizeRuntimeFiles } from '@/web-ide/core/workspace-path'
 
 /** Pure, owned execution snapshot. Reading binaryFiles returns new owned bytes. */
 export function buildRuntimeExecutionPlan(plan: RuntimeExecutionPlan): RuntimeExecutionPlan {
@@ -65,4 +65,17 @@ export function runtimeExecutionPlansEqual(left: RuntimeExecutionPlan, right: Ru
     for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false
   }
   return true
+}
+
+/** Attach a captured workspace asset set without replacing provider/compiler files. */
+export function withWorkspaceBinaryFiles(plan: RuntimeExecutionPlan, assets: Readonly<Record<string, Uint8Array>>): RuntimeExecutionPlan {
+  const occupied = new Set([...Object.keys(plan.files), ...Object.keys(plan.binaryFiles ?? {})].map(canonicalRuntimeFilePath))
+  const binaryFiles = { ...plan.binaryFiles }
+  for (const [path, bytes] of Object.entries(assets)) {
+    const canonical = canonicalRuntimeFilePath(path)
+    if ([...occupied].some((other) => canonical === other || canonical.startsWith(`${other}/`) || other.startsWith(`${canonical}/`))) throw new TypeError(`Image collides with an execution resource: ${canonical}`)
+    occupied.add(canonical)
+    binaryFiles[canonical] = new Uint8Array(bytes)
+  }
+  return Object.keys(assets).length ? buildRuntimeExecutionPlan({ ...plan, binaryFiles }) : plan
 }

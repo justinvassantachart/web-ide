@@ -1,15 +1,14 @@
 import type {
-  IDEWorkspacePersistence,
   WorkspaceFiles,
   WorkspaceSaveContext,
 } from '../contracts/host'
 
 export const DEFAULT_WORKSPACE_SAVE_DEBOUNCE_MS = 300
 
-export interface WorkspacePersistenceCoordinatorOptions {
+export interface WorkspacePersistenceCoordinatorOptions<T = WorkspaceFiles> {
   /** Stable identity supplied by the host for this mounted workspace. */
   workspaceId: string
-  persistence: IDEWorkspacePersistence
+  persistence: { save(snapshot: T, context: WorkspaceSaveContext): void | Promise<void>; flush?(): void | Promise<void>; dispose?(): void | Promise<void> }
   debounceMs?: number
   /** Called only when the aggregate pending state changes. */
   onPendingChange?: (pending: boolean) => void
@@ -22,8 +21,8 @@ export interface WorkspacePersistenceCoordinatorOptions {
 
 type PersistenceAction = () => void | Promise<void>
 
-interface PendingWorkspaceSnapshot {
-  files: WorkspaceFiles
+interface PendingWorkspaceSnapshot<T> {
+  files: T
   sourceRevision: number
 }
 
@@ -41,15 +40,15 @@ function throwPersistenceErrors(
  * Coordinates host-owned persistence without depending on a UI framework or
  * application store. Each scheduled value is a complete workspace snapshot.
  */
-export class WorkspacePersistenceCoordinator {
+export class WorkspacePersistenceCoordinator<T = WorkspaceFiles> {
   private readonly workspaceId: string
-  private readonly persistence: IDEWorkspacePersistence
+  private readonly persistence: WorkspacePersistenceCoordinatorOptions<T>['persistence']
   private readonly debounceMs: number
   private readonly onPendingChange?: (pending: boolean) => void
-  private readonly onStatusChange?: WorkspacePersistenceCoordinatorOptions['onStatusChange']
+  private readonly onStatusChange?: WorkspacePersistenceCoordinatorOptions<T>['onStatusChange']
 
-  private pendingSnapshot: PendingWorkspaceSnapshot | undefined
-  private retrySnapshot: PendingWorkspaceSnapshot | undefined
+  private pendingSnapshot: PendingWorkspaceSnapshot<T> | undefined
+  private retrySnapshot: PendingWorkspaceSnapshot<T> | undefined
   private debounceTimer: ReturnType<typeof setTimeout> | undefined
   private operationQueue: Promise<readonly unknown[]> = Promise.resolve([])
   private queuedOperationCount = 0
@@ -66,7 +65,7 @@ export class WorkspacePersistenceCoordinator {
   private closePromise: Promise<void> | undefined
   private forcedDisposalPromise: Promise<void> | undefined
 
-  constructor(options: WorkspacePersistenceCoordinatorOptions) {
+  constructor(options: WorkspacePersistenceCoordinatorOptions<T>) {
     const debounceMs =
       options.debounceMs ?? DEFAULT_WORKSPACE_SAVE_DEBOUNCE_MS
     if (!Number.isFinite(debounceMs) || debounceMs < 0) {
@@ -99,7 +98,7 @@ export class WorkspacePersistenceCoordinator {
    * Schedules a full workspace snapshot. Repeated calls inside the debounce
    * window coalesce to the latest snapshot.
    */
-  scheduleSave(files: WorkspaceFiles): void {
+  scheduleSave(files: T): void {
     if (this.closed || this.forcedDisposalStarted || this.adapterDisposalStarted) {
       throw new Error('Cannot schedule a workspace save after disposal has started')
     }
@@ -107,7 +106,7 @@ export class WorkspacePersistenceCoordinator {
     // Hosts commonly reuse mutable file maps, so retain our own point-in-time
     // snapshot instead of observing later mutations.
     this.pendingSnapshot = {
-      files: { ...files },
+      files: structuredClone(files),
       sourceRevision: ++this.nextSourceRevision,
     }
     this.clearDebounceTimer()
@@ -127,7 +126,7 @@ export class WorkspacePersistenceCoordinator {
    * Bypasses the debounce delay, waits for all saves known at call time, and
    * then asks the host persistence adapter to flush.
    */
-  flush(files?: WorkspaceFiles): Promise<void> {
+  flush(files?: T): Promise<void> {
     if (this.closed && this.closePromise) return this.closePromise
     if (this.forcedDisposalPromise) return this.forcedDisposalPromise
     if (this.closePromise) return this.closePromise
@@ -150,7 +149,7 @@ export class WorkspacePersistenceCoordinator {
    * attempt. A save/flush failure leaves the adapter live and the exact failed
    * snapshot available for a later retry.
    */
-  close(files?: WorkspaceFiles): Promise<void> {
+  close(files?: T): Promise<void> {
     if (this.closed && this.closePromise) return this.closePromise
     if (this.forcedDisposalPromise) return this.forcedDisposalPromise
     if (this.closePromise) return this.closePromise
@@ -260,7 +259,7 @@ export class WorkspacePersistenceCoordinator {
     )
   }
 
-  private takeNextSnapshot(): PendingWorkspaceSnapshot | undefined {
+  private takeNextSnapshot(): PendingWorkspaceSnapshot<T> | undefined {
     const pending = this.pendingSnapshot
     const retry = this.retrySnapshot
     const snapshot =
@@ -277,7 +276,7 @@ export class WorkspacePersistenceCoordinator {
   }
 
   private async saveSnapshot(
-    snapshot: PendingWorkspaceSnapshot,
+    snapshot: PendingWorkspaceSnapshot<T>,
     reason: WorkspaceSaveContext['reason'],
   ): Promise<void> {
     const context: WorkspaceSaveContext = {

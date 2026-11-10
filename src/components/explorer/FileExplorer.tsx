@@ -12,6 +12,10 @@ import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { normalizePublicWorkspacePath } from '@/web-ide/core/workspace-controller'
 import { getFileIconUrl, getFolderIconUrl } from '@/lib/vscode-icons'
 import './explorer.css'
+import { ImageAssetPreview } from './ImageAssetPreview'
+import { DEFAULT_IMAGE_LIMITS, type WorkspaceAssetRefV1 } from '@/assets/contracts'
+import { inspectImage } from '@/assets/validation'
+import { createBrowserImageCodec } from '@/assets/browser-codec'
 
 const ROOT = '/workspace'
 const WORKSPACE_LABEL = 'Workspace'
@@ -272,7 +276,14 @@ export function FileExplorer() {
 
     const treeRef = useRef<HTMLDivElement>(null)
     const [error, setError] = useState<string | null>(null)
-    const [deleted, setDeleted] = useState<{ path: string; files: Record<string, string>; active: string | null } | null>(null)
+    const [deleted, setDeleted] = useState<{ path: string; files: Record<string, string>; assets: readonly WorkspaceAssetRefV1[]; active: string | null } | null>(null)
+    const [previewPath, setPreviewPath] = useState<string>()
+    const [importing, setImporting] = useState(false)
+    const [importStage, setImportStage] = useState('Checking image…')
+    const [restoring, setRestoring] = useState(false)
+    const importAbort = useRef<AbortController | undefined>(undefined)
+    useEffect(() => () => { importAbort.current?.abort(); importAbort.current = undefined }, [])
+    const imageInput = useRef<HTMLInputElement>(null)
     const [focusedPath, setFocusedPath] = useState<string | null>(null)
     const [renamingPath, setRenamingPath] = useState<string | null>(null)
     // Inline create has a parent path ('' = root). Null = idle.
@@ -299,6 +310,8 @@ export function FileExplorer() {
     const openOrToggle = useCallback((node: VFSNode) => {
         if (node.isDirectory) {
             toggleDir(node.path)
+        } else if (instance.workspace.isAsset(node.path)) {
+            setPreviewPath(node.path)
         } else {
             setActiveFile(node.path, instance.workspace.readFile(node.path))
         }
@@ -329,8 +342,9 @@ export function FileExplorer() {
         try {
             const snapshot = instance.workspace.snapshot()
             const backup = Object.fromEntries(Object.entries(snapshot).filter(([path]) => path === node.path || path.startsWith(`${node.path}/`)))
+            const assets = instance.workspace.documentSnapshot().assets.filter((asset) => asset.path === node.path || asset.path.startsWith(`${node.path}/`))
             instance.workspace.deleteLocal(node.path)
-            setDeleted({ path: node.path, files: backup, active: activeFile })
+            setDeleted({ path: node.path, files: backup, assets, active: activeFile })
             setError(null)
             host?.events?.emit('file_delete', { path: node.path })
         } catch (error) {
@@ -522,6 +536,25 @@ export function FileExplorer() {
 
     return (
         <div className="vscode-explorer">
+            {previewPath && <ImageAssetPreview key={previewPath} path={previewPath} workspace={instance.workspace} onClose={() => { setPreviewPath(undefined); treeRef.current?.focus() }} />}
+            <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => {
+                const file = event.currentTarget.files?.[0]
+                event.currentTarget.value = ''
+                if (!file) return
+                const abort = new AbortController()
+                importAbort.current = abort
+                setImportStage('Checking image…')
+                setImporting(true); setError(null)
+                void (async () => {
+                    if (file.size > DEFAULT_IMAGE_LIMITS.maxEncodedBytes) throw new Error('Images must be 8 MiB or smaller')
+                    const bytes = new Uint8Array(await file.arrayBuffer())
+                    const { mediaType } = inspectImage(bytes)
+                    await createBrowserImageCodec().decode(bytes, mediaType, abort.signal)
+                    if (abort.signal.aborted) return
+                    setImportStage('Uploading image…')
+                    await instance.workspace.importAssetLocal(`/workspace/${file.name}`, bytes, mediaType, abort.signal)
+                })().catch((reason: unknown) => { if (importAbort.current === abort && !abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Could not import image') }).finally(() => { if (importAbort.current === abort) { importAbort.current = undefined; setImporting(false) } })
+            }} />
             <div className="vsx-titlebar">
                 <span className="vsx-titlebar-label">Explorer</span>
             </div>
@@ -537,6 +570,7 @@ export function FileExplorer() {
                 <span className="vsx-section-actions" onClick={(e) => e.stopPropagation()}>
                     {!readOnly && (
                         <>
+                            {host?.workspace?.initialDocument && host.workspace.assets && host.workspace.assets.capabilities?.import !== false && <button type="button" className="vsx-action-btn" title="Import Image…" aria-label="Import image" disabled={importing} onClick={() => imageInput.current?.click()}><Codicon name="file-media" /></button>}
                             <button
                                 className="vsx-action-btn"
                                 title="New File…"
@@ -560,15 +594,22 @@ export function FileExplorer() {
             </div>
 
             {error && <div className="vsx-feedback" role="alert">{error}<button type="button" aria-label="Dismiss file error" onClick={() => setError(null)}>×</button></div>}
+            {importing && <div className="vsx-feedback" role="status"><progress aria-label="Image import progress" />{importStage}<button type="button" onClick={() => importAbort.current?.abort()}>Cancel import</button></div>}
             {deleted && <div className="vsx-feedback" role="status">Deleted {deleted.path.split('/').pop()}.
-                <button type="button" onClick={() => {
+                <button type="button" disabled={restoring} onClick={() => {
+                    const restore = deleted
+                    setRestoring(true)
+                    void (async () => {
                     try {
-                        const entries = Object.entries(deleted.files)
-                        if (entries.some(([path]) => instance.workspace.fileExists(path))) throw new Error('A file now uses the deleted name. Rename it before undoing.')
-                        instance.workspace.restoreFilesLocal(deleted.files)
-                        if (deleted.active && Object.hasOwn(deleted.files, deleted.active)) setActiveFile(deleted.active, deleted.files[deleted.active])
-                        setDeleted(null); setError(null)
+                        const entries = Object.entries(restore.files)
+                        if ([...entries.map(([path]) => path), ...restore.assets.map((asset) => asset.path)].some((path) => instance.workspace.fileExists(path))) throw new Error('A file now uses the deleted name. Rename it before undoing.')
+                        if (restore.assets.length) await instance.workspace.restoreAssetsLocal(restore.files, restore.assets)
+                        else instance.workspace.restoreFilesLocal(restore.files)
+                        if (restore.active && Object.hasOwn(restore.files, restore.active)) setActiveFile(restore.active, restore.files[restore.active])
+                        setDeleted((current) => current === restore ? null : current); setError(null)
                     } catch (error) { setError(error instanceof Error ? error.message : 'Could not restore the file.') }
+                    finally { setRestoring(false) }
+                    })()
                 }}>Undo</button>
                 <button type="button" aria-label="Dismiss deletion notice" onClick={() => setDeleted(null)}>×</button>
             </div>}

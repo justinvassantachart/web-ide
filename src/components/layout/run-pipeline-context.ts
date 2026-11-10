@@ -6,6 +6,7 @@ export interface RunPipelineCoordinator {
   suspend(): void
   resume(): void
   beginTransition(): number
+  transitionSignal(): AbortSignal
   clearPendingRun(task: Promise<void>): void
   getGeneration(): number
   hasForegroundIntent(): boolean
@@ -18,6 +19,7 @@ export interface RunPipelineCoordinator {
 
 export function createRunPipelineCoordinator(): RunPipelineCoordinator {
   let generation = 0
+  let abort = new AbortController()
   let suspended = false
   let foregroundIntent = false
   let acquireActivity: ((foreground: boolean) => (() => void) | undefined) | undefined
@@ -34,13 +36,16 @@ export function createRunPipelineCoordinator(): RunPipelineCoordinator {
       acquireActivity = factory
       return () => { if (acquireActivity === factory) acquireActivity = undefined }
     },
-    suspend() { suspended = true; generation++ },
+    suspend() { suspended = true; generation++; abort.abort() },
     resume() { suspended = false },
     beginTransition: () => {
       foregroundIntent = true
+      abort.abort()
+      abort = new AbortController()
       generation += 1
       return generation
     },
+    transitionSignal: () => abort.signal,
     clearPendingRun: (task) => {
       if (pendingRun === task) {
         pendingRun = undefined

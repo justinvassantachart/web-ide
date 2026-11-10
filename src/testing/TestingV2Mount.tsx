@@ -1,3 +1,4 @@
+import type { WorkspaceDocumentV2 } from '@/assets/contracts'
 import { useEffect } from 'react'
 import { useRunPipeline } from '@/components/layout/use-run-pipeline'
 import { useRunPipelineCoordinator } from '@/components/layout/run-pipeline-context'
@@ -26,17 +27,21 @@ export function TestingV2Mount({ provider }: { provider: TestProviderV2 }) {
 
     void import('./testing-controller-v2').then(({ createTestingControllerV2 }) => {
       if (cancelled) return
-      let activity: { generation: number; drained: Promise<void> } | undefined
+      let activity: { generation: number; drained: Promise<void>; document: WorkspaceDocumentV2 } | undefined
       const controller = createTestingControllerV2({
         provider,
         execution: {
           ...execution,
           executePrepared: request => {
             if (!activity || !coordinator.isCurrent(activity.generation)) return Promise.resolve({ type: 'stopped' })
-            return executePreparedWithinActivity(request)
+            return executePreparedWithinActivity(request, activity.document)
           },
         },
         timeoutMs: configuration.testing?.timeoutMs,
+        captureRunWorkspace: () => {
+          if (!activity) throw new Error('No active test document')
+          return Object.fromEntries(activity.document.files.map(({ path, content }) => [path, content]))
+        },
         resolveResources: () => resolveExecutionResourceFiles(resources),
         resolveDiscoveryResources: () => partitionWorkspaceResources(resources).executionFiles,
         workspace: {
@@ -54,7 +59,8 @@ export function TestingV2Mount({ provider }: { provider: TestProviderV2 }) {
         const release = coordinator.acquireActivity()
         if (!release) return
         let resolve!: () => void
-        const token = { generation: coordinator.getGeneration(), drained: new Promise<void>(done => { resolve = done }) }
+        const document = instance.workspace.documentSnapshot()
+        const token = { document, generation: coordinator.getGeneration(), drained: new Promise<void>(done => { resolve = done }) }
         activity = token
         try { await operation() }
         finally {

@@ -1,3 +1,5 @@
+import type { WorkspaceDocumentV2 } from '@/assets/contracts'
+import { withWorkspaceBinaryFiles } from '@/runtimes/execution-plan'
 import { useCallback, useMemo } from 'react'
 import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
@@ -40,6 +42,7 @@ export function useRunPipeline() {
         preparedPlan?: RuntimeExecutionPlan,
         resourcesResolved = false,
         foregroundActivity = true,
+        capturedDocument?: WorkspaceDocumentV2,
     ) => {
         const exec = instance.executionStore.getState()
         if (exec.isCompiling || exec.isRunning || coordinator.getPendingRun()) return { type: 'busy' as const }
@@ -69,6 +72,7 @@ export function useRunPipeline() {
                     return
                 }
                 exec.setIsCompiling(true)
+                exec.setPreparationError(null)
                 if (!coordinator.isCurrent(generation)) {
                     instance.testStore.getState().finalize()
                     return
@@ -81,8 +85,9 @@ export function useRunPipeline() {
                     instance.testStore.getState().finalize()
                     return
                 }
+                const document = capturedDocument ?? instance.workspace.documentSnapshot()
                 let plan = preparedPlan ?? await prepareWorkbenchExecution({
-                        files: mergeExecutionResourceFiles(resources, instance.workspace.snapshot()),
+                        files: mergeExecutionResourceFiles(resources, Object.fromEntries(document.files.map((file) => [file.path, file.content]))),
                         mode,
                         executeTests: isTest,
                         testProvider,
@@ -100,6 +105,8 @@ export function useRunPipeline() {
                 plan = entrypoint === undefined
                     ? { ...plan, files }
                     : { ...plan, files, entrypoint }
+                plan = withWorkspaceBinaryFiles(plan, await instance.workspace.materializeAssets(document, coordinator.transitionSignal()))
+                if (!coordinator.isCurrent(generation)) return
                 executionMode = plan.mode
                 prepared = await engine.prepare(plan)
                 if (!coordinator.isCurrent(generation)) {
@@ -117,6 +124,7 @@ export function useRunPipeline() {
                     return
                 }
                 outcome = { type: 'build_failed', message: error instanceof Error ? error.message : String(error) }
+                exec.setPreparationError(outcome.message)
                 console.error('[web-ide] runtime preparation failed', error)
                 host?.events?.emit('compile_error', { debug })
                 instance.testStore.getState().finalize()
@@ -258,8 +266,8 @@ export function useRunPipeline() {
     // This nested guard must not cancel a release that arrived during that intent.
     const executePreparedWithinActivity = useCallback(({
         plan, workflow, resourcesResolved,
-    }: Parameters<NonNullable<IDEExecutionController['executePrepared']>>[0]) => run(
-        plan.mode === 'debug', workflow === 'test', plan, resourcesResolved, false,
+    }: Parameters<NonNullable<IDEExecutionController['executePrepared']>>[0], document?: WorkspaceDocumentV2) => run(
+        plan.mode === 'debug', workflow === 'test', plan, resourcesResolved, false, document,
     ), [run])
 
     return { run, stop, restart, execution, executePreparedWithinActivity }

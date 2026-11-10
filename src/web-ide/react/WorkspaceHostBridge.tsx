@@ -1,5 +1,7 @@
+import type { WorkspaceDocumentV2 } from '../../assets/contracts'
+import { normalizeWorkspaceDocument } from '../../assets/validation'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { IDEWorkspacePersistence } from '../contracts/host'
+import type { IDEWorkspacePersistence, IDEWorkspaceDocumentPersistence, WorkspaceFiles } from '../contracts/host'
 import type { WebIDEInstanceController } from '../core/instance-handle'
 import { WorkspacePersistenceCoordinator } from '../core/workspace-persistence'
 import { bindWorkspaceBreakpoints } from '../core/workspace-breakpoints'
@@ -12,11 +14,13 @@ import { useIDEWorkspaceResources } from './contribution-context'
 import { useWebIDEHost } from './host-context'
 import { useWorkbenchInstance } from './workbench-instance-context'
 
+type WorkspacePayload = WorkspaceFiles | WorkspaceDocumentV2
+
 interface PersistenceBinding {
   token: object
   workspaceId: string
-  persistence: IDEWorkspacePersistence
-  coordinator: WorkspacePersistenceCoordinator
+  persistence: IDEWorkspacePersistence | IDEWorkspaceDocumentPersistence
+  coordinator: WorkspacePersistenceCoordinator<WorkspacePayload>
   reportedPending: boolean
   pendingDisposal?: { cancelled: boolean }
 }
@@ -33,9 +37,13 @@ export function WorkspaceHostBridge({
   const workspace = host?.workspace
   const workspaceId = workspace?.id
   const localCache = workspace?.localCache
-  const persistence = workspace?.persistence
+  const persistence = workspace?.documentPersistence ?? workspace?.persistence
+  const documentMode = workspace?.initialDocument !== undefined
+  if (!documentMode && workspace?.documentPersistence) throw new TypeError('documentPersistence requires initialDocument')
+  if (documentMode && (workspace?.initialFiles || workspace?.persistence || localCache !== 'memory')) throw new TypeError('V2 workspaces require memory cache and documentPersistence')
   const initialFiles = mergeWorkspaceFiles(resources, workspace?.initialFiles)
-  const seedFingerprint = workspaceFilesFingerprint(initialFiles)
+  const initialDocument = workspace?.initialDocument ? normalizeWorkspaceDocument({ ...workspace.initialDocument, files: Object.entries(mergeWorkspaceFiles(resources, Object.fromEntries(workspace.initialDocument.files.map((file) => [file.path, file.content]))) ?? {}).map(([path, content]) => ({ path, content })) }) : undefined
+  const seedFingerprint = initialDocument ? JSON.stringify(initialDocument) : workspaceFilesFingerprint(initialFiles)
   const breakpointSeedFingerprint = workspace?.initialBreakpoints === undefined ? '' : JSON.stringify(
     Object.entries(workspace.initialBreakpoints)
       .sort(([left], [right]) => left.localeCompare(right))
@@ -55,7 +63,7 @@ export function WorkspaceHostBridge({
     let unbindBreakpoints: (() => void) | undefined
     void instance.workspace.initialize({
       projectId: workspaceId ?? 'default-project',
-      initialFiles,
+      ...(initialDocument ? { initialDocument, assets: workspace?.assets } : { initialFiles }),
       ephemeral: localCache === 'memory',
     }).then(
       (result) => {
@@ -77,7 +85,7 @@ export function WorkspaceHostBridge({
       unbindBreakpoints?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initializationKey, initializationToken, instance, localCache, seedFingerprint, workspaceId])
+  }, [initializationKey, initializationToken, instance, localCache, seedFingerprint, workspaceId, workspace?.assets])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -118,6 +126,7 @@ export function WorkspaceHostBridge({
     <WorkspacePersistenceBinding
       instanceController={instanceController}
       persistence={persistence}
+      documentMode={documentMode}
       workspaceId={workspaceId}
     />
   )
@@ -127,11 +136,13 @@ export function WorkspaceHostBridge({
 function WorkspacePersistenceBinding({
   instanceController,
   persistence,
+  documentMode,
   workspaceId,
 }: {
   instanceController: WebIDEInstanceController
-  persistence: IDEWorkspacePersistence
+  persistence: IDEWorkspacePersistence | IDEWorkspaceDocumentPersistence
   workspaceId: string
+  documentMode: boolean
 }) {
   const instance = useWorkbenchInstance()
   const persistenceBinding = useRef<PersistenceBinding | undefined>(undefined)
@@ -153,9 +164,13 @@ function WorkspacePersistenceBinding({
         instance.workspace.markExternalSaving(false)
       }
       const token = {}
-      const coordinator = new WorkspacePersistenceCoordinator({
+      const coordinator = new WorkspacePersistenceCoordinator<WorkspacePayload>({
         workspaceId,
-        persistence,
+        persistence: {
+          save: (payload, context) => documentMode ? (persistence as IDEWorkspaceDocumentPersistence).save(payload as WorkspaceDocumentV2, context) : (persistence as IDEWorkspacePersistence).save(payload as WorkspaceFiles, context),
+          flush: () => persistence.flush?.(),
+          dispose: () => persistence.dispose?.(),
+        },
         // Preserve Nova's existing host-save cadence while making the policy
         // explicit and independently testable.
         debounceMs: 2000,
@@ -189,13 +204,14 @@ function WorkspacePersistenceBinding({
     }
 
     const currentBinding = binding
+    const snapshot = (): WorkspacePayload => documentMode ? instance.workspace.persistedDocument() : projectPersistedWorkspaceFiles(instance.workspace.snapshot())
     const detachLifecycle = instanceController.attachWorkspaceLifecycle({
-      flush: (files) => currentBinding.coordinator.flush(files),
-      close: (files) => currentBinding.coordinator.close(files),
+      flush: () => currentBinding.coordinator.flush(snapshot()),
+      close: () => currentBinding.coordinator.close(snapshot()),
     })
     const unsubscribe = instance.workspace.subscribe(() =>
       currentBinding.coordinator.scheduleSave(
-        projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
+        snapshot(),
       ),
     )
     // Attach both public lifecycle and the change feed before scheduleSave can
@@ -203,7 +219,7 @@ function WorkspacePersistenceBinding({
     // transaction reentrantly; that newer snapshot must supersede this seed.
     if (requiresSeed) {
       currentBinding.coordinator.scheduleSave(
-        projectPersistedWorkspaceFiles(instance.workspace.snapshot()),
+        snapshot(),
       )
     }
 
@@ -222,7 +238,7 @@ function WorkspacePersistenceBinding({
         }
       })
     }
-  }, [instance, instanceController, persistence, workspaceId])
+  }, [instance, instanceController, persistence, workspaceId, documentMode])
 
   return null
 }

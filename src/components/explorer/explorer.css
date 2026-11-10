@@ -381,3 +381,19 @@
 .vsx-feedback { padding: 8px 12px; font-size: 12px; line-height: 1.5; border-block: 1px solid var(--vsx-sideBar-border); overflow-wrap: anywhere; }
 .vsx-feedback[role="alert"] { color: var(--color-destructive); }
 .vsx-feedback button { min-height: 28px; padding: 2px 6px; margin-left: 4px; color: var(--vsx-focusBorder); cursor: pointer; text-decoration: underline; }
+.vsx-image-preview {
+    max-width: min(90vw, 900px);
+    max-height: 90vh;
+    overflow: auto;
+    padding: 20px;
+    color: var(--foreground, #ddd);
+    background: var(--background, #1e1e1e);
+    border: 1px solid #777;
+    border-radius: 8px;
+}
+.vsx-image-preview::backdrop { background: #0009; }
+.vsx-image-preview-header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+.vsx-image-preview-header button { font-size: 24px; cursor: pointer; }
+.vsx-image-preview img { max-width: 100%; max-height: 65vh; object-fit: contain; }
+.vsx-image-preview a { text-decoration: underline; }
+.vsx-image-preview-scroll { overflow: auto; max-height: 70vh; max-width: 80vw; }

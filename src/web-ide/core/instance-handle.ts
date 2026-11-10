@@ -153,6 +153,10 @@ export function createWebIDEInstanceController(
       revision: () => instance.workspace.revision,
       subscribe: (listener) => instance.workspace.subscribe(listener),
       apply: (transaction) => instance.workspace.applyExternal(transaction),
+      documentSnapshot: () => instance.workspace.documentSnapshot(),
+      subscribeDocument: (listener) => instance.workspace.subscribeDocument(listener),
+      applyDocument: (transaction) => instance.workspace.applyDocument(transaction),
+      applyLocalDocument: (transaction) => instance.workspace.applyLocalDocument(transaction),
     },
     persistence: {
       snapshot: () => instance.workspace.getPersistenceStatus(),
@@ -173,6 +177,7 @@ export function createWebIDEInstanceController(
       }
     },
     persistedFiles,
+    persistedDocument: () => instance.workspace.persistedDocument(),
     flushWorkspace() {
       return workspaceLifecycle?.flush(persistedFiles()) ?? Promise.resolve()
     },

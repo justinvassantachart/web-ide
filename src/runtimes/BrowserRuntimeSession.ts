@@ -613,7 +613,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         }
 
         const nextRuntimeFileTree = buildRuntimeFileTree(nextFileMap);
-        if ((cppArtifacts || Object.keys(binaryFiles).length) && this.profile.engineLanguage !== 'c') {
+        if (cppArtifacts && this.profile.engineLanguage !== 'c') {
             throw new TypeError('Binary build inputs require C/C++');
         }
         const artifactPath = (path: string) => `/${runtimeRelativeFilePath(path)}`;

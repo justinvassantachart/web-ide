@@ -4,6 +4,8 @@ import type { DebugState } from '@/store/debug-store'
 import type { EditorState } from '@/store/editor-store'
 import type { FilesState, VFSNode } from '@/store/files-store'
 import type { WorkspaceFiles } from '../contracts/host'
+import type { WorkspaceAssetPort, WorkspaceAssetRefV1, WorkspaceDocumentV2 } from '../../assets/contracts'
+import { imageSha256, inspectImage, normalizeWorkspaceDocument } from '../../assets/validation'
 import type {
   WorkspaceApplyTransactionV1,
   WorkspaceChangeV1,
@@ -12,6 +14,9 @@ import type {
   WorkspaceOperationV1,
   WorkspaceOriginV1,
   WorkspacePersistenceStatus,
+  WorkspaceApplyDocumentV2,
+  WorkspaceApplyLocalDocumentV2,
+  WorkspaceDocumentChangeV2,
 } from '../contracts/workspace'
 import { projectPersistedWorkspaceFiles } from './workspace-resources'
 import {
@@ -205,6 +210,8 @@ export interface WorkspaceControllerOptions {
 export interface WorkspaceInitializationOptions {
   projectId: string
   initialFiles?: WorkspaceFiles
+  initialDocument?: WorkspaceDocumentV2
+  assets?: WorkspaceAssetPort
   ephemeral?: boolean
 }
 
@@ -235,6 +242,11 @@ export class WorkspaceController {
   readonly monacoAuthority = this.instanceNamespace
 
   private volume = new Volume()
+  private documentMode = false
+  private assetRefs: readonly WorkspaceAssetRefV1[] = []
+  private assetPort?: WorkspaceAssetPort
+  private assetPortAbort = new AbortController()
+  private readonly documentListeners = new Set<(change: WorkspaceDocumentChangeV2) => void>()
   private revisionValue = 0
   private transactionSequence = 0
   private initializationGeneration = 0
@@ -250,6 +262,8 @@ export class WorkspaceController {
   private readonly feedDeliveryQueue: Array<{
     change: WorkspaceChangeV1
     listeners: readonly ((change: WorkspaceChangeV1) => void)[]
+    document: WorkspaceDocumentChangeV2
+    documentListeners: readonly ((change: WorkspaceDocumentChangeV2) => void)[]
   }> = []
   private deliveringFeed = false
   private committing = false
@@ -292,7 +306,7 @@ export class WorkspaceController {
         const path = `${directory}/${entry}`
         const stat = this.volume.statSync(path)
         if (stat.isDirectory()) walk(path)
-        else result[path] = this.volume.readFileSync(path, { encoding: 'utf8' }) as string
+        else if (!this.assetRefs.some((asset) => asset.path === path)) result[path] = this.volume.readFileSync(path, { encoding: 'utf8' }) as string
       }
     }
     walk('/workspace')
@@ -303,7 +317,110 @@ export class WorkspaceController {
     return copyFiles(projectPersistedWorkspaceFiles(this.snapshot()))
   }
 
+  documentSnapshot(): WorkspaceDocumentV2 {
+    return normalizeWorkspaceDocument({ schemaVersion: 2, files: Object.entries(this.snapshot()).map(([path, content]) => ({ path, content })), assets: this.assetRefs })
+  }
+
+  persistedDocument(): WorkspaceDocumentV2 {
+    return normalizeWorkspaceDocument({ schemaVersion: 2, files: Object.entries(this.persistedFiles()).map(([path, content]) => ({ path, content })), assets: this.assetRefs })
+  }
+
+  subscribeDocument(listener: (change: WorkspaceDocumentChangeV2) => void): () => void {
+    this.documentListeners.add(listener)
+    return () => this.documentListeners.delete(listener)
+  }
+
+  isAsset(path: string): boolean { return this.assetRefs.some((asset) => asset.path === path) }
+  getAsset(path: string): WorkspaceAssetRefV1 | undefined { return this.assetRefs.find((asset) => asset.path === path) }
+  getAssetPort(): WorkspaceAssetPort | undefined { return this.assetPort }
+
+  /** Captures immutable references before the first await, and verifies every resolved byte. */
+  async materializeAssets(document = this.documentSnapshot(), signal?: AbortSignal): Promise<Record<string, Uint8Array>> {
+    this.assertLive()
+    document = normalizeWorkspaceDocument(document)
+    signal = signal ? AbortSignal.any([signal, this.assetPortAbort.signal]) : this.assetPortAbort.signal
+    const port = this.assetPort
+    const result: Record<string, Uint8Array> = Object.create(null)
+    if (document.assets.length && !port) throw new Error('This workspace has no image reader')
+    // Sequential reads bound transient encoded copies for a full 64 MiB workspace.
+    for (const asset of document.assets) {
+      if (signal?.aborted) throw new DOMException('Image loading cancelled', 'AbortError')
+      const bytes = new Uint8Array(await port!.read(asset, signal))
+      if (signal.aborted) throw new DOMException('Image loading cancelled', 'AbortError')
+      if (bytes.length !== asset.byteLength || await imageSha256(bytes) !== asset.sha256) throw new Error(`Image integrity check failed: ${asset.path}`)
+      inspectImage(bytes, asset.mediaType)
+      result[asset.path] = bytes
+    }
+    if (signal?.aborted) throw new DOMException('Image loading cancelled', 'AbortError')
+    return result
+  }
+
+  async applyDocument(transaction: WorkspaceApplyDocumentV2): Promise<WorkspaceDocumentChangeV2> {
+    const data = JSON.parse(canonicalStringifyV1(transaction)) as WorkspaceApplyDocumentV2
+    this.assertLive()
+    assertPlainObject(data, 'workspace document transaction')
+    assertKeys(data, ['version', 'transactionId', 'expectedRevision', 'origin', 'document'], 'workspace document transaction')
+    if (!this.documentMode || data.version !== 2 || !ID.test(data.transactionId)) throw new TypeError('Invalid workspace document transaction')
+    const origin = normalizeOrigin(data.origin)
+    if (origin.kind !== 'external-authority') throw new WorkspaceTransactionError('permission_denied', 'document apply requires external-authority origin')
+    if (data.expectedRevision !== this.revisionValue) throw new WorkspaceTransactionError('revision_mismatch', 'Workspace changed before the document was applied')
+    return this.commitDocument(data.document, origin, data.transactionId)
+  }
+
+  async applyLocalDocument(transaction: WorkspaceApplyLocalDocumentV2): Promise<WorkspaceDocumentChangeV2> {
+    const data = JSON.parse(canonicalStringifyV1(transaction)) as WorkspaceApplyLocalDocumentV2
+    this.assertLive()
+    assertPlainObject(data, 'local document transaction')
+    assertKeys(data, ['version', 'transactionId', 'expectedRevision', 'origin', 'document'], 'local document transaction')
+    if (!this.documentMode || data.version !== 2 || !ID.test(data.transactionId)) throw new TypeError('Invalid local document transaction')
+    const origin = normalizeOrigin(data.origin)
+    if (origin.kind !== 'local-user') throw new WorkspaceTransactionError('permission_denied', 'local document apply requires local-user origin')
+    if (data.expectedRevision !== this.revisionValue) throw new WorkspaceTransactionError('revision_mismatch', 'Workspace changed before the document was applied')
+    const next = normalizeWorkspaceDocument(data.document)
+    const current = this.documentSnapshot()
+    const entries = (document: WorkspaceDocumentV2) => new Map([...document.files.map((file) => [file.path, `text:${file.content}`] as const), ...document.assets.map((asset) => [asset.path, `asset:${asset.blobId}:${asset.sha256}:${asset.byteLength}:${asset.mediaType}`] as const)])
+    const before = entries(current), after = entries(next)
+    for (const path of before.keys()) if (!after.has(path)) this.assertLocalAllowed({ kind: 'delete', path })
+    for (const [path, value] of after) if (before.get(path) !== value) this.assertLocalAllowed({ kind: before.has(path) ? 'write' : 'create', path })
+    return this.commitDocument(next, origin, data.transactionId)
+  }
+
+  private commitDocument(document: WorkspaceDocumentV2, origin: WorkspaceOriginV1, transactionId: string): WorkspaceDocumentChangeV2 {
+    const normalized = normalizeWorkspaceDocument(document)
+    const files = normalizeSnapshot(Object.fromEntries(normalized.files.map((file) => [file.path, file.content])))
+    const change = this.commitCandidate(files, [{ op: 'replace', files }], origin, transactionId, normalized.assets)
+    return Object.freeze({ version: 2, revision: change.revision, transactionId, origin, document: normalizeWorkspaceDocument({ schemaVersion: 2, files: Object.entries(files).map(([path, content]) => ({ path, content })), assets: normalized.assets }) })
+  }
+
+  async importAssetLocal(path: string, bytes: Uint8Array, mediaType: WorkspaceAssetRefV1['mediaType'], callerSignal?: AbortSignal): Promise<void> {
+    this.assertLive()
+    path = normalizePublicWorkspacePath(path)
+    this.assertLocalAllowed({ kind: 'create', path })
+    if (!this.documentMode || !this.assetPort || this.assetPort.capabilities?.import === false) throw new Error('Image import is unavailable')
+    const captured = this.documentSnapshot()
+    const generation = this.initializationGeneration
+    const signal = callerSignal ? AbortSignal.any([callerSignal, this.assetPortAbort.signal]) : this.assetPortAbort.signal
+    const owned = new Uint8Array(bytes)
+    inspectImage(owned, mediaType)
+    // Check combined limits and canonical path collisions before staging bytes.
+    const preview = normalizeWorkspaceDocument({ ...captured, assets: [...captured.assets, { path, blobId: crypto.randomUUID(), sha256: '0'.repeat(64), byteLength: owned.length, mediaType }] })
+    this.assetPort.validateDocument?.(preview)
+    if (signal.aborted) throw new DOMException('Image upload cancelled', 'AbortError')
+    if (captured.files.some((file) => file.path === path) || captured.assets.some((asset) => asset.path === path)) throw new WorkspaceTransactionError('path_exists', `${path} already exists`)
+    const ref = await this.assetPort.stage({ path, bytes: owned, mediaType }, signal)
+    if (signal.aborted) throw new DOMException('Image upload cancelled', 'AbortError')
+    this.assertLifecycleGeneration(generation)
+    if (ref.path !== path || ref.byteLength !== owned.length || ref.mediaType !== mediaType || ref.sha256 !== await imageSha256(owned)) throw new Error('Uploaded image receipt does not match its bytes')
+    if (signal.aborted) throw new DOMException('Image upload cancelled', 'AbortError')
+    this.assertLifecycleGeneration(generation)
+    this.assertLocalAllowed({ kind: 'create', path })
+    const current = this.documentSnapshot()
+    // Source edits during an upload are preserved; conflicting destinations fail.
+    this.commitDocument({ ...current, assets: [...current.assets, ref] }, { kind: 'local-user', source: 'image-import' }, this.nextTransactionId('asset'))
+  }
+
   readFile(path: string): string {
+    if (this.isAsset(normalizePublicWorkspacePath(path))) throw new TypeError('Image bytes cannot be opened as source text')
     return this.volume.readFileSync(normalizePublicWorkspacePath(path), { encoding: 'utf8' }) as string
   }
 
@@ -361,8 +478,28 @@ export class WorkspaceController {
     return this.applyLocal([{ op: 'create', path, text }])
   }
 
-  restoreFilesLocal(files: WorkspaceFiles): WorkspaceChangeV1 {
+  restoreFilesLocal(files: WorkspaceFiles, assets: readonly WorkspaceAssetRefV1[] = []): WorkspaceChangeV1 | WorkspaceDocumentChangeV2 {
+    if (assets.length) {
+      for (const path of [...Object.keys(files), ...assets.map((asset) => asset.path)]) {
+        this.assertLocalAllowed({ kind: 'create', path })
+        if (this.fileExists(path)) throw new WorkspaceTransactionError('path_exists', `${path} already exists`)
+      }
+      const current = this.documentSnapshot()
+      return this.commitDocument({ schemaVersion: 2, files: [...current.files, ...Object.entries(files).map(([path, content]) => ({ path, content }))], assets: [...current.assets, ...assets] }, { kind: 'local-user', source: 'image-restore' }, this.nextTransactionId('restore'))
+    }
     return this.applyLocal(Object.entries(files).map(([path, text]) => ({ op: 'create', path, text })))
+  }
+
+  /** Undo must reauthorize immutable refs before reattaching them after a save. */
+  async restoreAssetsLocal(files: WorkspaceFiles, assets: readonly WorkspaceAssetRefV1[], signal?: AbortSignal): Promise<void> {
+    this.assertLive()
+    const revision = this.revisionValue
+    const generation = this.initializationGeneration
+    const restored = normalizeWorkspaceDocument({ schemaVersion: 2, files: Object.entries(files).map(([path, content]) => ({ path, content })), assets })
+    await this.materializeAssets(restored, signal)
+    this.assertLifecycleGeneration(generation)
+    if (revision !== this.revisionValue) throw new WorkspaceTransactionError('revision_mismatch', 'Workspace changed while restoring images; try Undo again')
+    this.restoreFilesLocal(Object.fromEntries(restored.files.map((file) => [file.path, file.content])), restored.assets)
   }
 
   deleteLocal(path: string): WorkspaceChangeV1 | undefined {
@@ -371,7 +508,7 @@ export class WorkspaceController {
     const stat = this.volume.statSync(normalized)
     if (!stat.isDirectory()) return this.applyLocal([{ op: 'delete', path: normalized }])
     this.assertLocalAllowed({ kind: 'delete', path: normalized })
-    const descendants = Object.keys(this.snapshot()).filter((candidate) => candidate.startsWith(`${normalized}/`))
+    const descendants = [...Object.keys(this.snapshot()), ...this.assetRefs.map((asset) => asset.path)].filter((candidate) => candidate.startsWith(`${normalized}/`))
     if (descendants.length === 0) {
       throw new WorkspaceTransactionError('path_missing', `${normalized} contains no text files`)
     }
@@ -384,7 +521,7 @@ export class WorkspaceController {
     if (!this.volume.existsSync(normalizedFrom)) return undefined
     const stat = this.volume.statSync(normalizedFrom)
     if (!stat.isDirectory()) return this.applyLocal([{ op: 'rename', from: normalizedFrom, to: normalizedTo }])
-    const descendants = Object.keys(this.snapshot()).filter((candidate) => candidate.startsWith(`${normalizedFrom}/`))
+    const descendants = [...Object.keys(this.snapshot()), ...this.assetRefs.map((asset) => asset.path)].filter((candidate) => candidate.startsWith(`${normalizedFrom}/`))
     this.assertLocalAllowed({ kind: 'rename', path: normalizedFrom, to: normalizedTo })
     if (descendants.length === 0) {
       throw new WorkspaceTransactionError('path_missing', `${normalizedFrom} contains no text files`)
@@ -429,12 +566,20 @@ export class WorkspaceController {
 
   async initialize(options: WorkspaceInitializationOptions): Promise<WorkspaceInitializationResult | undefined> {
     this.assertLive()
+    if (options.initialDocument && (options.initialFiles || !options.ephemeral)) throw new TypeError('V2 workspaces require memory cache and cannot specify initialFiles')
+    const document = options.initialDocument ? normalizeWorkspaceDocument(JSON.parse(canonicalStringifyV1(options.initialDocument))) : undefined
     const initialFiles = options.initialFiles ? normalizeSnapshot(options.initialFiles) : undefined
     const initializationKey = canonicalStringifyV1({
       projectId: options.projectId,
       ephemeral: options.ephemeral === true,
       initialFiles: initialFiles ?? null,
+      document: document ?? null,
     })
+    if (this.assetPort !== options.assets || initializationKey !== this.initializationKey) {
+      this.assetPortAbort.abort()
+      this.assetPortAbort = new AbortController()
+      this.assetPort = options.assets
+    }
     // React StrictMode replays effects on the same retained instance. Treat an
     // identical replay as one bootstrap lifecycle, including while OPFS is
     // still resolving, rather than emitting a second synthetic transaction.
@@ -447,8 +592,14 @@ export class WorkspaceController {
     this.cancelPendingWrites()
     this.projectId = options.ephemeral ? '' : options.projectId
     this.ephemeral = options.ephemeral === true
+    this.documentMode = document !== undefined
 
     const initialization = (async () => {
+      if (document) {
+        this.commitDocument(document, { kind: 'bootstrap', source: 'workspace-bootstrap' }, this.nextTransactionId('bootstrap'))
+        return Object.freeze({ seeded: true })
+      }
+      this.assetRefs = []
       let files: WorkspaceFiles = Object.create(null)
       if (!this.ephemeral) {
         try {
@@ -491,6 +642,7 @@ export class WorkspaceController {
   }
 
   dispose(): void {
+    this.assetPortAbort.abort()
     if (this.disposed) return
     this.disposed = true
     this.initializationGeneration += 1
@@ -498,6 +650,7 @@ export class WorkspaceController {
     this.initializationResult = undefined
     this.cancelPendingWrites()
     this.listeners.clear()
+    this.documentListeners.clear()
     this.statusListeners.clear()
   }
 
@@ -560,7 +713,12 @@ export class WorkspaceController {
     for (const operation of operations) {
       if (!('expectedSha256' in operation) || operation.expectedSha256 === undefined) continue
       const sourcePath = operation.op === 'rename' ? operation.from : operation.path
+      const asset = this.getAsset(sourcePath)
       const currentText = current[sourcePath]
+      if (asset) {
+        if (asset.sha256 !== operation.expectedSha256) throw new WorkspaceTransactionError('digest_mismatch', `workspace digest precondition failed for ${sourcePath}`)
+        continue
+      }
       if (currentText === undefined) {
         throw new WorkspaceTransactionError('digest_mismatch', `workspace digest precondition failed for ${sourcePath}`)
       }
@@ -588,7 +746,8 @@ export class WorkspaceController {
   }
 
   private applyToCandidate(current: WorkspaceFiles, operations: readonly WorkspaceOperationV1[]): WorkspaceFiles {
-    let candidate = { ...current }
+    let candidate = { ...current, ...Object.fromEntries(this.assetRefs.map((asset) => [asset.path, ''])) }
+    const assets = this.assetsAfterOperations(operations)
     for (const operation of operations) {
       if (operation.op === 'replace') {
         candidate = { ...operation.files }
@@ -612,7 +771,20 @@ export class WorkspaceController {
     if (Object.keys(candidate).length > MAX_FILES) {
       throw new RangeError('workspace contains more than 500 files')
     }
+    for (const asset of assets) delete candidate[asset.path]
+    if (this.documentMode) normalizeWorkspaceDocument({ schemaVersion: 2, files: Object.entries(candidate).map(([path, content]) => ({ path, content })), assets })
     return candidate
+  }
+
+  private assetsAfterOperations(operations: readonly WorkspaceOperationV1[]): readonly WorkspaceAssetRefV1[] {
+    let assets = [...this.assetRefs]
+    for (const operation of operations) {
+      if (operation.op === 'replace' && this.documentMode) throw new TypeError('A V2 workspace requires applyDocument for whole-workspace replacement')
+      if (operation.op === 'write' && assets.some((asset) => asset.path === operation.path)) throw new TypeError('Image bytes cannot be written as source text')
+      if (operation.op === 'delete') assets = assets.filter((asset) => asset.path !== operation.path)
+      if (operation.op === 'rename') assets = assets.map((asset) => asset.path === operation.from ? Object.freeze({ ...asset, path: operation.to }) : asset)
+    }
+    return assets
   }
 
   private commitCandidate(
@@ -620,6 +792,7 @@ export class WorkspaceController {
     operations: readonly WorkspaceOperationV1[],
     origin: WorkspaceOriginV1,
     transactionId: string,
+    assetRefs?: readonly WorkspaceAssetRefV1[],
   ): WorkspaceChangeV1 {
     this.assertLive()
     if (this.committing) {
@@ -633,6 +806,11 @@ export class WorkspaceController {
     this.committing = true
     try {
       const previous = this.snapshot()
+      const nextAssets = assetRefs ?? this.assetsAfterOperations(operations)
+      if (this.documentMode) {
+        const document = normalizeWorkspaceDocument({ schemaVersion: 2, files: Object.entries(candidate).map(([path, content]) => ({ path, content })), assets: nextAssets })
+        this.assetPort?.validateDocument?.(document)
+      }
       const nextVolume = new Volume()
       nextVolume.mkdirSync('/workspace', { recursive: true })
       for (const [path, text] of Object.entries(candidate)) {
@@ -640,7 +818,13 @@ export class WorkspaceController {
         if (!nextVolume.existsSync(directory)) nextVolume.mkdirSync(directory, { recursive: true })
         nextVolume.writeFileSync(path, text, { encoding: 'utf8' })
       }
+      for (const asset of nextAssets) {
+        const directory = asset.path.slice(0, asset.path.lastIndexOf('/'))
+        nextVolume.mkdirSync(directory, { recursive: true })
+        nextVolume.writeFileSync(asset.path, new Uint8Array())
+      }
       this.volume = nextVolume
+      this.assetRefs = nextAssets
       this.synchronizeStores(operations, candidate)
       this.persistChanges(previous, candidate, operations)
       change = Object.freeze({
@@ -659,7 +843,7 @@ export class WorkspaceController {
   }
 
   private enqueueFeedDelivery(change: WorkspaceChangeV1): void {
-    this.feedDeliveryQueue.push({ change, listeners: [...this.listeners] })
+    this.feedDeliveryQueue.push({ change, listeners: [...this.listeners], document: Object.freeze({ version: 2, revision: change.revision, transactionId: change.transactionId, origin: change.origin, document: this.documentSnapshot() }), documentListeners: [...this.documentListeners] })
     if (this.deliveringFeed) return
     this.deliveringFeed = true
     try {
@@ -667,6 +851,9 @@ export class WorkspaceController {
         const next = this.feedDeliveryQueue.shift()!
         for (const listener of next.listeners) {
           try { listener(next.change) } catch (error) { console.warn('[web-ide] workspace listener failed', error) }
+        }
+        for (const listener of next.documentListeners) {
+          try { listener(next.document) } catch (error) { console.warn('[web-ide] document listener failed', error) }
         }
       }
     } finally {
@@ -721,7 +908,7 @@ export class WorkspaceController {
   }
 
   private assertLocalAllowed(request: WorkspaceMutationRequest): void {
-    if (this.readOnly || this.mutationPolicy?.(request) === false) {
+    if (this.readOnly || (request.kind === 'delete' && this.isAsset(request.path) && this.assetPort?.capabilities?.delete === false) || this.mutationPolicy?.(request) === false) {
       throw new WorkspaceTransactionError('permission_denied', `local ${request.kind} is not permitted for ${request.path}`)
     }
   }

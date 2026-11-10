@@ -3,13 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const harness = vi.hoisted(() => {
   const createCoordinator = () => {
     let generation = 0
+    let abort = new AbortController()
     let pendingRun: Promise<void> | undefined
     let pendingRunIsPreparing = false
     return {
       beginTransition: () => {
+        abort.abort(); abort = new AbortController()
         generation += 1
         return generation
       },
+      transitionSignal: () => abort.signal,
       clearPendingRun: (task: Promise<void>) => {
         if (pendingRun === task) {
           pendingRun = undefined
@@ -38,6 +41,7 @@ const harness = vi.hoisted(() => {
     isRunning: false,
     setIsCompiling: vi.fn<(value: boolean) => void>(),
     setIsRunning: vi.fn<(value: boolean) => void>(),
+    setPreparationError: vi.fn<(value: string | null) => void>(),
   }
   const debugState = {
     reset: vi.fn(),
@@ -77,6 +81,8 @@ vi.mock('@/web-ide/react/workbench-instance-context', () => ({
     testStore: { getState: () => harness.testState },
     workspace: {
       snapshot: () => ({ '/workspace/main.py': 'print("instance")' }),
+      documentSnapshot: () => ({ schemaVersion: 2, files: [{ path: '/workspace/main.py', content: 'print("instance")' }], assets: [] }),
+      materializeAssets: async () => ({}),
     },
   }),
 }))

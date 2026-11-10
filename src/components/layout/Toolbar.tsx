@@ -25,7 +25,7 @@ export function Toolbar() {
     const configuration = useWebIDEConfiguration()
     const engine = useEngine()
     const host = useIDEHost()
-    const { isCompiling, isRunning, setIsRunning } = useWorkbenchExecutionStore()
+    const { isCompiling, isRunning, setIsRunning, preparationError, setPreparationError } = useWorkbenchExecutionStore()
     const { controller: panelLayout } = usePanelLayout()
     const { cacheState, downloadProgress } = useWorkbenchCompilerStore()
     const { debugMode, pushHistoryState, setDebugMode } = useWorkbenchDebugStore()
@@ -91,6 +91,9 @@ export function Toolbar() {
             )}
 
             <SaveStatus />
+            {preparationError && <span role="alert" className="max-w-md truncate text-destructive" title={preparationError}>
+                {preparationError} <button type="button" aria-label="Dismiss preparation error" onClick={() => setPreparationError(null)}>×</button>
+            </span>}
 
             <div className="mr-auto" />
 

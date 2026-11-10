@@ -1,5 +1,6 @@
 import type { IDEEventSink } from './events'
 import type { WorkspaceMutationPolicy } from './workspace'
+import type { WorkspaceAssetPort, WorkspaceDocumentV2 } from '../../assets/contracts'
 
 export type WorkspaceFiles = Record<string, string>
 
@@ -18,6 +19,12 @@ export interface IDEWorkspacePersistence {
   dispose?(): void | Promise<void>
 }
 
+export interface IDEWorkspaceDocumentPersistence {
+  save(document: WorkspaceDocumentV2, context: WorkspaceSaveContext): void | Promise<void>
+  flush?(): void | Promise<void>
+  dispose?(): void | Promise<void>
+}
+
 export interface IDEWorkspace {
   /**
    * Used to isolate browser-local state. Nova composes assignment/submission
@@ -25,6 +32,10 @@ export interface IDEWorkspace {
    */
   id: string
   initialFiles?: WorkspaceFiles
+  /** Atomic source/asset document. Requires memory cache; excludes initialFiles/persistence. */
+  initialDocument?: WorkspaceDocumentV2
+  documentPersistence?: IDEWorkspaceDocumentPersistence
+  assets?: WorkspaceAssetPort
   /**
    * Default 1-based breakpoints for a newly seeded workspace. Opting in also
    * saves breakpoint changes per workspace in browser storage, including
