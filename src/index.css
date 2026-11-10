@@ -746,4 +746,3 @@
 .web-ide-source-editor { border: 1px solid var(--color-border); border-radius: 6px; }
 .nova-settings-popup .nova-popup-item { width: 100%; border: 0; text-align: left; font: inherit; }
 .nova-settings-popup .nova-popup-item:focus-visible { outline: 1px solid var(--color-ring); outline-offset: -2px; background: var(--color-row-hover); }
-.web-ide-root .monaco-editor .quick-input-widget { width: min(600px, calc(100vw - 32px)) !important; max-width: calc(100vw - 32px); }

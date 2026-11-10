@@ -62,3 +62,76 @@ test('standalone controlled source editor changes host value without starting a 
   await expect(page.getByRole('heading', { name: 'Host form title' })).toHaveCSS('font-size', '24px')
   expectCleanBrowser(diagnostics)
 })
+
+
+test('explicit source navigation exposes compact Code with the target focused and panes retained', async ({ page }) => {
+  const diagnostics = observeBrowserDiagnostics(page)
+  await page.setViewportSize({ width: 850, height: 900 })
+  await page.goto('/?source=probe')
+  await expect(page.locator('.monaco-editor')).toBeVisible()
+  const editor = await page.locator('.monaco-editor').elementHandle()
+  const terminal = await page.locator('.xterm').elementHandle()
+  const views = page.getByRole('tablist', { name: 'Workbench views' })
+  const code = views.getByRole('tab', { name: 'Code', exact: true })
+  const workspace = views.getByRole('tab', { name: 'Workspace', exact: true })
+  const output = views.getByRole('tab', { name: 'Output', exact: true })
+  await page.getByRole('button', { name: 'Execution and source', exact: true }).click()
+  const probe = page.getByRole('region', { name: 'Execution and source probe' })
+  await expect(workspace).toHaveAttribute('aria-selected', 'true')
+  await probe.getByRole('button', { name: 'Present current helper line' }).click()
+  await expect(code).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'helpers.py' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'helpers.py' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('contentinfo', { name: 'Status bar' })).toContainText('Ln 2, Col 1')
+  await expect.poll(() => page.locator('.monaco-editor').evaluate((node) => node.contains(document.activeElement))).toBe(true)
+
+  // Repeated navigation to the same file is a new explicit request too.
+  await workspace.click()
+  await probe.getByRole('button', { name: 'Present current helper line' }).click()
+  await expect(code).toHaveAttribute('aria-selected', 'true')
+  await output.click()
+  await page.evaluate(() => {
+    const scope = window as typeof window & {
+      __webIDESourcePresentationProbe?: { source: { reveal(location: { path: string; line: number; column: number }): void } }
+    }
+    scope.__webIDESourcePresentationProbe!.source.reveal({ path: '/workspace/main.py', line: 4, column: 3 })
+  })
+  await expect(code).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('contentinfo', { name: 'Status bar' })).toContainText('Ln 4, Col 3')
+  await expect.poll(() => page.locator('.monaco-editor').evaluate((node) => node.contains(document.activeElement))).toBe(true)
+  expect(await editor!.evaluate((node) => node.isConnected)).toBe(true)
+  expect(await terminal!.evaluate((node) => node.isConnected)).toBe(true)
+  // An old reveal must not prevent subsequent deliberate pane selection.
+  await output.click()
+  await expect(output).toHaveAttribute('aria-selected', 'true')
+  expectCleanBrowser(diagnostics)
+})
+
+test('Go to Line stays within a narrow editor in both themes and returns editor focus', async ({ page }) => {
+  const diagnostics = observeBrowserDiagnostics(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/?layout=redesign')
+  await expect(page.locator('.monaco-editor')).toBeVisible()
+  for (const theme of ['Light (Modern)', 'Dark (Modern)']) {
+    await page.getByRole('button', { name: 'Manage', exact: true }).click()
+    await page.getByRole('menuitemradio', { name: theme, exact: true }).click()
+    await page.locator('.monaco-editor').click({ position: { x: 120, y: 50 } })
+    await page.keyboard.press('Control+g')
+    const widget = page.locator('.quick-input-widget:visible')
+    await expect(widget).toBeVisible()
+    const box = await widget.boundingBox()
+    const editorBox = await page.locator('.monaco-editor').boundingBox()
+    expect(box!.x).toBeGreaterThanOrEqual(editorBox!.x)
+    expect(box!.x + box!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width)
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390)
+    const input = widget.locator('input')
+    await expect(input).toBeFocused()
+    await input.fill(':3')
+    await page.keyboard.press('Enter')
+    await expect(widget).toBeHidden()
+    await expect(page.getByRole('contentinfo', { name: 'Status bar' })).toContainText('Ln 3, Col 1')
+    await expect.poll(() => page.locator('.monaco-editor').evaluate((node) => node.contains(document.activeElement))).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  }
+  expectCleanBrowser(diagnostics)
+})
