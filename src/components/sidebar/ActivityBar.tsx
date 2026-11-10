@@ -7,7 +7,7 @@ import { useIDEActivities } from '@/web-ide/react/contribution-context'
 import { SettingsMenu } from './SettingsMenu'
 import { useSidebarLayout } from '@/web-ide/react/sidebar-layout-context'
 
-export function ActivityBar() {
+export function ActivityBar({ onSelect }: { onSelect?: () => void }) {
     const { controller, snapshot } = useSidebarLayout()
     const activities = useIDEActivities()
 
@@ -22,7 +22,7 @@ export function ActivityBar() {
                             key={activity.id}
                             type="button"
                             className={`nova-ab-btn${isActive ? ' active' : ''}`}
-                            onClick={() => controller.handleActivityClick(activity.id)}
+                            onClick={() => { controller.handleActivityClick(activity.id); onSelect?.() }}
                             aria-label={activity.title}
                             aria-pressed={isActive}
                         >

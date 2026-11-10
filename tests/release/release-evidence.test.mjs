@@ -1889,6 +1889,9 @@ describe('artifact manifest', () => {
     const committedManifest = await readJSON(path.join(repositoryRoot, 'package.json'))
     const packageManifest = {
       ...committedManifest,
+      // This synthetic stable-release fixture stays bound to its reviewed
+      // configuration even when a branch prepares a staging prerelease.
+      version: configuration.package.slice(configuration.package.lastIndexOf('@') + 1),
       dependencies: { 'debugger-sh': FORK_ENGINE_URL },
     }
     const manifest = await createArtifactManifest({

@@ -1,6 +1,7 @@
 import { Component, useState, type ReactNode } from 'react'
 import {
   WebIDE,
+  SourceEditor,
   WebIDEHostProvider,
   type IDEPlugin,
   type WebIDEConfiguration,
@@ -8,6 +9,8 @@ import {
 } from 'web-ide'
 
 export type LayoutBrowserMode =
+  | 'redesign'
+  | 'source-editor'
   | 'custom'
   | 'invalid'
   | 'invalid-activity'
@@ -100,6 +103,19 @@ export function LayoutBrowserFixture({
   host: WebIDEHost
 }) {
   const [mountKey, setMountKey] = useState(0)
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [source, setSource] = useState('print("Starter")')
+  if (mode === 'source-editor') return <main>
+    <h2>Host form title</h2><p>Host form guidance</p>
+    <SourceEditor value={source} onChange={setSource} language="python" ariaLabel="Assignment starter code" theme={theme} />
+    <output aria-label="Saved starter">{source}</output>
+  </main>
+  if (mode === 'redesign') return <main style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <header style={{ height: 64, flexShrink: 0 }}><h2 style={{ margin: 8 }}>Host dialog title</h2></header>
+    <div style={{ flex: 1, minHeight: 0 }}><WorkbenchFixture label="Redesign workbench"
+      configuration={{ ...configuration, theme, onThemeChange: setTheme, brand: false }}
+      host={workspaceHost(host, 'ui-redesign')} /></div>
+  </main>
 
   if (mode === 'invalid' || mode === 'invalid-activity' || mode === 'unavailable') {
     const invalidConfiguration: WebIDEConfiguration = {
@@ -125,6 +141,7 @@ export function LayoutBrowserFixture({
   if (mode === 'multiple') {
     const firstConfiguration: WebIDEConfiguration = {
       ...configuration,
+      responsive: false,
       initialLayout: {
         selectedPanelId: 'variables',
         panelColumnPercent: 35,
@@ -133,6 +150,7 @@ export function LayoutBrowserFixture({
     }
     const secondConfiguration: WebIDEConfiguration = {
       ...configuration,
+      responsive: false,
       initialLayout: {
         selectedPanelId: 'canvas',
         panelColumnPercent: 50,

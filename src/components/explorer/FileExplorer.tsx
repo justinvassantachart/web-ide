@@ -54,6 +54,7 @@ function InlineInput({
 }) {
     const ref = useRef<HTMLInputElement>(null)
     const [value, setValue] = useState(defaultValue ?? '')
+    const submitted = useRef(false)
 
     useEffect(() => {
         ref.current?.focus()
@@ -66,7 +67,7 @@ function InlineInput({
     const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault()
-            if (value.trim()) onSubmit(value.trim())
+            if (value.trim()) { submitted.current = true; onSubmit(value.trim()) }
         } else if (e.key === 'Escape') {
             e.preventDefault()
             onCancel()
@@ -78,10 +79,11 @@ function InlineInput({
             <input
                 ref={ref}
                 className="vsx-input"
+                aria-label={defaultValue ? `Rename ${defaultValue}` : 'New file name'}
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(e) => { submitted.current = false; setValue(e.target.value) }}
                 onKeyDown={handleKey}
-                onBlur={() => (value.trim() ? onSubmit(value.trim()) : onCancel())}
+                onBlur={() => { if (!submitted.current) { submitted.current = true; if (value.trim()) onSubmit(value.trim()); else onCancel() } }}
                 spellCheck={false}
             />
         </span>
@@ -100,7 +102,7 @@ function ContextMenu({
     x: number
     y: number
     items: MenuItem[]
-    onClose: () => void
+    onClose: (restoreFocus?: boolean) => void
 }) {
     const ref = useRef<HTMLDivElement>(null)
     useEffect(() => {
@@ -108,7 +110,7 @@ function ContextMenu({
             if (!ref.current?.contains(e.target as Node)) onClose()
         }
         const onKey = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'Escape') onClose()
+            if (e.key === 'Escape') { e.preventDefault(); onClose(true) }
         }
         window.addEventListener('mousedown', onDown)
         window.addEventListener('keydown', onKey)
@@ -117,6 +119,8 @@ function ContextMenu({
             window.removeEventListener('keydown', onKey)
         }
     }, [onClose])
+
+    useEffect(() => { ref.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus() }, [])
 
     // Clamp to viewport so the menu doesn't bleed off the right/bottom edges.
     // useLayoutEffect: the menu must be measured after render but repositioned
@@ -132,22 +136,33 @@ function ContextMenu({
     }, [x, y])
 
     return (
-        <div ref={ref} className="vsx-context-menu" style={{ left: x, top: y }} role="menu">
+        <div ref={ref} className="vsx-context-menu" style={{ left: x, top: y }} role="menu" aria-label="File actions"
+          onKeyDown={(event) => {
+            const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+            const index = items.indexOf(document.activeElement as HTMLButtonElement)
+            const next = event.key === 'ArrowDown' ? (index + 1) % items.length
+              : event.key === 'ArrowUp' ? (index - 1 + items.length) % items.length
+              : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : undefined
+            if (next !== undefined) { event.preventDefault(); items[next]?.focus() }
+            if (event.key === 'Tab') onClose()
+          }}>
             {items.map((it, i) =>
                 it.kind === 'separator' ? (
                     <div key={i} className="vsx-menu-separator" />
                 ) : (
-                    <div
+                    <button
+                        type="button"
+                        tabIndex={-1}
                         key={i}
                         className={`vsx-menu-item${it.danger ? ' danger' : ''}`}
                         role="menuitem"
                         onClick={() => {
+                            onClose(true)
                             it.onClick()
-                            onClose()
                         }}
                     >
                         {it.label}
-                    </div>
+                    </button>
                 )
             )}
         </div>
@@ -185,7 +200,10 @@ function TreeRow({
             style={{ paddingLeft }}
             onClick={onClick}
             onContextMenu={onContextMenu}
+            id={`vsx-${encodeURIComponent(node.path)}`}
             role="treeitem"
+            aria-selected={isSelected}
+            aria-label={node.name}
             aria-expanded={isDir ? isExpanded : undefined}
             aria-level={depth + 1}
         >
@@ -252,6 +270,9 @@ export function FileExplorer() {
     const host = useIDEHost()
     const readOnly = host?.workspace?.readOnly === true
 
+    const treeRef = useRef<HTMLDivElement>(null)
+    const [error, setError] = useState<string | null>(null)
+    const [deleted, setDeleted] = useState<{ path: string; files: Record<string, string>; active: string | null } | null>(null)
     const [focusedPath, setFocusedPath] = useState<string | null>(null)
     const [renamingPath, setRenamingPath] = useState<string | null>(null)
     // Inline create has a parent path ('' = root). Null = idle.
@@ -289,52 +310,65 @@ export function FileExplorer() {
         const parent = node.path.substring(0, node.path.lastIndexOf('/'))
         try {
             const newPath = normalizePublicWorkspacePath(`${parent}/${name}`)
-            if (newPath !== node.path && !instance.workspace.fileExists(newPath)) {
+            if (newPath !== node.path && instance.workspace.fileExists(newPath)) throw new Error('A file or folder with that name already exists. Choose another name.')
+            if (newPath !== node.path) {
                 instance.workspace.renameLocal(node.path, newPath)
                 host?.events?.emit('file_rename', { from: node.path, to: newPath })
             }
         } catch (error) {
-            console.warn('[web-ide] local workspace rename rejected', error)
+            setError(error instanceof Error ? error.message : 'Could not rename this file. Try another name.')
+            return
         }
+        setError(null)
         setRenamingPath(null)
+        treeRef.current?.focus()
     }, [host, instance, readOnly])
 
     const handleDelete = useCallback((node: VFSNode) => {
         if (readOnly) return
         try {
+            const snapshot = instance.workspace.snapshot()
+            const backup = Object.fromEntries(Object.entries(snapshot).filter(([path]) => path === node.path || path.startsWith(`${node.path}/`)))
             instance.workspace.deleteLocal(node.path)
+            setDeleted({ path: node.path, files: backup, active: activeFile })
+            setError(null)
             host?.events?.emit('file_delete', { path: node.path })
         } catch (error) {
-            console.warn('[web-ide] local workspace delete rejected', error)
+            setError(error instanceof Error ? error.message : 'Could not delete this file. Try again.')
         }
-    }, [host, instance, readOnly])
+    }, [host, instance, readOnly, activeFile])
 
     const handleCreate = useCallback((parent: string, name: string) => {
         if (readOnly) return
         const base = parent || ROOT
         try {
             const newPath = normalizePublicWorkspacePath(`${base}/${name}`)
-            if (!instance.workspace.fileExists(newPath)) {
+            if (instance.workspace.fileExists(newPath)) throw new Error('A file or folder with that name already exists. Choose another name.')
+            {
                 instance.workspace.createFileLocal(newPath, '')
                 host?.events?.emit('file_create', { path: newPath, kind: 'file' })
                 setActiveFile(newPath, '')
             }
         } catch (error) {
-            console.warn('[web-ide] local workspace create rejected', error)
+            setError(error instanceof Error ? error.message : 'Could not create this file. Try another name.')
+            return
         }
+        setError(null)
         if (parent) expandDir(parent)
         setCreating(null)
+        treeRef.current?.focus()
     }, [host, expandDir, instance, readOnly, setActiveFile])
 
     const startCreate = useCallback((parent: string) => {
         if (readOnly) return
         if (parent) expandDir(parent)
+        setError(null)
         setCreating({ parent })
     }, [expandDir, readOnly])
 
     // ── Context menu ──────────────────────────────────────────────
 
-    const showRowMenu = (e: React.MouseEvent, node: VFSNode) => {
+    const showRowMenu = (e: Pick<React.MouseEvent, 'preventDefault' | 'stopPropagation' | 'clientX' | 'clientY'>, node: VFSNode) => {
         e.preventDefault()
         e.stopPropagation()
         setFocusedPath(node.path)
@@ -371,12 +405,22 @@ export function FileExplorer() {
         // create) — otherwise Backspace in the new-file field deletes the
         // currently focused file in the tree.
         if (e.target !== e.currentTarget) return
-        if (!focusedPath || rows.length === 0) return
+        if (rows.length === 0) return
+        if (!focusedPath) { setFocusedPath(rows[0].node.path); e.preventDefault(); return }
         const idx = rows.findIndex((r) => r.node.path === focusedPath)
         if (idx === -1) return
         const row = rows[idx]
 
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+            const bounds = e.currentTarget.querySelector('.vsx-row.selected')?.getBoundingClientRect() ?? e.currentTarget.getBoundingClientRect()
+            showRowMenu({ preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation(), clientX: bounds.left + 20, clientY: bounds.top + 20 }, row.node)
+            return
+        }
         switch (e.key) {
+            case 'Home':
+                e.preventDefault(); setFocusedPath(rows[0].node.path); break
+            case 'End':
+                e.preventDefault(); setFocusedPath(rows[rows.length - 1].node.path); break
             case 'ArrowDown':
                 e.preventDefault()
                 if (idx < rows.length - 1) setFocusedPath(rows[idx + 1].node.path)
@@ -482,14 +526,14 @@ export function FileExplorer() {
                 <span className="vsx-titlebar-label">Explorer</span>
             </div>
 
-            <div
-                className="vsx-section-header"
-                onClick={() => setSectionCollapsed((v) => !v)}
-            >
+            <div className="vsx-section-header">
+                <button type="button" className="vsx-section-toggle" aria-expanded={!sectionCollapsed}
+                    onClick={() => setSectionCollapsed((v) => !v)}>
                 <span className={`vsx-section-twistie${sectionCollapsed ? ' collapsed' : ''}`}>
                     <Codicon name="chevron-down" />
                 </span>
                 <span className="vsx-section-title">{WORKSPACE_LABEL}</span>
+                </button>
                 <span className="vsx-section-actions" onClick={(e) => e.stopPropagation()}>
                     {!readOnly && (
                         <>
@@ -504,13 +548,6 @@ export function FileExplorer() {
                     )}
                     <button
                         className="vsx-action-btn"
-                        title="Refresh Explorer"
-                        onClick={(e) => { e.stopPropagation() }}
-                    >
-                        <Codicon name="refresh" />
-                    </button>
-                    <button
-                        className="vsx-action-btn"
                         title="Collapse Folders in Explorer"
                         onClick={(e) => {
                             e.stopPropagation()
@@ -522,12 +559,28 @@ export function FileExplorer() {
                 </span>
             </div>
 
+            {error && <div className="vsx-feedback" role="alert">{error}<button type="button" aria-label="Dismiss file error" onClick={() => setError(null)}>×</button></div>}
+            {deleted && <div className="vsx-feedback" role="status">Deleted {deleted.path.split('/').pop()}.
+                <button type="button" onClick={() => {
+                    try {
+                        const entries = Object.entries(deleted.files)
+                        if (entries.some(([path]) => instance.workspace.fileExists(path))) throw new Error('A file now uses the deleted name. Rename it before undoing.')
+                        instance.workspace.restoreFilesLocal(deleted.files)
+                        if (deleted.active && Object.hasOwn(deleted.files, deleted.active)) setActiveFile(deleted.active, deleted.files[deleted.active])
+                        setDeleted(null); setError(null)
+                    } catch (error) { setError(error instanceof Error ? error.message : 'Could not restore the file.') }
+                }}>Undo</button>
+                <button type="button" aria-label="Dismiss deletion notice" onClick={() => setDeleted(null)}>×</button>
+            </div>}
             <div
+                ref={treeRef}
                 className="vsx-tree"
                 tabIndex={0}
                 onKeyDown={onKeyDown}
                 onContextMenu={showEmptyAreaMenu}
                 role="tree"
+                aria-label="Workspace files"
+                aria-activedescendant={focusedPath ? `vsx-${encodeURIComponent(focusedPath)}` : undefined}
             >
                 {renderedRows}
                 {!sectionCollapsed && rows.length === 0 && !creating && (
@@ -540,7 +593,7 @@ export function FileExplorer() {
                     x={menu.x}
                     y={menu.y}
                     items={menu.items}
-                    onClose={() => setMenu(null)}
+                    onClose={(restoreFocus) => { setMenu(null); if (restoreFocus) treeRef.current?.focus() }}
                 />
             )}
         </div>

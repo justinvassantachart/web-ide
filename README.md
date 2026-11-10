@@ -1,5 +1,9 @@
 # web-ide
 
+This branch prepares the `0.10.2-ui.0` staging prerelease for interface review.
+See [UI staging preview](docs/ui-staging-preview.md) for its public API and
+validation scope; the stable release pipeline and historical tags are unchanged.
+
 web-ide is a browser IDE component for React applications. It provides a Monaco
 editor, virtual workspace, terminal, debugger, typed runtime events, workspace
 saving, and plugin APIs. The built-in runtime providers support C++ and Python.

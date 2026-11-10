@@ -1,4 +1,21 @@
-@import "tailwindcss";
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+
+@layer base {
+  .web-ide-root, .web-ide-root *, .web-ide-root *::before, .web-ide-root *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+  .web-ide-root { line-height: 1.5; tab-size: 4; }
+  .web-ide-root :is(h1,h2,h3,h4,h5,h6) { font-size: inherit; font-weight: inherit; }
+  .web-ide-root :is(button,input,select,textarea) { font: inherit; color: inherit; background: transparent; }
+  .web-ide-root :is(ol,ul) { list-style: none; }
+  .web-ide-root :is(img,svg) { vertical-align: middle; }
+  .web-ide-root button { appearance: button; }
+  .web-ide-root [hidden] { display: none !important; }
+}
 
 /* Theme variant — fires when <html> carries data-theme="dark" (which the
    [initTheme] bootstrap always sets before first paint, so this selector
@@ -87,7 +104,7 @@
    Values lifted from microsoft/vscode/extensions/theme-defaults/themes/light_modern.json.
    Same token *names* as the dark palette so utility classes pick up the
    override automatically. */
-[data-theme="light"] .web-ide-root {
+.web-ide-root[data-theme="light"], [data-theme="light"] .web-ide-root:not([data-theme="dark"]) {
   --color-background: #ffffff;
   --color-foreground: #3b3b3b;
   --color-card: #f8f8f8;
@@ -712,3 +729,21 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* Compact views keep the code, terminal and contributions mounted. */
+.web-ide-compact-nav { display: flex; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--color-border); background: var(--color-chrome); }
+.web-ide-compact-nav button { min-height: 32px; padding: 0 14px; border-radius: 4px; color: var(--color-muted-foreground); cursor: pointer; }
+.web-ide-compact-nav button[aria-selected="true"] { color: var(--color-foreground); background: var(--color-row-active); box-shadow: inset 0 -2px var(--color-primary); }
+.web-ide-compact-nav button:focus-visible { outline: 2px solid var(--color-ring); outline-offset: -2px; }
+.web-ide-root[data-compact-view] > div > .nova-activitybar { width: 40px; min-width: 40px; }
+.web-ide-root[data-compact-view] [data-web-ide-region$="-column"] { display: none !important; }
+.web-ide-root[data-compact-view="workspace"] [data-web-ide-region="sidebar-column"],
+.web-ide-root[data-compact-view="code"] [data-web-ide-region="editor-column"],
+.web-ide-root[data-compact-view="output"] [data-web-ide-region="panel-column"] { display: flex !important; flex: 1 1 100% !important; min-width: 0 !important; }
+.web-ide-root[data-compact-view] [data-slot="resizable-handle"][aria-orientation="vertical"] { display: none !important; }
+.web-ide-root[data-compact-view] .web-ide-toolbar { overflow-x: auto; gap: 6px; padding-inline: 8px; }
+.web-ide-root[data-compact-view] .web-ide-toolbar-commands { gap: 4px; }
+.web-ide-source-editor { border: 1px solid var(--color-border); border-radius: 6px; }
+.nova-settings-popup .nova-popup-item { width: 100%; border: 0; text-align: left; font: inherit; }
+.nova-settings-popup .nova-popup-item:focus-visible { outline: 1px solid var(--color-ring); outline-offset: -2px; background: var(--color-row-hover); }
+.web-ide-root .monaco-editor .quick-input-widget { width: min(600px, calc(100vw - 32px)) !important; max-width: calc(100vw - 32px); }

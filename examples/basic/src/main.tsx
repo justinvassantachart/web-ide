@@ -241,7 +241,9 @@ const host: WebIDEHost = {
 initWebIDETheme()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {layoutMode === 'custom'
+    {layoutMode === 'redesign'
+      || layoutMode === 'source-editor'
+      || layoutMode === 'custom'
       || layoutMode === 'invalid'
       || layoutMode === 'invalid-activity'
       || layoutMode === 'multiple'

@@ -21,6 +21,20 @@ async function initialized(files: Record<string, string>) {
 }
 
 describe('instance-owned workspace controller', () => {
+  it('restores deleted files atomically and never overwrites a reused path', async () => {
+    const instance = await initialized({ '/workspace/main.py': 'new contents' })
+    expect(() => instance.workspace.restoreFilesLocal({
+      '/workspace/helpers.py': 'original helper', '/workspace/main.py': 'old contents',
+    })).toThrow()
+    expect(instance.workspace.snapshot()).toEqual({ '/workspace/main.py': 'new contents' })
+    instance.workspace.deleteLocal('/workspace/main.py')
+    const listener = vi.fn()
+    instance.workspace.subscribe(listener)
+    instance.workspace.restoreFilesLocal({ '/workspace/main.py': 'old contents', '/workspace/helpers.py': 'original helper' })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(instance.workspace.snapshot()).toEqual({ '/workspace/main.py': 'old contents', '/workspace/helpers.py': 'original helper' })
+  })
+
   it('isolates overlapping canonical paths, stores, breakpoints, URIs, and feeds', async () => {
     const first = await initialized({ '/workspace/main.cpp': 'first\n' })
     const second = await initialized({ '/workspace/main.cpp': 'second\n' })

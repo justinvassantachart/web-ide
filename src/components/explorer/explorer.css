@@ -373,3 +373,11 @@
 
     --vsx-menu-danger-hover: #d13438;
 }
+
+.vsx-menu-item { width: 100%; border: 0; background: transparent; font: inherit; text-align: left; min-height: 28px; }
+.vsx-menu-item:focus-visible { outline: 1px solid var(--vsx-focusBorder); outline-offset: -2px; background: var(--vsx-menu-selectionBackground); color: white; }
+.vsx-section-toggle { display: flex; align-items: center; min-width: 0; flex: 1; min-height: 28px; cursor: pointer; }
+.vsx-section-toggle:focus-visible { outline: 1px solid var(--vsx-focusBorder); }
+.vsx-feedback { padding: 8px 12px; font-size: 12px; line-height: 1.5; border-block: 1px solid var(--vsx-sideBar-border); overflow-wrap: anywhere; }
+.vsx-feedback[role="alert"] { color: var(--color-destructive); }
+.vsx-feedback button { min-height: 28px; padding: 2px 6px; margin-left: 4px; color: var(--vsx-focusBorder); cursor: pointer; text-decoration: underline; }

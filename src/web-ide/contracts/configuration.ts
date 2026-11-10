@@ -30,6 +30,12 @@ export interface WebIDEConfiguration {
   testProvider?: string
   /** Whole-suite execution deadline; compilation excluded; Debug has no deadline. */
   testing?: { readonly timeoutMs?: number }
+  /** Controlled workbench palette. Omit to retain the persisted IDE preference. */
+  theme?: 'light' | 'dark'
+  /** Receives Manage-menu theme choices; controlled hosts should update `theme`. */
+  onThemeChange?: (theme: 'light' | 'dark') => void
+  /** Container-based compact navigation; enabled below 900px by default. */
+  responsive?: false | { breakpoint?: number }
   /** Host-controlled wordmark. Defaults to `WEB·IDE`; set false to hide it. */
   brand?: string | false
   /** Label printed when a terminal session mounts. Defaults to `Web IDE Terminal`. */
