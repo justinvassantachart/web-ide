@@ -1,0 +1,18 @@
+{
+  "kind": "maintenance-ui-stable-release",
+  "package": "web-ide@0.10.2",
+  "approvedSourceCommit": "c01732bef74e62328baf3dd663679f055066d60b",
+  "approvedUiArtifact": {
+    "url": "https://github.com/justinvassantachart/web-ide/releases/download/web-ide-v0.10.2-ui.0/web-ide-0.10.2-ui.0.tgz",
+    "sha256": "826026cb31746d26c3faab28348f6de5209d029352f154f3ceacc299fa192e3b",
+    "sha512Integrity": "sha512-esDtjqpDvhz/5cnIJjjc8eK5M80ftiOCUu4a8qkpeDW1pfDFs3ww/Ov96DF+17vi7yjIGTdoZ3xAm+xR4d6nrg=="
+  },
+  "sourceBranch": "codex/ui-stable-0-10-2",
+  "sourceTag": "web-ide-v0.10.2-source",
+  "releaseTag": "web-ide-v0.10.2",
+  "assetFilename": "web-ide-0.10.2.tgz",
+  "engine": "debugger-sh@0.3.15-webide.0.9.0.1",
+  "scope": "Stable maintenance version of the approved UI implementation. Only package and lock versions change; the package source, runtime and documentation remain byte-identical to the approved UI artifact.",
+  "historicalTooling": "The release/release-input.json, strict main-only canonical finalizer and committed tests/consumer fixture remain bound to0.10.1. This maintenance release uses independent exact-package comparison and a fresh0.10.2 consumer proof; no historical evidence is rebound.",
+  "currentMain": "Concurrent newer development on main is preserved; this older maintenance branch is not merged into main."
+}
