@@ -77,7 +77,9 @@ test('explicit source navigation exposes compact Code with the target focused an
   const probe = page.getByRole('region', { name: 'Execution and source probe' })
   await expect(workspace).toHaveAttribute('aria-selected', 'true')
   await expect(probe).toBeVisible()
-  const editor = await page.locator('.monaco-editor').elementHandle()
+  // Monaco replaces its internal view DOM on a model switch. Its React-owned
+  // container and runtime terminal must remain mounted.
+  const editor = await page.locator('.monaco-editor').locator('..').elementHandle()
   const terminal = await page.locator('.xterm').elementHandle()
   await probe.getByRole('button', { name: 'Present current helper line' }).click()
   await expect(code).toHaveAttribute('aria-selected', 'true')
@@ -156,7 +158,9 @@ test('compact Explorer activation exposes Code for new and active files without 
   await page.keyboard.press('Enter')
   const status = page.getByLabel('Status bar', { exact: true })
   await expect(status).toContainText('Ln 2, Col 5')
-  const editor = await page.locator('.monaco-editor').elementHandle()
+  // Monaco replaces its internal view DOM on a model switch. Its React-owned
+  // container and runtime terminal must remain mounted.
+  const editor = await page.locator('.monaco-editor').locator('..').elementHandle()
   const terminal = await page.locator('.xterm').elementHandle()
   // Reopening the selected file is still an explicit activation request.
   await workspace.click()
