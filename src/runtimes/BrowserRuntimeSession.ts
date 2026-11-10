@@ -406,8 +406,41 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (this.activeSettlement && !this.activeSettlement.settled) {
             throw new Error('Host devices cannot change during a pending or active run');
         }
-        // Capture this registration's callback, not the mutable registration slot.
-        const record: HostDeviceRegistration = { opener: (device) => opener(device) };
+        // The engine owns the signal, but its byte-device opener need not consume
+        // a return value. Bridge our public cleanup contract once per opened run.
+        const record: HostDeviceRegistration = { opener: (device) => {
+            let cleanup: void | (() => void);
+            let opened = false;
+            let closed = false;
+            const close = () => {
+                if (closed) return;
+                closed = true;
+                device.signal.removeEventListener('abort', onAbort);
+                const release = cleanup;
+                cleanup = undefined;
+                try {
+                    release?.();
+                } catch (error) {
+                    console.error('[BrowserRuntimeSession] host-device cleanup failed', error);
+                }
+            };
+            const onAbort = () => {
+                // An opener can synchronously stop its own run before returning
+                // its cleanup. Finish that cleanup immediately after it returns.
+                if (opened) close();
+            };
+            device.signal.addEventListener('abort', onAbort, { once: true });
+            try {
+                cleanup = opener(device);
+                opened = true;
+                if (device.signal.aborted) close();
+                // Also tolerate engines which do consume the returned cleanup.
+                return close;
+            } catch (error) {
+                close();
+                throw error;
+            }
+        } };
         this.hostDeviceRegistration = record;
         try {
             if (this.engine) this.attachHostDevice(this.engine);
@@ -444,8 +477,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     ): void {
         if (record?.engine !== engine) return;
         const capable = engine as HostDeviceCapableEngine;
-        // Engine.run() already captured its opener. The engine owns that run's
-        // signal and cleanup; clearing this slot only affects subsequent runs.
+        // Engine.run() already captured its opener. Its signal still owns that
+        // run's lifetime and bridge cleanup; this only affects subsequent runs.
         if (capable.hostDevice === record.opener) capable.hostDevice = undefined;
         record.engine = undefined;
     }

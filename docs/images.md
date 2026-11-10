@@ -1,9 +1,14 @@
 # Images and workspace documents
 
-The `0.11.0-images.0` candidate supplies one image core to the Python and C++
+The `0.11.0-images.1` candidate supplies one image core to the Python and C++
 graphics companions. The engine mounts ordinary bytes; image decoding, rendering
 and persistence remain outside the engine. No Pillow, Tk or remote image fetch is
 required.
+
+Candidate `images.1` also binds the public host-device cleanup contract to the
+engine's per-run abort signal. Returned cleanup functions run exactly once on
+completion, Stop or disposal for both Python and C++; consumers do not need to
+repeat that adapter logic.
 
 ## Host workspace integration
 

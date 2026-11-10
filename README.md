@@ -1,6 +1,6 @@
 # web-ide
 
-This branch prepares the `0.11.0-images.0` staging prerelease for image assignments.
+This branch prepares the `0.11.0-images.1` staging prerelease for image assignments.
 See [Images and workspace documents](docs/images.md) for the shared image service,
 binary workspace API and lifecycle rules. The interface changes from
 [UI staging preview](docs/ui-staging-preview.md) remain included.
@@ -27,7 +27,7 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-Version 0.11.0-images.0 adds the headless `web-ide/assets` entrypoint and atomic
+Version 0.11.0-images.1 adds the headless `web-ide/assets` entrypoint and atomic
 source-plus-image workspace documents. Python and C++ share the image service and
 binary mount contract, with engine `debugger-sh@0.3.15-webide.0.9.0.2`. Historical
 stable-release inputs remain configured for 0.10.1; this candidate is delivered
