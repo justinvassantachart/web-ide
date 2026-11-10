@@ -1,6 +1,6 @@
 # Images and workspace documents
 
-The `0.11.0-images.1` candidate supplies one image core to the Python and C++
+The `0.11.0-images.2` candidate supplies one image core to the Python and C++
 graphics companions. The engine mounts ordinary bytes; image decoding, rendering
 and persistence remain outside the engine. No Pillow, Tk or remote image fetch is
 required.
@@ -137,3 +137,5 @@ candidate has a separate source, checksum and observed acceptance record. Compil
 and sysroot identities remain unchanged; the engine admits the updated C++ graphics
 certificate alongside the previous certificate. Pin the complete compatible tuple
 in companions and hosts.
+
+The image preview follows the workbench light/dark palette, remains centered in the viewport, and keeps visible keyboard focus and readable download links.

@@ -382,18 +382,22 @@
 .vsx-feedback[role="alert"] { color: var(--color-destructive); }
 .vsx-feedback button { min-height: 28px; padding: 2px 6px; margin-left: 4px; color: var(--vsx-focusBorder); cursor: pointer; text-decoration: underline; }
 .vsx-image-preview {
+    min-width: min(28rem, 90vw);
     max-width: min(90vw, 900px);
     max-height: 90vh;
+    margin: auto;
     overflow: auto;
     padding: 20px;
-    color: var(--foreground, #ddd);
-    background: var(--background, #1e1e1e);
-    border: 1px solid #777;
+    color: var(--color-popover-foreground);
+    background: var(--color-popover);
+    border: 1px solid var(--color-input);
     border-radius: 8px;
 }
 .vsx-image-preview::backdrop { background: #0009; }
 .vsx-image-preview-header { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
 .vsx-image-preview-header button { font-size: 24px; cursor: pointer; }
 .vsx-image-preview img { max-width: 100%; max-height: 65vh; object-fit: contain; }
-.vsx-image-preview a { text-decoration: underline; }
+.vsx-image-preview a { display: inline-block; margin-top: 8px; color: var(--color-accent-pointer); text-decoration: underline; }
+.vsx-image-preview :is(button, select) { min-height: 28px; padding: 2px 8px; color: inherit; background: var(--color-secondary); border: 1px solid var(--color-input); border-radius: 4px; }
+.vsx-image-preview :is(button, select, a):focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
 .vsx-image-preview-scroll { overflow: auto; max-height: 70vh; max-width: 80vw; }
