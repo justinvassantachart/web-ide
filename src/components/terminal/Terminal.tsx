@@ -2,7 +2,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useEngine } from '@/engine/engine-context'
-import { useThemeStore, type Theme } from '@/theme/theme-store'
+import { useWorkbenchTheme } from '@/web-ide/react/use-workbench-theme'
+import type { Theme } from '@/theme/theme-store'
 import { useWebIDEConfiguration } from '@/web-ide/react/configuration-context'
 import { normalizeTerminalNewlines } from './normalize-terminal-text'
 import '@xterm/xterm/css/xterm.css'
@@ -68,7 +69,9 @@ export interface TerminalHandle {
 export const Terminal = forwardRef<TerminalHandle>(function Terminal(_props, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const engine = useEngine()
-    const theme = useThemeStore((s) => s.theme)
+    const { theme } = useWorkbenchTheme()
+    const themeRef = useRef(theme)
+    themeRef.current = theme
     const configuration = useWebIDEConfiguration()
     const termRef = useRef<XTerm | null>(null)
 
@@ -96,7 +99,7 @@ export const Terminal = forwardRef<TerminalHandle>(function Terminal(_props, ref
             cursorBlink: false,
             cursorStyle: 'block',
             screenReaderMode: true,
-            theme: themeFor(useThemeStore.getState().theme),
+            theme: themeFor(themeRef.current),
         })
         termRef.current = term
         const fit = new FitAddon()

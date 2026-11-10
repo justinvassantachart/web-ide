@@ -361,6 +361,10 @@ export class WorkspaceController {
     return this.applyLocal([{ op: 'create', path, text }])
   }
 
+  restoreFilesLocal(files: WorkspaceFiles): WorkspaceChangeV1 {
+    return this.applyLocal(Object.entries(files).map(([path, text]) => ({ op: 'create', path, text })))
+  }
+
   deleteLocal(path: string): WorkspaceChangeV1 | undefined {
     const normalized = normalizePublicWorkspacePath(path)
     if (!this.volume.existsSync(normalized)) return undefined

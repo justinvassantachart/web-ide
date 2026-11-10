@@ -1,3 +1,5 @@
+export { SourceEditor } from './SourceEditor'
+export type { SourceEditorProps } from './SourceEditor'
 export { WebIDE } from './WebIDE'
 export type { WebIDEProps } from './WebIDE'
 export { WebIDEHostProvider } from './react/WebIDEHostProvider'

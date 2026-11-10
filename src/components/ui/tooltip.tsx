@@ -1,6 +1,8 @@
 import * as React from "react"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
 
+import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
+
 import { cn } from "@/lib/utils"
 
 function TooltipProvider({
@@ -34,8 +36,9 @@ function TooltipContent({
   children,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  const instance = useWorkbenchInstance()
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={instance.getRootElement()}>
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}

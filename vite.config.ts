@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import dts from 'vite-plugin-dts'
 import { createReleaseProvenancePlugin } from './scripts/release/bundle-provenance.mjs'
+import { scopeWorkbenchCSS } from './scripts/build/scope-workbench-css.mjs'
 import { rewriteDeclarationModuleSpecifiers } from './scripts/release/declaration-specifiers.mjs'
 
 const releaseProvenancePath = process.env.WEB_IDE_RELEASE_PROVENANCE_PATH
@@ -15,6 +16,16 @@ export default defineConfig({
   base: './',
   plugins: [
     react(),
+    {
+      name: 'scope-workbench-styles',
+      enforce: 'post',
+      generateBundle(_options, bundle) {
+        for (const asset of Object.values(bundle)) {
+          if (asset.type !== 'asset' || !asset.fileName.endsWith('.css')) continue
+          asset.source = scopeWorkbenchCSS(String(asset.source))
+        }
+      },
+    },
     tailwindcss(),
     dts({
       tsconfigPath: './tsconfig.app.json',

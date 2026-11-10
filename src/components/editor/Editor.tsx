@@ -12,7 +12,7 @@ import { useEngine } from '@/engine/engine-context'
 import { useWebIDEHost as useIDEHost } from '@/web-ide/react/host-context'
 import { useLanguageTooling } from '@/web-ide/react/language-tooling-context'
 import { EDIT_CONTENT_CAP } from '@/web-ide/core/constants'
-import { useThemeStore } from '@/theme/theme-store'
+import { useWorkbenchTheme } from '@/web-ide/react/use-workbench-theme'
 import { DebugToolbar } from '@/components/layout/DebugToolbar'
 import { useSafeMonaco } from '@/lib/use-monaco'
 import { monacoLanguageForPath } from '@/web-ide/core/monaco-language'
@@ -51,7 +51,7 @@ export function Editor() {
         && originalDebugSource !== (currentFile && workspace.fileExists(currentFile) ? workspace.readFile(currentFile) : undefined)
     const [executedSource, setExecutedSource] = useState<ExecutedSource>()
     const monaco = useSafeMonaco()
-    const theme = useThemeStore((s) => s.theme)
+    const { theme } = useWorkbenchTheme()
     const engine = useEngine()
     const host = useIDEHost()
     const readOnly = host?.workspace?.readOnly === true
@@ -599,6 +599,7 @@ export function Editor() {
                         // proportions on every platform.
                         fontSize: 14,
                         minimap: { enabled: false },
+                        fixedOverflowWidgets: true,
                         scrollBeyondLastLine: false,
                         padding: { top: 8 },
                         renderLineHighlight: 'line',

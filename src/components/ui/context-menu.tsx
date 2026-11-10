@@ -4,6 +4,8 @@ import * as React from "react"
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 
+import { useWorkbenchInstance } from '@/web-ide/react/workbench-instance-context'
+
 import { cn } from "@/lib/utils"
 
 function ContextMenu({
@@ -97,8 +99,9 @@ function ContextMenuContent({
   className,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
+  const instance = useWorkbenchInstance()
   return (
-    <ContextMenuPrimitive.Portal>
+    <ContextMenuPrimitive.Portal container={instance.getRootElement()}>
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(

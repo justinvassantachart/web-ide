@@ -7,7 +7,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Codicon } from '@/components/ui/codicon'
-import { useThemeStore, type Theme } from '@/theme/theme-store'
+import type { Theme } from '@/theme/theme-store'
+import { useWorkbenchTheme } from '@/web-ide/react/use-workbench-theme'
 import { useLanguageTooling } from '@/web-ide/react/language-tooling-context'
 
 const POPUP_WIDTH = 240
@@ -18,8 +19,7 @@ export function SettingsMenu() {
     const btnRef = useRef<HTMLButtonElement>(null)
     const popupRef = useRef<HTMLDivElement>(null)
 
-    const theme = useThemeStore((s) => s.theme)
-    const setTheme = useThemeStore((s) => s.setTheme)
+    const { theme, setTheme } = useWorkbenchTheme()
     const { setting } = useLanguageTooling()
     // Local mirror of the provider-owned preference. Re-read on every open in
     // case another workbench or tab changed its backing storage.
@@ -53,13 +53,14 @@ export function SettingsMenu() {
 
     useEffect(() => {
         if (!open) return
+        popupRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus()
         const onDown = (e: MouseEvent) => {
             if (popupRef.current?.contains(e.target as Node)) return
             if (btnRef.current?.contains(e.target as Node)) return
             setOpen(false)
         }
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') setOpen(false)
+            if (e.key === 'Escape') { e.preventDefault(); setOpen(false); btnRef.current?.focus() }
         }
         window.addEventListener('mousedown', onDown)
         window.addEventListener('keydown', onKey)
@@ -72,6 +73,7 @@ export function SettingsMenu() {
     const handlePickTheme = (t: Theme) => {
         setTheme(t)
         setOpen(false)
+        btnRef.current?.focus()
     }
 
     const handleToggleLanguageTooling = () => {
@@ -104,10 +106,24 @@ export function SettingsMenu() {
                     ref={popupRef}
                     className="nova-settings-popup"
                     role="menu"
+                    aria-label="Manage workbench"
+                    onKeyDown={(event) => {
+                        const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')]
+                        const index = items.indexOf(document.activeElement as HTMLButtonElement)
+                        let next: number | undefined
+                        if (event.key === 'ArrowDown') next = (index + 1) % items.length
+                        if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length
+                        if (event.key === 'Home') next = 0
+                        if (event.key === 'End') next = items.length - 1
+                        if (next !== undefined) { event.preventDefault(); items[next]?.focus() }
+                        if (event.key === 'Tab') setOpen(false)
+                    }}
                     style={{ left: pos.left, top: pos.top, minWidth: POPUP_WIDTH }}
                 >
                     <div className="nova-popup-section">Color Theme</div>
-                    <div
+                    <button
+                        type="button"
+                        tabIndex={-1}
                         role="menuitemradio"
                         aria-checked={theme === 'dark'}
                         className="nova-popup-item"
@@ -117,8 +133,10 @@ export function SettingsMenu() {
                             {theme === 'dark' && <Codicon name="check" />}
                         </span>
                         <span className="nova-popup-label">Dark (Modern)</span>
-                    </div>
-                    <div
+                    </button>
+                    <button
+                        type="button"
+                        tabIndex={-1}
                         role="menuitemradio"
                         aria-checked={theme === 'light'}
                         className="nova-popup-item"
@@ -128,7 +146,7 @@ export function SettingsMenu() {
                             {theme === 'light' && <Codicon name="check" />}
                         </span>
                         <span className="nova-popup-label">Light (Modern)</span>
-                    </div>
+                    </button>
 
                     {setting && (
                         <>
@@ -137,7 +155,9 @@ export function SettingsMenu() {
                             <div className="nova-popup-section">
                                 {setting.section ?? 'Language Tooling'}
                             </div>
-                            <div
+                            <button
+                                type="button"
+                                tabIndex={-1}
                                 role="menuitemcheckbox"
                                 aria-checked={languageToolingEnabled}
                                 className="nova-popup-item"
@@ -147,7 +167,7 @@ export function SettingsMenu() {
                                     {languageToolingEnabled && <Codicon name="check" />}
                                 </span>
                                 <span className="nova-popup-label">{setting.label}</span>
-                            </div>
+                            </button>
                         </>
                     )}
                 </div>
