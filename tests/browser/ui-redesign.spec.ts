@@ -54,9 +54,11 @@ test('standalone controlled source editor changes host value without starting a 
   const diagnostics = observeBrowserDiagnostics(page)
   await page.goto('/?layout=source-editor')
   const editor = page.getByRole('textbox', { name: 'Assignment starter code' })
-  // Monaco's native EditContext is an intentionally zero-width focus target.
+  // Monaco chooses keybindings from the emulated browser platform, which may
+  // differ from the OS running Playwright (for example desktop Chrome on macOS).
   await expect(page.locator('.monaco-editor')).toBeVisible()
-  await editor.focus(); await expect(editor).toBeFocused(); await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.type('print("Updated")')
+  const userAgent = await page.evaluate(() => navigator.userAgent)
+  await editor.focus(); await expect(editor).toBeFocused(); await page.keyboard.press(/Macintosh/.test(userAgent) ? 'Meta+A' : 'Control+A'); await page.keyboard.type('print("Updated")')
   await expect(page.getByRole('status', { name: 'Saved starter' })).toHaveText('print("Updated")')
   await expect(page.getByRole('toolbar', { name: 'Workbench toolbar' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Host form title' })).toHaveCSS('font-size', '24px')

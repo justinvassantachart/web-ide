@@ -1,3 +1,4 @@
+import { imageSha256, type WorkspaceAssetPort } from 'web-ide/assets'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
@@ -21,6 +22,7 @@ import 'web-ide/styles.css'
 import cppReferencedObjectsSource from '../../../tests/browser/fixtures/cpp-referenced-objects.cpp?raw'
 
 const searchParams = new URLSearchParams(window.location.search)
+const showImageWorkspaceProbe = searchParams.get('workspace-probe') === 'images'
 const useCppRuntime = searchParams.get('runtime') === 'cpp'
 const showCppReferenceGraph = useCppRuntime && searchParams.get('cppReferenceGraph') === '1'
 const showBuildStatusFixture = useCppRuntime && searchParams.get('build-status') === 'multi-file'
@@ -238,6 +240,30 @@ const host: WebIDEHost = {
   },
 }
 
+if (showImageWorkspaceProbe) {
+  const bytesById = new Map<string, Uint8Array>()
+  const assets: WorkspaceAssetPort = {
+    async stage({ path, bytes, mediaType }) {
+      const sha256 = await imageSha256(bytes)
+      bytesById.set(sha256, new Uint8Array(bytes))
+      return { path, sha256, blobId: sha256, mediaType, byteLength: bytes.length }
+    },
+    async read(ref) {
+      const bytes = bytesById.get(ref.blobId)
+      if (!bytes) throw new Error('Fixture image missing')
+      return new Uint8Array(bytes)
+    },
+  }
+  host.workspace = {
+    id: 'image-workspace-fixture', localCache: 'memory', assets,
+    initialBreakpoints: { '/workspace/main.py': [1] },
+    initialDocument: { schemaVersion: 2, files: [{ path: '/workspace/main.py', content: 'data = open("photo.png", "rb").read()\nassert data[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10])\nprint("PNG bytes loaded:", len(data))\n' }], assets: [] },
+    documentPersistence: { save(document) {
+      (window as typeof window & { __imageWorkspaceSaved?: unknown }).__imageWorkspaceSaved = structuredClone(document)
+    } },
+  }
+}
+
 initWebIDETheme()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -262,7 +288,7 @@ createRoot(document.getElementById('root')!).render(
             host={host}
             lifecycleEvents={lifecycleEvents}
             showLifecycleProbe={showLifecycleProbe}
-            exposeWorkspaceProbe={showOPFSHierarchyProbe || showExecutionSourceProbe}
+            exposeWorkspaceProbe={showOPFSHierarchyProbe || showExecutionSourceProbe || showImageWorkspaceProbe}
           />
         )}
   </StrictMode>,

@@ -10,20 +10,24 @@ export interface ExecutionState {
     isCompiling: boolean
     isRunning: boolean
     drawQueue: DrawCommand[]
+    preparationError: string | null
 
     setIsCompiling: (v: boolean) => void
     setIsRunning: (v: boolean) => void
     setDrawQueue: (q: DrawCommand[]) => void
+    setPreparationError: (message: string | null) => void
 }
 
 const createExecutionState = (set: StoreApi<ExecutionState>['setState']): ExecutionState => ({
     isCompiling: false,
     isRunning: false,
     drawQueue: [],
+    preparationError: null,
 
     setIsCompiling: (v) => set({ isCompiling: v }),
     setIsRunning: (v) => set({ isRunning: v }),
     setDrawQueue: (q) => set({ drawQueue: q }),
+    setPreparationError: (preparationError) => set({ preparationError }),
 })
 
 /** Creates run state owned by one Web IDE mount. */

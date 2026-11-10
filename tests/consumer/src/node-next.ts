@@ -4,10 +4,17 @@ import * as plugins from 'web-ide/plugins'
 import * as root from 'web-ide'
 import * as runtimes from 'web-ide/runtimes'
 import * as testing from 'web-ide/testing'
+import * as assets from 'web-ide/assets'
 
 // A strict NodeNext compile of all documented TypeScript entrypoints proves
 // that the installed declaration graph resolves without bundler-only behavior.
-void [root, host, plugins, runtimes, testing, languageTools]
+void [root, host, plugins, runtimes, testing, languageTools, assets]
+
+const images = assets.createImageService()
+const replica = assets.createImageResourceReplica()
+images.dispose(); replica.dispose()
+const document: assets.WorkspaceDocumentV2 = { schemaVersion: 2, files: [], assets: [] }
+void document
 
 function registerBytes(session: root.RuntimeSession, opener: root.RuntimeHostDeviceOpener) {
   if (!session.registerHostDevice) throw new Error('Host byte devices are unavailable')

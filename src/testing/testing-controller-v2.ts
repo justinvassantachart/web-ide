@@ -109,6 +109,8 @@ export interface CreateTestingControllerV2Options {
   readonly execution: IDEExecutionController
   readonly profile?: CppCompileProfileV1
   readonly timeoutMs?: number
+  /** Text plane of the document already captured for this test activity. */
+  readonly captureRunWorkspace?: () => WorkspaceFiles
   /** Resolves execution-only callbacks exactly once for each operation. */
   readonly resolveResources?: () => WorkspaceFiles | undefined
   /** Static resources only; discovery must never invoke per-run callbacks. */
@@ -315,7 +317,7 @@ export function createTestingControllerV2(options: CreateTestingControllerV2Opti
   }
   const assertLive = () => { if (disposed) throw new Error('Testing controller is disposed') }
   const capture = (execute = false) => {
-    const workspace = Object.freeze({ ...options.workspace.snapshot() })
+    const workspace = Object.freeze({ ...(execute && options.captureRunWorkspace ? options.captureRunWorkspace() : options.workspace.snapshot()) })
     const resources = Object.freeze({ ...(execute ? options.resolveResources?.() ?? {} : lastResources ?? options.resolveDiscoveryResources?.() ?? {}) })
     if (execute) lastResources = resources
     const files = normalizeRuntimeFiles(workspace)

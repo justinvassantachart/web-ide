@@ -1,4 +1,25 @@
 import type { WorkspaceFiles } from './host'
+import type { WorkspaceDocumentV2 } from '../../assets/contracts'
+
+export interface WorkspaceDocumentChangeV2 {
+  readonly version: 2
+  readonly revision: number
+  readonly transactionId: string
+  readonly origin: WorkspaceOriginV1
+  readonly document: WorkspaceDocumentV2
+}
+
+export interface WorkspaceApplyDocumentV2 {
+  readonly version: 2
+  readonly transactionId: string
+  readonly expectedRevision: number
+  readonly origin: WorkspaceOriginV1 & { readonly kind: 'external-authority' }
+  readonly document: WorkspaceDocumentV2
+}
+
+export type WorkspaceApplyLocalDocumentV2 = Omit<WorkspaceApplyDocumentV2, 'origin'> & {
+  readonly origin: WorkspaceOriginV1 & { readonly kind: 'local-user' }
+}
 
 export type WorkspaceOperationV1 =
   | { readonly op: 'write'; readonly path: string; readonly text: string; readonly expectedSha256?: string }
@@ -37,12 +58,20 @@ export interface IDEWorkspaceFeed {
   subscribe(listener: (change: WorkspaceChangeV1) => void): () => void
 }
 
+export interface IDEWorkspaceDocumentFeed {
+  documentSnapshot(): WorkspaceDocumentV2
+  subscribeDocument(listener: (change: WorkspaceDocumentChangeV2) => void): () => void
+}
+
 /**
  * The authority-bearing mutation seam intentionally accepts only external
  * origins. Local UI, bootstrap, restore, and provider lifecycles have separate
  * instance-owned controller methods.
  */
 export interface IDEWorkspaceExternalApplication {
+  applyDocument(transaction: WorkspaceApplyDocumentV2): Promise<WorkspaceDocumentChangeV2>
+  /** User intent seam; enforces readOnly and per-path mutation policy. */
+  applyLocalDocument(transaction: WorkspaceApplyLocalDocumentV2): Promise<WorkspaceDocumentChangeV2>
   apply(transaction: WorkspaceApplyTransactionV1 & {
     readonly origin: WorkspaceOriginV1 & { readonly kind: 'external-authority' }
   }): Promise<WorkspaceChangeV1>

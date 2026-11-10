@@ -557,21 +557,24 @@ describe('committed exact-candidate consumer fixture', () => {
   it('binds the committed consumer graph to the exact fork engine artifact', async () => {
     const committed = await loadEngineForkInput()
     expect(committed.status).toBe('final')
-    expect(committed.engine.distribution.url).toBe('https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.1/debugger-sh-0.3.15-webide.0.9.0.1.tgz')
-    expect(committed.engine.source.commit).toBe('106e3e99b19715cddf9189eb7431d95e4c3c1764')
+    expect(committed.engine.distribution.url).toBe('https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.2/debugger-sh-0.3.15-webide.0.9.0.2.tgz')
+    expect(committed.engine.source.commit).toBe('c043efb5bd80fd7a2dc73995c914023452175f32')
     expect(committed.engine.source.acceptedBaseCommit)
-      .toBe('5d0041cb91105333e2472cb96f58d06447462b8b')
+      .toBe('6d55e5ee9ca25b604032687833e4f441e8bfe89b')
+    // The stable 0.10.1 manifest schema remains historical; the image staging
+    // candidate has its own exact source/package/runtime acceptance record.
+    const historical = forkInputFixture().engine
     const schema = await readJSON(path.join(repositoryRoot, 'release/schemas/artifact-manifest.schema.json'))
     const runtime = schema.properties.runtime.properties.engine.properties
     expect(schema.properties.package.properties.dependencies.const)
-      .toEqual({ 'debugger-sh': committed.engine.distribution.url })
-    expect(runtime.version.const).toBe(committed.engine.version)
-    expect(runtime.source.properties.acceptedBaseCommit.const).toBe(committed.engine.source.acceptedBaseCommit)
+      .toEqual({ 'debugger-sh': historical.distribution.url })
+    expect(runtime.version.const).toBe(historical.version)
+    expect(runtime.source.properties.acceptedBaseCommit.const).toBe(historical.source.acceptedBaseCommit)
     for (const field of ['tag', 'assetFilename', 'url']) {
-      expect(runtime.distribution.properties[field].const).toBe(committed.engine.distribution[field])
+      expect(runtime.distribution.properties[field].const).toBe(historical.distribution[field])
     }
-    expect(runtime.lock.properties.version.const).toBe(committed.engine.version)
-    expect(runtime.lock.properties.resolved.const).toBe(committed.engine.distribution.url)
+    expect(runtime.lock.properties.version.const).toBe(historical.version)
+    expect(runtime.lock.properties.resolved.const).toBe(historical.distribution.url)
     const lock = await readJSON(path.join(repositoryRoot, 'tests/consumer/package-lock.json'))
     await expect(validateCommittedConsumerFixture(
       lock.packages['node_modules/web-ide'].integrity,
@@ -1892,6 +1895,7 @@ describe('artifact manifest', () => {
       // This synthetic stable-release fixture stays bound to its reviewed
       // configuration even when a branch prepares a staging prerelease.
       version: configuration.package.slice(configuration.package.lastIndexOf('@') + 1),
+      exports: (await readJSON(path.join(repositoryRoot, 'release/schemas/artifact-manifest.schema.json'))).properties.package.properties.exports.const,
       dependencies: { 'debugger-sh': FORK_ENGINE_URL },
     }
     const manifest = await createArtifactManifest({

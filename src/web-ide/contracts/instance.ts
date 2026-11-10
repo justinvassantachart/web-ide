@@ -1,8 +1,10 @@
 import type { MemorySnapshot, RuntimeWarmupResult, StackFrame } from './runtime'
 import type { WorkspaceFiles } from './host'
+import type { WorkspaceDocumentV2 } from '../../assets/contracts'
 import type {
   IDEWorkspaceExternalApplication,
   IDEWorkspaceFeed,
+  IDEWorkspaceDocumentFeed,
   IDEWorkspacePersistenceStatusFeed,
 } from './workspace'
 
@@ -44,7 +46,7 @@ export interface IDEInstanceResetOptions {
  */
 export interface WebIDEInstanceHandle {
   /** Instance-scoped canonical workspace feed and narrow external apply facade. */
-  readonly workspace: IDEWorkspaceFeed & IDEWorkspaceExternalApplication
+  readonly workspace: IDEWorkspaceFeed & IDEWorkspaceDocumentFeed & IDEWorkspaceExternalApplication
   /** Host persistence state; collaboration connection/presence is intentionally separate. */
   readonly persistence: IDEWorkspacePersistenceStatusFeed
   snapshot(): IDEInstanceSnapshot
@@ -54,6 +56,7 @@ export interface WebIDEInstanceHandle {
    * resources are never included in this host-persistence projection.
    */
   persistedFiles(): WorkspaceFiles
+  persistedDocument(): WorkspaceDocumentV2
   /**
    * Saves the current persisted-file projection and awaits the host adapter.
    * With a memory local cache, that host adapter is the durability authority.

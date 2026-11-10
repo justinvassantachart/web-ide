@@ -1,6 +1,6 @@
 {
   "name": "web-ide",
-  "version": "0.10.2-ui.0",
+  "version": "0.11.0-images.2",
   "private": true,
   "description": "Embeddable browser IDE workbench with open host, runtime, and plugin contracts.",
   "type": "module",
@@ -50,7 +50,11 @@
       "import": "./dist/language-tools.js"
     },
     "./styles.css": "./dist/styles.css",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./assets": {
+      "types": "./dist/assets.d.ts",
+      "import": "./dist/assets.js"
+    }
   },
   "sideEffects": [
     "*.css"
@@ -90,7 +94,7 @@
     "react-dom": "^18.3.0 || ^19.0.0"
   },
   "dependencies": {
-    "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.1/debugger-sh-0.3.15-webide.0.9.0.1.tgz"
+    "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.2/debugger-sh-0.3.15-webide.0.9.0.2.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

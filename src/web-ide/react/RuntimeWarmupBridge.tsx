@@ -3,7 +3,7 @@ import { useEngine } from '@/engine/engine-context'
 import { useRunPipelineCoordinator } from '@/components/layout/run-pipeline-context'
 import { useSelectedTestProvider } from '@/testing/use-test-provider'
 import { prepareWorkbenchExecution } from '@/testing/test-execution'
-import { buildRuntimeExecutionPlan } from '@/runtimes/execution-plan'
+import { buildRuntimeExecutionPlan, withWorkspaceBinaryFiles } from '@/runtimes/execution-plan'
 import { notifyRuntimeForegroundIntent } from '@/runtimes/foreground-intent'
 import { mergeExecutionResourceFiles } from '../core/workspace-resources'
 import type { WebIDEInstanceController } from '../core/instance-handle'
@@ -26,6 +26,7 @@ export function RuntimeWarmupBridge({ controller }: { controller: WebIDEInstance
     const cancel = (): Promise<void> => {
       // Pure provider transforms may finish later; this fence prevents engine submission.
       generation++
+      foregroundIntent?.abort()
       return runtime.cancelWarmupAndWait?.() ?? Promise.resolve()
     }
     const detachActivity = coordinator.attachActivity(foreground => {
@@ -72,13 +73,16 @@ export function RuntimeWarmupBridge({ controller }: { controller: WebIDEInstance
         foregroundIntent = intent
         const ticket = generation
         // Capture every resource and workspace byte before an asynchronous transform.
+        const document = instance.workspace.documentSnapshot()
         let files: ReturnType<typeof mergeExecutionResourceFiles>
-        try { files = mergeExecutionResourceFiles(resources, instance.workspace.snapshot()) }
+        try { files = mergeExecutionResourceFiles(resources, Object.fromEntries(document.files.map((file) => [file.path, file.content]))) }
         catch (error) { releaseActivity(); return Promise.resolve({ status: 'failed', diagnostics: [error instanceof Error ? error.message : String(error)] }) }
         const task = (async (): Promise<RuntimeWarmupResult> => {
           try {
-            const plan = await prepareWorkbenchExecution({ files, mode: 'run', executeTests: false, testProvider })
+            let plan = await prepareWorkbenchExecution({ files, mode: 'run', executeTests: false, testProvider })
             if (ticket !== generation || !coordinator.isCurrent(foreground) || coordinator.getPendingRun()) return { status: 'cancelled', diagnostics: [] }
+            plan = withWorkspaceBinaryFiles(plan, await instance.workspace.materializeAssets(document, intent.signal))
+            if (ticket !== generation || !coordinator.isCurrent(foreground)) return { status: 'cancelled', diagnostics: [] }
             return await runtime.warmup!(buildRuntimeExecutionPlan(plan), { foregroundIntent: intent.signal })
           } catch (error) {
             if (ticket !== generation || !coordinator.isCurrent(foreground) || coordinator.getPendingRun()) return { status: 'cancelled', diagnostics: [] }

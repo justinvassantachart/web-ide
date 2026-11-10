@@ -1,8 +1,9 @@
 # web-ide
 
-This branch prepares the `0.10.2-ui.0` staging prerelease for interface review.
-See [UI staging preview](docs/ui-staging-preview.md) for its public API and
-validation scope; the stable release pipeline and historical tags are unchanged.
+This branch prepares the `0.11.0-images.2` staging prerelease for image assignments.
+See [Images and workspace documents](docs/images.md) for the shared image service,
+binary workspace API and lifecycle rules. The interface changes from
+[UI staging preview](docs/ui-staging-preview.md) remain included.
 
 web-ide is a browser IDE component for React applications. It provides a Monaco
 editor, virtual workspace, terminal, debugger, typed runtime events, workspace
@@ -26,7 +27,13 @@ runnable examples; it does not contain those application services.
 
 ## Package distribution
 
-The current source prepares version 0.10.1, restoring separate observed
+Version 0.11.0-images.2 adds the headless `web-ide/assets` entrypoint and atomic
+source-plus-image workspace documents. Python and C++ share the image service and
+binary mount contract, with engine `debugger-sh@0.3.15-webide.0.9.0.2`. Historical
+stable-release inputs remain configured for 0.10.1; this candidate is delivered
+separately as an exact, checksummed staging prerelease.
+
+Version 0.10.1 restored separate observed
 referenced objects and pointer edges in the C++ Graph while retaining logical
 formatter presentations. Readable pointer targets are observations, not proof
 of heap allocation, ownership, size, or liveness. The patch also reports compiler

@@ -183,13 +183,15 @@ function createSession(): RuntimeSession {
   return session
 }
 
-function byteDeviceEngine() {
+function byteDeviceEngine(invokeReturnedCleanup = false) {
   const engine = Object.assign(new FakeEngine(), { hostDevice: undefined as RuntimeHostDeviceOpener | undefined })
   const originalRun = engine.run.getMockImplementation()!
   const devices: RuntimeHostDevice[] = []
+  const aborts: AbortController[] = []
   engine.run.mockImplementation(() => {
     const opener = engine.hostDevice
     const abort = new AbortController()
+    aborts.push(abort)
     const device: RuntimeHostDevice = {
       signal: abort.signal,
       onData: vi.fn(() => vi.fn()),
@@ -197,10 +199,11 @@ function byteDeviceEngine() {
     }
     devices.push(device)
     const cleanup = opener?.(device)
-    // Model the engine contract: each run captures its opener and owns teardown.
-    return originalRun().finally(() => { abort.abort(); cleanup?.() })
+    // The real engine closes its signal and ignores the opener's return value.
+    // Also exercise compatibility with engines which invoke that return value.
+    return originalRun().finally(() => { abort.abort(); if (invokeReturnedCleanup) cleanup?.() })
   })
-  return { engine, devices }
+  return { engine, devices, aborts }
 }
 
 describe.each([
@@ -291,6 +294,70 @@ describe.each([
     expect(secondOpen).toHaveBeenCalledExactlyOnceWith(devices[1])
     engine.complete({ type: 'completed', exitCode: 0 })
     await next
+  })
+
+  it('closes only once when an engine also invokes the returned cleanup', async () => {
+    const session = createSession(), { engine } = byteDeviceEngine(true)
+    engineCreate.mockResolvedValue(engine)
+    const cleanup = vi.fn()
+    session.registerHostDevice!(() => cleanup)
+    const { running } = await beginRun(session, engine, 'run')
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    await session.disposeAndWait!()
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes after the opener returns when the device aborts during opening', async () => {
+    const session = createSession(), { engine, aborts } = byteDeviceEngine(true)
+    engineCreate.mockResolvedValue(engine)
+    const cleanup = vi.fn()
+    session.registerHostDevice!(() => {
+      aborts[0].abort()
+      expect(cleanup).not.toHaveBeenCalled()
+      return cleanup
+    })
+    const { running } = await beginRun(session, engine, 'run')
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes bridge listeners when an opener fails and preserves that error', async () => {
+    const session = createSession(), { engine } = byteDeviceEngine()
+    engineCreate.mockResolvedValue(engine)
+    const failure = new Error('synthetic opener failure')
+    const removals: ReturnType<typeof vi.spyOn>[] = []
+    session.registerHostDevice!(device => {
+      removals.push(vi.spyOn(device.signal, 'removeEventListener'))
+      throw failure
+    })
+    const { running } = await beginRun(session, engine, 'run')
+    await running
+    expect(await session.waitForSettlement!()).toMatchObject({
+      type: 'error', error: { message: failure.message },
+    })
+    expect(removals).toHaveLength(1)
+    expect(removals[0]).toHaveBeenCalledExactlyOnceWith('abort', expect.any(Function))
+  })
+
+  it('contains cleanup exceptions so closure still settles the run', async () => {
+    const session = createSession(), { engine, devices } = byteDeviceEngine(true)
+    engineCreate.mockResolvedValue(engine)
+    const failure = new Error('synthetic cleanup failure')
+    const cleanup = vi.fn(() => { throw failure })
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    session.registerHostDevice!(() => cleanup)
+    const { running } = await beginRun(session, engine, 'run')
+    engine.complete({ type: 'completed', exitCode: 0 })
+    await running
+    expect(await session.waitForSettlement!()).toMatchObject({ type: 'completed', exitCode: 0 })
+    expect(devices[0].signal.aborted).toBe(true)
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(report).toHaveBeenCalledExactlyOnceWith('[BrowserRuntimeSession] host-device cleanup failed', failure)
+    report.mockRestore()
   })
 
   it('waits for old run cleanup before reopening during a rapid restart', async () => {

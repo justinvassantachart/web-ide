@@ -260,7 +260,7 @@ export interface RuntimeHostDevice {
   write(chunk: Uint8Array): Promise<void>
 }
 
-/** The engine calls the returned cleanup once when this run closes. */
+/** The runtime calls the returned cleanup once when this run's device closes. */
 export type RuntimeHostDeviceOpener = (device: RuntimeHostDevice) => void | (() => void)
 
 /** A long-lived runtime instance owned by exactly one Web IDE mount. */
