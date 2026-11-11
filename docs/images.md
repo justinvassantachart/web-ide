@@ -1,6 +1,6 @@
 # Images and workspace documents
 
-The `0.11.0-images.2` candidate supplies one image core to the Python and C++
+The `0.11.0-images.3` candidate supplies one image core to the Python and C++
 graphics companions. The engine mounts ordinary bytes; image decoding, rendering
 and persistence remain outside the engine. No Pillow, Tk or remote image fetch is
 required.
@@ -9,6 +9,12 @@ Candidate `images.1` also binds the public host-device cleanup contract to the
 engine's per-run abort signal. Returned cleanup functions run exactly once on
 completion, Stop or disposal for both Python and C++; consumers do not need to
 repeat that adapter logic.
+
+Candidate `images.3` changes only the debugger views. An expanded value prints
+its count line only when rows are missing or the page has a status, and the
+Pretty/Raw toggle is removed: a matching plugin formatter always applies.
+`DebugPresentationService.present` and `getPresentation` no longer accept a
+`mode` argument.
 
 ## Host workspace integration
 

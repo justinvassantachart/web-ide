@@ -1,6 +1,6 @@
 {
   "name": "web-ide",
-  "version": "0.11.0-images.2",
+  "version": "0.11.0-images.3",
   "private": true,
   "description": "Embeddable browser IDE workbench with open host, runtime, and plugin contracts.",
   "type": "module",
