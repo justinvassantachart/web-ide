@@ -4,6 +4,7 @@ import type { VariableNode } from '@/web-ide/contracts/runtime'
 import type { DebugValueRef } from '@/web-ide/contracts/debug-presentation'
 import { useDebugPresentation, useDebugPresentationService } from '@/web-ide/react/debug-presentation-state'
 import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
+import { ownEntry } from '@/store/debug-store'
 
 export type VariableRowProps = {
     variable: VariableNode
@@ -23,10 +24,8 @@ export function VariableRow({ variable, depth, label, detail, graph = false, rep
     const service = useDebugPresentationService()
     const ref = service.getRef(variable)
     const captured = service.readValue(ref) ?? variable
-    const mode = useWorkbenchDebugStore(state => state.presentationMode)
-    const stateKey = `${ref}:${mode}`
-    const expanded = useWorkbenchDebugStore(state => state.expandedValues[stateKey] ?? defaultExpanded)
-    const pages = useWorkbenchDebugStore(state => state.visiblePages[stateKey] ?? 1)
+    const expanded = useWorkbenchDebugStore(state => ownEntry(state.expandedValues, ref) ?? defaultExpanded)
+    const pages = useWorkbenchDebugStore(state => ownEntry(state.visiblePages, ref) ?? 1)
     const setExpanded = useWorkbenchDebugStore(state => state.setValueExpanded)
     const summary = useDebugPresentation(ref, { start: 0, count: 0 })
     const cycle = ancestors.includes(ref)
@@ -49,11 +48,11 @@ export function VariableRow({ variable, depth, label, detail, graph = false, rep
             data-debug-value={ref} data-debug-kind={summary?.kind ?? 'loading'}>
             <button type="button"
                 aria-label={`${expandable ? expanded ? 'Collapse' : 'Expand' : 'Inspect'} ${name}`}
-                onClick={() => { if (expandable) setExpanded(stateKey, !expanded) }}
+                onClick={() => { if (expandable) setExpanded(ref, !expanded) }}
                 onKeyDown={event => {
                     if (!expandable || !['ArrowRight', 'ArrowLeft'].includes(event.key)) return
                     event.preventDefault()
-                    setExpanded(stateKey, event.key === 'ArrowRight')
+                    setExpanded(ref, event.key === 'ArrowRight')
                 }}
                 className="relative group flex w-full items-center gap-1.5 px-2 py-1 rounded-sm font-mono text-[11.5px] text-left hover:bg-[var(--color-row-hover)] focus-visible:outline focus-visible:outline-primary"
                 style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -78,29 +77,33 @@ export function VariableRow({ variable, depth, label, detail, graph = false, rep
                 <div role="group">
                     {Array.from({ length: pages }, (_, index) => <ValuePage key={index} valueRef={ref} pageIndex={index}
                         depth={depth + 1} graph={graph} representedAddresses={representedAddresses}
-                        ancestors={nextAncestors} stateKey={stateKey} last={index === pages - 1} />)}
+                        ancestors={nextAncestors} last={index === pages - 1} />)}
                 </div>
             )}
         </div>
     )
 }
 
-function ValuePage({ valueRef, pageIndex, depth, graph, representedAddresses, ancestors, stateKey, last }: {
+function ValuePage({ valueRef, pageIndex, depth, graph, representedAddresses, ancestors, last }: {
     valueRef: DebugValueRef; pageIndex: number; depth: number; graph: boolean
     representedAddresses?: ReadonlySet<number>
-    ancestors: readonly DebugValueRef[]; stateKey: string; last: boolean
+    ancestors: readonly DebugValueRef[]; last: boolean
 }) {
     const service = useDebugPresentationService()
     const result = useDebugPresentation(valueRef, { start: pageIndex * 100, count: 100 })
-    const mode = useWorkbenchDebugStore(state => state.presentationMode)
     const showNextPage = useWorkbenchDebugStore(state => state.showNextPage)
     if (!result) return <div className="px-6 py-1 text-[11px] text-muted-foreground" role="status">Loading values…</div>
     const end = result.start + result.children.length
     let captured = 0
     for (let page = 0; page <= pageIndex; page++) {
-        captured += service.getPresentation(valueRef, { start: page * 100, count: 100 }, mode)?.children.length ?? 0
+        captured += service.getPresentation(valueRef, { start: page * 100, count: 100 })?.children.length ?? 0
     }
     const more = result.total === undefined ? result.children.length === 100 : end < result.total
+    const status = result.message || (result.availability === 'unavailable' ? 'unavailable'
+        : result.complete ? undefined : 'partially captured')
+    // Once every value is on screen the rows speak for themselves; the count
+    // only earns a line when values are missing or the page has a status.
+    const allShown = captured > 0 && (result.total === undefined ? !more : captured >= result.total)
     return (
         <>
             {result.children.map(child => {
@@ -114,15 +117,13 @@ function ValuePage({ valueRef, pageIndex, depth, graph, representedAddresses, an
                         : <div className="px-6 text-[11px] text-muted-foreground">{child.label}: unavailable</div>}
                 </div>
             })}
-            {last && <div className="px-6 py-1 text-[11px] font-mono text-muted-foreground" role="status">
+            {last && !(allShown && !status) && <div className="px-6 py-1 text-[11px] font-mono text-muted-foreground" role="status">
                 {result.total !== undefined ? `Showing ${captured} of ${result.total}` : `${captured} captured`}
-                {result.message && ` — ${result.message}`}
-                {result.availability === 'unavailable' && !result.message && ' — unavailable'}
-                {!result.complete && !result.message && result.availability !== 'unavailable' && ' — partially captured'}
+                {status && ` — ${status}`}
             </div>}
             {last && more && result.complete && result.children.length === 100 && result.availability !== 'unavailable' && pageIndex < 9 &&
                 <button type="button" className="mx-6 my-1 rounded border border-border px-2 py-1 text-[11px] hover:bg-muted"
-                    onClick={() => showNextPage(stateKey)}>Load more values</button>}
+                    onClick={() => showNextPage(valueRef)}>Load more values</button>}
             {last && more && pageIndex >= 9 && <div className="px-6 text-[11px] text-muted-foreground">Display limit reached</div>}
         </>
     )

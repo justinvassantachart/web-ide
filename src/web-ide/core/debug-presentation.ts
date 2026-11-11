@@ -91,13 +91,14 @@ export class DebugPresentationService implements Disposable {
 
   readonly readValue = (ref: DebugValueRef): Readonly<VariableNode> | undefined => this.values.get(ref)
 
-  getPresentation(ref: DebugValueRef, page = firstPage, mode: 'pretty' | 'raw' = 'pretty'): DebugPresentation | undefined {
-    return this.results.get(this.key(ref, boundedDebugPage(page), mode))
+  getPresentation(ref: DebugValueRef, page = firstPage): DebugPresentation | undefined {
+    return this.results.get(this.key(ref, boundedDebugPage(page)))
   }
 
-  present(ref: DebugValueRef, page = firstPage, mode: 'pretty' | 'raw' = 'pretty'): Promise<DebugPresentation> {
+  /** Formatters apply whenever one matches; unformatted values show their raw fields. */
+  present(ref: DebugValueRef, page = firstPage): Promise<DebugPresentation> {
     page = boundedDebugPage(page)
-    const key = this.key(ref, page, mode)
+    const key = this.key(ref, page)
     const cached = this.results.get(key)
     if (cached) return Promise.resolve(cached)
     const existing = this.pending.get(key)
@@ -114,16 +115,16 @@ export class DebugPresentationService implements Disposable {
     const promise = (async (): Promise<DebugPresentation> => {
       if (!value) return this.unavailable('This value was not captured.')
       let fallbackReason: string | undefined
-      if (mode === 'pretty' && value.availability !== 'unavailable') {
+      if (value.availability !== 'unavailable') {
         for (const formatter of this.formatters.getSnapshot()) {
           try {
             if (!formatter.matches(value)) continue
             const formatted = await this.withDeadline(() => formatter.format(value, context, page))
             if (formatted && this.validPresentation(formatted, page, values)) return formatted
-            if (formatted) fallbackReason = 'The formatter returned an unsupported presentation; showing Raw.'
-            else fallbackReason = 'This layout is not supported by the formatter; showing Raw.'
+            if (formatted) fallbackReason = 'The formatter returned an unsupported presentation; showing raw fields.'
+            else fallbackReason = 'This layout is not supported by the formatter; showing raw fields.'
           } catch {
-            fallbackReason = 'The formatter could not finish; showing Raw.'
+            fallbackReason = 'The formatter could not finish; showing raw fields.'
             formattingActive = false
             break
           }
@@ -271,8 +272,8 @@ export class DebugPresentationService implements Disposable {
     return { kind: 'raw', summary: '<unavailable>', children: [], start: 0, complete: false, availability: 'unavailable', message }
   }
 
-  private key(ref: DebugValueRef, page: DebugPageRequest, mode: string): string {
-    return `${this.epoch}:${ref}:${page.start}:${page.count}:${mode}`
+  private key(ref: DebugValueRef, page: DebugPageRequest): string {
+    return `${this.epoch}:${ref}:${page.start}:${page.count}`
   }
 
   private invalidate(): void {

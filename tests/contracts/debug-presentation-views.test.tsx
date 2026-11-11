@@ -4,12 +4,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { VariablesPanel } from '../../src/components/debug/VariablesPanel'
 import { VariableRow } from '../../src/components/debug/VariableRow'
-import { DebugPresentationToggle } from '../../src/components/debug/DebugPresentationToggle'
 import { createWorkbenchInstance, WorkbenchInstanceContext } from '../../src/web-ide/react/workbench-instance-context'
 import { DebugPresentationContext } from '../../src/web-ide/react/debug-presentation-state'
 import { DebugPresentationService } from '../../src/web-ide/core/debug-presentation'
 import { createDebugStore } from '../../src/store/debug-store'
-import type { DebugValueFormatter } from '../../src/web-ide/contracts/debug-presentation'
+import type { DebugValueFormatter, DebugValueRef } from '../../src/web-ide/contracts/debug-presentation'
 import type { DebugPauseState, RuntimeSession, VariableNode } from '../../src/web-ide/contracts/runtime'
 
 const scalar = (name: string, value: number): VariableNode => ({ name, type: 'int', value })
@@ -40,7 +39,7 @@ async function click(container: HTMLElement, name: string) {
   await act(async () => { button!.click(); await new Promise(resolve => setTimeout(resolve, 0)) })
 }
 
-it('shares semantic rows, pages and Pretty/Raw preferences across view remounts', async () => {
+it('shares semantic rows and pages across view remounts', async () => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   const instance = createWorkbenchInstance()
   const list: VariableNode = { name: 'numbers', type: 'DemoList<int>', value: '{...}', isStruct: true,
@@ -56,7 +55,7 @@ it('shares semantic rows, pages and Pretty/Raw preferences across view remounts'
   const render = async (variables: boolean) => act(async () => {
     root!.render(<WorkbenchInstanceContext.Provider value={instance}>
       <DebugPresentationContext.Provider value={service}>
-        {variables ? <VariablesPanel /> : <><DebugPresentationToggle /><div role="tree"><VariableRow variable={list} depth={0} /></div></>}
+        {variables ? <VariablesPanel /> : <div role="tree"><VariableRow variable={list} depth={0} /></div>}
       </DebugPresentationContext.Provider>
     </WorkbenchInstanceContext.Provider>)
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -67,14 +66,14 @@ it('shares semantic rows, pages and Pretty/Raw preferences across view remounts'
   expect(container.textContent).toContain('Showing 100 of 101')
   expect(container.querySelectorAll('[data-debug-value]')).toHaveLength(101)
   await click(container, 'Load more values')
-  expect(container.textContent).toContain('Showing 101 of 101')
+  // Every value is on screen, so the count footer has nothing left to say.
+  expect(container.querySelectorAll('[data-debug-value]')).toHaveLength(102)
+  expect(container.textContent).not.toContain('Showing')
+  expect(container.textContent).not.toContain('Load more values')
   await render(false)
-  expect(container.textContent).toContain('Showing 101 of 101')
-  await click(container, 'Raw')
-  await click(container, 'Expand numbers')
-  expect(container.textContent).toContain('raw-0')
-  await click(container, 'Pretty')
-  expect(container.textContent).toContain('Showing 101 of 101')
+  expect(container.querySelectorAll('[data-debug-value]')).toHaveLength(102)
+  expect(container.textContent).not.toContain('Showing')
+  expect(container.querySelector('[role="group"][aria-label="Debugger display"]')).toBeNull()
   const button = container.querySelector('[aria-label="Collapse numbers"]')!
   await act(async () => { button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
   expect(container.querySelector('[aria-label="Expand numbers"]')).not.toBeNull()
@@ -121,16 +120,66 @@ describe('debugger capture history', () => {
   it('keeps view choices independent between workbench instances and clears per-pause expansion', () => {
     const first = createDebugStore()
     const second = createDebugStore()
-    first.getState().setPresentationMode('raw')
     first.getState().setValueExpanded('x', true)
     first.getState().showNextPage('x')
-    expect(second.getState().presentationMode).toBe('pretty')
     expect(second.getState().expandedValues).toEqual({})
+    expect(second.getState().visiblePages).toEqual({})
     first.getState().pushHistoryState(pause('new'))
     expect(first.getState().expandedValues).toEqual({})
     expect(first.getState().visiblePages).toEqual({})
-    expect(first.getState().presentationMode).toBe('raw')
   })
+})
+
+it('omits the count footer when a small struct shows every field', async () => {
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const instance = createWorkbenchInstance()
+  const node: VariableNode = { name: 'node', type: 'Node', value: '{...}', isStruct: true,
+    childrenInfo: { total: 2, loaded: 2, complete: true }, members: [scalar('value', 10), scalar('next', 0)] }
+  const snapshot = pause('node', 0, [node])
+  instance.debugStore.getState().pushHistoryState(snapshot)
+  const service = new DebugPresentationService({} as RuntimeSession, [])
+  service.setSnapshot(snapshot, false)
+  disposals.push(() => service.dispose(), () => instance.workspace.dispose())
+  const container = document.createElement('div')
+  root = createRoot(container)
+  await act(async () => {
+    root!.render(<WorkbenchInstanceContext.Provider value={instance}><DebugPresentationContext.Provider value={service}>
+      <VariablesPanel />
+    </DebugPresentationContext.Provider></WorkbenchInstanceContext.Provider>)
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  await click(container, 'Expand node')
+  expect(container.querySelector('[aria-label="Collapse node"]')).not.toBeNull()
+  expect(container.querySelectorAll('[data-debug-value]')).toHaveLength(3)
+  expect(container.textContent).not.toContain('Showing')
+  expect(container.textContent).not.toContain('captured')
+  expect(container.querySelector('[role="treeitem"] [role="status"]')).toBeNull()
+})
+
+it.each(['constructor', 'toString'])('keeps a value whose ref is "%s" collapsed until asked, then shows its children', async name => {
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const instance = createWorkbenchInstance()
+  // Refs are opaque runtime strings, so one may be named like an Object.prototype member.
+  const object: VariableNode = { name: 'obj', type: 'Thing', value: '{...}', isStruct: true, debugRef: name as DebugValueRef,
+    childrenInfo: { total: 1, loaded: 1, complete: true }, members: [scalar('inner', 1)] }
+  const snapshot = pause(name, 0, [object])
+  instance.debugStore.getState().pushHistoryState(snapshot)
+  const service = new DebugPresentationService({} as RuntimeSession, [])
+  service.setSnapshot(snapshot, false)
+  disposals.push(() => service.dispose(), () => instance.workspace.dispose())
+  const container = document.createElement('div')
+  root = createRoot(container)
+  await act(async () => {
+    root!.render(<WorkbenchInstanceContext.Provider value={instance}><DebugPresentationContext.Provider value={service}>
+      <VariablesPanel />
+    </DebugPresentationContext.Provider></WorkbenchInstanceContext.Provider>)
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  expect(container.querySelector('[aria-label="Collapse obj"]')).toBeNull()
+  await click(container, 'Expand obj')
+  expect(container.querySelectorAll('[data-debug-value]')).toHaveLength(2)
+  instance.debugStore.getState().showNextPage(name)
+  expect(instance.debugStore.getState().visiblePages[name]).toBe(2)
 })
 
 it('stops at an incomplete page and counts only captured values', async () => {

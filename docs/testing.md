@@ -207,7 +207,7 @@ for shared runtime changes, including the required rejection of breakpoint
 edits that debugger-sh 0.3.15 cannot safely apply during a live native session.
 `tests/browser/cpp-referenced-objects.spec.ts` adds one real-debugger regression
 for three linked C++ nodes. It asserts separate observed-object cards and exact
-pointer edges, including aliases, null, Pretty/Raw, repeated expansion, a native
+pointer edges, including aliases, null, repeated expansion, a native
 lazy page update, a cycle after stepping, and Stop/rerun. Assertions use graph
 identities and handles rather than screenshots or coordinates. Its initial
 three-card assertion fails against the pre-fix implementation.
