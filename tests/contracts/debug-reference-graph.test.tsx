@@ -15,7 +15,7 @@ vi.mock('@xyflow/react', async importOriginal => ({
   ReactFlow: ({ edges }: { edges: Edge[] }) => <output>{JSON.stringify(edges)}</output>,
 }))
 
-it.each(['pretty', 'raw'] as const)('links an expanded reference to its caller object in %s mode', async mode => {
+it('links an expanded reference to its caller object', async () => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   const member: VariableNode = { name: 'a', type: 'int', value: '7', address: 64 }
   const reference: VariableNode = { name: 'cref', type: 'Compound&', typeKind: 'reference', isPointer: false,
@@ -31,10 +31,9 @@ it.each(['pretty', 'raw'] as const)('links an expanded reference to its caller o
   const service = new DebugPresentationService({} as RuntimeSession, [])
   service.setSnapshot(snapshot, false)
   const referenceRef = service.getRef(reference)
-  await service.present(referenceRef, { start: 0, count: 100 }, mode)
+  await service.present(referenceRef, { start: 0, count: 100 })
   instance.debugStore.getState().pushHistoryState(snapshot)
-  instance.debugStore.getState().setPresentationMode(mode)
-  instance.debugStore.getState().setValueExpanded(`${referenceRef}:${mode}`, true)
+  instance.debugStore.getState().setValueExpanded(referenceRef, true)
   const container = document.createElement('div')
   const root = createRoot(container)
   try {

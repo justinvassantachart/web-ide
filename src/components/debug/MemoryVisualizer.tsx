@@ -2,12 +2,12 @@ import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } 
 import { ReactFlow, Background, type Node, type Edge, type NodeChange, type EdgeChange, type ReactFlowInstance, Position, Handle, Panel, useViewport, useUpdateNodeInternals, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
+import { ownEntry } from '@/store/debug-store'
 import type {
     MemorySnapshot,
     VariableNode as MemoryValue,
 } from '@/web-ide/contracts/runtime'
 import { VariableRow } from './VariableRow'
-import { DebugPresentationToggle } from './DebugPresentationToggle'
 import { useDebugPresentationService } from '@/web-ide/react/debug-presentation-state'
 import { placeStackFrames, placeHeapNodes, rowsToHeight, type Point } from './graph-layout'
 
@@ -116,7 +116,7 @@ function SeparatorOverlay({ separatorX }: { separatorX: number }) {
 }
 
 export function MemoryVisualizer() {
-    const { debugMode, memorySnapshot, presentationMode, expandedValues, visiblePages } = useWorkbenchDebugStore()
+    const { debugMode, memorySnapshot, expandedValues, visiblePages } = useWorkbenchDebugStore()
     const service = useDebugPresentationService()
     const presentationRevision = useSyncExternalStore(service.subscribe, service.getSnapshot, service.getSnapshot)
     const [nodes, setNodes] = useState<Node[]>([])
@@ -141,12 +141,12 @@ export function MemoryVisualizer() {
     // rebuildGraph is idempotent (same snapshot + same position map →
     // same placement), so StrictMode's double render is safe.
     const [syncedView, setSyncedView] = useState<{
-        snapshot: MemorySnapshot | null; mode: string; expanded: object; pages: object; revision: number
+        snapshot: MemorySnapshot | null; expanded: object; pages: object; revision: number
     } | null>(null)
-    if (memorySnapshot !== syncedView?.snapshot || presentationMode !== syncedView?.mode
+    if (memorySnapshot !== syncedView?.snapshot
         || expandedValues !== syncedView?.expanded || visiblePages !== syncedView?.pages
         || presentationRevision !== syncedView?.revision) {
-        setSyncedView({ snapshot: memorySnapshot, mode: presentationMode, expanded: expandedValues, pages: visiblePages, revision: presentationRevision })
+        setSyncedView({ snapshot: memorySnapshot, expanded: expandedValues, pages: visiblePages, revision: presentationRevision })
         if (!memorySnapshot) {
             setPositions(new Map())
             setNodes([])
@@ -221,13 +221,12 @@ export function MemoryVisualizer() {
                 if (value.address !== undefined && value.address > 0 && !addressMap.has(value.address)) {
                     addressMap.set(value.address, { nodeId: id, handleId: `${ref}-target` })
                 }
-                const stateKey = `${ref}:${presentationMode}`
                 const separateTarget = value.isPointer && value.pointsTo !== undefined
                     && representedAddresses.has(value.pointsTo)
-                if (!(expandedValues[stateKey] ?? defaultExpanded) || separateTarget || depth >= 8) continue
-                const pages = visiblePages[stateKey] ?? 1
+                if (!(ownEntry(expandedValues, ref) ?? defaultExpanded) || separateTarget || depth >= 8) continue
+                const pages = ownEntry(visiblePages, ref) ?? 1
                 for (let page = 0; page < pages; page++) {
-                    const result = service.getPresentation(ref, { start: page * 100, count: 100 }, presentationMode)
+                    const result = service.getPresentation(ref, { start: page * 100, count: 100 })
                     for (const child of result?.children ?? []) {
                         for (const childRef of [child.keyValue, child.value]) {
                             const childValue = childRef && service.readValue(childRef)
@@ -405,7 +404,6 @@ export function MemoryVisualizer() {
                     </div>
                 </Panel>
                 <Panel position="top-right" className="!m-1 flex items-center gap-2">
-                    <DebugPresentationToggle />
                     {debugMode === 'running' && (
                         <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground px-2 py-1">
                             Running…

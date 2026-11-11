@@ -208,8 +208,10 @@ than presenting impossible debugging affordances.
 
 ### Captured values and the native object graph
 
-Variables and Graph share the same pause-scoped raw values and Pretty/Raw
-formatter service. Graph additionally uses `MemorySnapshot.observedReferencedObjects`
+Variables and Graph share the same pause-scoped raw values and formatter
+service. A matching plugin formatter always applies; there is no display-mode
+switch, and a value without one (or whose formatter fails) shows its raw fields.
+Graph additionally uses `MemorySnapshot.observedReferencedObjects`
 to show separately captured pointer targets. These are **observed referenced
 objects**, not proven heap allocations. The native debugger reports a pointer's
 storage in `memoryReference`, its target in the displayed pointer value, and a
@@ -225,9 +227,9 @@ pointer rows connect to represented targets instead of repeating their
 dereference trees; ordinary Variables expansion still exposes those trees.
 Null pointers have no target card or edge. Aliases share a target and cycles
 connect existing cards without recursively creating objects.
-Only objects reachable from visible pointer/reference rows are shown, so Pretty
-formatters do not expose disconnected implementation details. Expanding raw
-fields can reveal more observed cards. Explicit legacy allocation inventories
+Only objects reachable from visible pointer/reference rows are shown, so
+formatters do not expose disconnected implementation details. Expanding rows
+can reveal more observed cards. Explicit legacy allocation inventories
 retain their existing visibility.
 
 This is a bounded view of debugger-exposed values, not a memory allocation

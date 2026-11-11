@@ -90,46 +90,49 @@ test('keeps observed C++ objects and pointer edges separate through expansion an
     return expected
   }
 
-  for (const mode of ['Pretty', 'Raw']) {
-    await page.getByRole('group', { name: 'Debugger display' }).getByRole('button', { name: mode, exact: true }).click()
-    const before = await verifyGraph()
-    const head = await pointer(stack.getByRole('treeitem', { name: 'head', exact: true }))
-    // Variables and Graph share the actual bounded presentation/expansion path.
-    // Reopening a pointer must reuse observed objects and never multiply cards.
-    await page.getByRole('tab', { name: 'Variables', exact: true }).click()
-    for (let repeat = 0; repeat < 2; repeat++) {
-      await page.getByRole('button', { name: 'Expand head', exact: true }).click()
-      await expect(page.getByRole('button', { name: 'Collapse head', exact: true })).toBeVisible()
-      await page.getByRole('button', { name: 'Collapse head', exact: true }).click()
-    }
-    // The 101st array element is outside the initial 100-value native page.
-    // Loading it exercises a real lazy debugger revision that must retain the
-    // same three observed targets, including the newly captured alias to head.
-    await page.getByRole('button', { name: 'Expand delayed', exact: true }).click()
-    const delayed = page.getByRole('treeitem', { name: 'delayed', exact: true })
-    await delayed.getByRole('button', { name: 'Load more values', exact: true }).click()
-    const last = delayed.getByRole('treeitem', { name: '[100]', exact: true })
-    await expect(last).toBeVisible()
-    expect(Number(await last.locator(':scope > button span').last().getAttribute('title'))).toBe(head.address)
-    await page.getByRole('button', { name: 'Collapse delayed', exact: true }).click()
-    await page.getByRole('tab', { name: 'Graph', exact: true }).click()
-    expect(await verifyGraph()).toEqual(before)
-    await page.getByRole('button', { name: 'Fit', exact: true }).click()
-    // Wait only for screenshot framing; graph correctness above uses identities.
-    await page.locator('.react-flow__viewport').evaluate(viewport => new Promise<void>(resolve => {
-      let previous = ''
-      let stableFrames = 0
-      const settled = () => {
-        const transform = getComputedStyle(viewport).transform
-        stableFrames = transform === previous ? stableFrames + 1 : 0
-        previous = transform
-        if (stableFrames >= 3) resolve()
-        else requestAnimationFrame(settled)
-      }
-      requestAnimationFrame(settled)
-    }))
-    await page.screenshot({ path: testInfo.outputPath(`linked-list-${mode.toLowerCase()}.png`), fullPage: true })
+  const before = await verifyGraph()
+  // Formatters always apply, so there is no display-mode switch, and a card
+  // that already shows every field carries no "Showing 2 of 2" count line.
+  await expect(page.getByRole('group', { name: 'Debugger display' })).toHaveCount(0)
+  await expect(cards.getByText(/Showing \d+ of \d+/)).toHaveCount(0)
+  const head = await pointer(stack.getByRole('treeitem', { name: 'head', exact: true }))
+  // Variables and Graph share the actual bounded presentation/expansion path.
+  // Reopening a pointer must reuse observed objects and never multiply cards.
+  await page.getByRole('tab', { name: 'Variables', exact: true }).click()
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await page.getByRole('button', { name: 'Expand head', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Collapse head', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Collapse head', exact: true }).click()
   }
+  // The 101st array element is outside the initial 100-value native page.
+  // Loading it exercises a real lazy debugger revision that must retain the
+  // same three observed targets, including the newly captured alias to head.
+  await page.getByRole('button', { name: 'Expand delayed', exact: true }).click()
+  const delayed = page.getByRole('treeitem', { name: 'delayed', exact: true })
+  // A partly shown page is the case the count line exists for.
+  await expect(delayed.getByText(/^Showing 100 of \d+/)).toBeVisible()
+  await delayed.getByRole('button', { name: 'Load more values', exact: true }).click()
+  const last = delayed.getByRole('treeitem', { name: '[100]', exact: true })
+  await expect(last).toBeVisible()
+  expect(Number(await last.locator(':scope > button span').last().getAttribute('title'))).toBe(head.address)
+  await page.getByRole('button', { name: 'Collapse delayed', exact: true }).click()
+  await page.getByRole('tab', { name: 'Graph', exact: true }).click()
+  expect(await verifyGraph()).toEqual(before)
+  await page.getByRole('button', { name: 'Fit', exact: true }).click()
+  // Wait only for screenshot framing; graph correctness above uses identities.
+  await page.locator('.react-flow__viewport').evaluate(viewport => new Promise<void>(resolve => {
+    let previous = ''
+    let stableFrames = 0
+    const settled = () => {
+      const transform = getComputedStyle(viewport).transform
+      stableFrames = transform === previous ? stableFrames + 1 : 0
+      previous = transform
+      if (stableFrames >= 3) resolve()
+      else requestAnimationFrame(settled)
+    }
+    requestAnimationFrame(settled)
+  }))
+  await page.screenshot({ path: testInfo.outputPath('linked-list.png'), fullPage: true })
 
   await page.getByRole('button', { name: 'Step Over', exact: true }).click()
   await expect(status).toContainText(`Paused at main.cpp:${linkedLine + 1}`)

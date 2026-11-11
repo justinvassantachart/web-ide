@@ -35,6 +35,10 @@ function boundedHistory(history: DebugPauseState[], preserve?: DebugPauseState):
     return entries.map(entry => entry.state)
 }
 
+/** Reads view state keyed by an opaque runtime-supplied ref; a ref named like an Object.prototype member must not match it. */
+export const ownEntry = <T,>(record: Record<string, T>, key: string): T | undefined =>
+    Object.hasOwn(record, key) ? record[key] : undefined
+
 export interface DebugState {
     debugMode: DebugMode
     currentLine: number | null
@@ -45,7 +49,6 @@ export interface DebugState {
     callStack: StackFrame[]
     memorySnapshot: MemorySnapshot | null
     activePause: DebugPauseState | null
-    presentationMode: 'pretty' | 'raw'
     expandedValues: Record<string, boolean>
     visiblePages: Record<string, number>
     selectedFrameId: string | null
@@ -61,7 +64,6 @@ export interface DebugState {
     pruneBreakpointFiles: (exists: (path: string) => boolean) => void
     pushHistoryState: (state: DebugPauseState) => void
     refreshHistoryState: (state: DebugPauseState) => void
-    setPresentationMode: (mode: 'pretty' | 'raw') => void
     setValueExpanded: (key: string, expanded: boolean) => void
     showNextPage: (key: string) => void
     selectFrame: (id: string) => void
@@ -82,7 +84,6 @@ const createDebugState = (
     callStack: [],
     memorySnapshot: null,
     activePause: null,
-    presentationMode: 'pretty',
     expandedValues: {},
     visiblePages: {},
     selectedFrameId: null,
@@ -90,9 +91,8 @@ const createDebugState = (
     stepIndex: -1,
 
     setDebugMode: (mode) => set({ debugMode: mode }),
-    setPresentationMode: (presentationMode) => set({ presentationMode }),
     setValueExpanded: (key, expanded) => set(state => ({ expandedValues: { ...state.expandedValues, [key]: expanded } })),
-    showNextPage: (key) => set(state => ({ visiblePages: { ...state.visiblePages, [key]: Math.min(10, (state.visiblePages[key] ?? 1) + 1) } })),
+    showNextPage: (key) => set(state => ({ visiblePages: { ...state.visiblePages, [key]: Math.min(10, (ownEntry(state.visiblePages, key) ?? 1) + 1) } })),
     selectFrame: (selectedFrameId) => set({ selectedFrameId }),
 
     toggleBreakpoint: (file, line) => set((s) => {

@@ -6,7 +6,6 @@ import type {
     VariableNode,
 } from '@/web-ide/contracts/runtime'
 import { VariableRow } from './VariableRow'
-import { DebugPresentationToggle } from './DebugPresentationToggle'
 
 export function VariablesPanel() {
     const { callStack, debugMode, memorySnapshot, selectedFrameId, selectFrame } = useWorkbenchDebugStore()
@@ -69,7 +68,6 @@ export function VariablesPanel() {
             {selectedFrame && (
                 <div className="nova-panel-header">
                     <span className="nova-panel-label">Variables</span>
-                    <DebugPresentationToggle />
                 </div>
             )}
 
