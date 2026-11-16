@@ -15,6 +15,7 @@
       "web-ide/host": ["./src/host.ts"],
       "web-ide/plugins": ["./src/plugins.ts"],
       "web-ide/runtimes": ["./src/runtimes.ts"],
+      "web-ide/upstream-toolchains.json": ["./src/runtimes/upstream-toolchains.json"],
       "web-ide/testing": ["./src/testing.ts"],
       "web-ide/language-tools": ["./src/language-tools.ts"]
     },
