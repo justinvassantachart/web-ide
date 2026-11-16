@@ -16,6 +16,7 @@ import { ImageAssetPreview } from './ImageAssetPreview'
 import { DEFAULT_IMAGE_LIMITS, type WorkspaceAssetRefV1 } from '@/assets/contracts'
 import { inspectImage } from '@/assets/validation'
 import { createBrowserImageCodec } from '@/assets/browser-codec'
+import { useShowEditor } from '@/web-ide/react/editor-navigation-context'
 
 const ROOT = '/workspace'
 const WORKSPACE_LABEL = 'Workspace'
@@ -265,6 +266,7 @@ function InlineCreateRow({
 // ── Explorer ──────────────────────────────────────────────────────
 
 export function FileExplorer() {
+    const showEditor = useShowEditor()
     const files = useWorkbenchFilesStore((s) => s.files)
     const expandedDirs = useWorkbenchFilesStore((s) => s.expandedDirs)
     const toggleDir = useWorkbenchFilesStore((s) => s.toggleDir)
@@ -314,9 +316,10 @@ export function FileExplorer() {
             setPreviewPath(node.path)
         } else {
             setActiveFile(node.path, instance.workspace.readFile(node.path))
+            showEditor()
         }
         setFocusedPath(node.path)
-    }, [instance, toggleDir, setActiveFile])
+    }, [instance, toggleDir, setActiveFile, showEditor])
 
     const handleRename = useCallback((node: VFSNode, name: string) => {
         if (readOnly) return

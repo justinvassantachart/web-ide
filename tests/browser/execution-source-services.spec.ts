@@ -28,6 +28,26 @@ interface PublicPathProbeWindow extends Window {
   }
 }
 
+test('source reveal exposes Code from compact Output, including a repeated location', async ({ page }) => {
+  await page.setViewportSize({ width: 850, height: 760 })
+  await page.goto('/?source=probe')
+  const views = page.getByRole('tablist', { name: 'Workbench views', exact: true })
+  await expect(views).toBeVisible()
+  await page.getByRole('button', { name: 'Execution and source', exact: true }).click()
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await views.getByRole('tab', { name: 'Output', exact: true }).click()
+    await expect(page.locator('.monaco-editor')).not.toBeVisible()
+    await page.evaluate(() => {
+      const source = (window as PublicPathProbeWindow).__webIDESourcePresentationProbe?.source
+      if (!source) throw new Error('Public source probe is unavailable')
+      source.reveal({ path: '/workspace/helpers.py', line: 2 })
+    })
+    await expect(views.getByRole('tab', { name: 'Code', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: 'helpers.py Close helpers.py', exact: true })).toBeVisible()
+    await expect(page.getByRole('contentinfo', { name: 'Status bar' })).toContainText('Ln 2, Col 1')
+  }
+})
+
 test('gives contributed activities isolated execution and source services', async ({ page, context }) => {
   const diagnostics = observeBrowserDiagnostics(page)
   const navigation = await page.goto('/?source=probe')

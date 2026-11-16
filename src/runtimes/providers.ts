@@ -2,10 +2,12 @@ import type { IDEPlugin } from '@/web-ide/contracts/plugin'
 import type { RuntimeCapabilities, RuntimeProvider } from '@/web-ide/contracts/runtime'
 import { BrowserRuntimeSession } from './BrowserRuntimeSession'
 import type { EngineOptions } from 'debugger-sh'
+import { validateEngineBackend, type EngineBackend } from './engine-backend'
 
 export interface CppRuntimeProviderOptions {
   /** One Engine belongs to exactly this account/project; recreate the provider on scope change. */
-  readonly cpp: NonNullable<EngineOptions['cpp']>
+  readonly cpp?: NonNullable<EngineOptions['cpp']>
+  readonly backend?: EngineBackend
   readonly preserveCompilerOnCancel?: boolean
   readonly eagerCompilerReseedAfterStop?: boolean
 }
@@ -51,6 +53,7 @@ const cppPreparationErrorPattern =
   /(^[^\s:]+:\d+:\d+:\s+(?:fatal\s+)?error:|^wasm-ld:\s+error:|^\d+\s+errors?\s+generated\.)/
 
 export function createCppRuntimeProvider(options?: CppRuntimeProviderOptions): RuntimeProvider {
+  const backend = validateEngineBackend(options?.backend)
   const engineOptions = options === undefined ? undefined : { cpp: structuredClone(options.cpp) }
   const capabilities = options?.preserveCompilerOnCancel
     ? { ...cppCapabilities, compileOnlyJoin: 1 as const } : cppCapabilities
@@ -72,13 +75,20 @@ export function createCppRuntimeProvider(options?: CppRuntimeProviderOptions): R
       emitResumeOnCommand: true,
       breakpointChangesRequireRestart: true,
       engineOptions,
+      backend,
     }),
   }
 }
 
 export const cppRuntimeProvider: RuntimeProvider = createCppRuntimeProvider()
 
-export const pythonRuntimeProvider: RuntimeProvider = {
+export interface PythonRuntimeProviderOptions {
+  readonly backend?: EngineBackend
+}
+
+export function createPythonRuntimeProvider(options?: PythonRuntimeProviderOptions): RuntimeProvider {
+  const backend = validateEngineBackend(options?.backend)
+  return {
   id: 'web-ide.runtime.python',
   label: 'Python',
   languageIds: ['python'],
@@ -89,6 +99,7 @@ export const pythonRuntimeProvider: RuntimeProvider = {
       languageIds: ['python'],
       engineLanguage: 'python',
       capabilities: pythonCapabilities,
+      backend,
       defaultEntrypoint: 'main.py',
       createEntrypointLauncher: createPythonEntrypointLauncher,
       debugFallbackPath: '/main.py',
@@ -99,7 +110,10 @@ export const pythonRuntimeProvider: RuntimeProvider = {
       resetAdapterAfterBreakpointClear: true,
       maxBreakpointConfigurationBytes: 3_500,
     }),
+  }
 }
+
+export const pythonRuntimeProvider: RuntimeProvider = createPythonRuntimeProvider()
 
 export const cppRuntimePlugin: IDEPlugin = {
   id: 'web-ide.runtime.cpp.plugin',
