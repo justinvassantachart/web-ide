@@ -1,6 +1,6 @@
 {
   "name": "web-ide",
-  "version": "0.11.0-images.3",
+  "version": "0.12.0-upstream.0",
   "private": true,
   "description": "Embeddable browser IDE workbench with open host, runtime, and plugin contracts.",
   "type": "module",
@@ -67,8 +67,8 @@
     "build:plugin-demo": "npm --workspace @web-ide/plugin-demo run build",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "vitest run --exclude \"tests/browser/**\"",
-    "test:watch": "vitest --exclude \"tests/browser/**\"",
+    "test": "vitest run --exclude \"tests/browser/**\" --exclude \"tests/upstream/**\"",
+    "test:watch": "vitest --exclude \"tests/browser/**\" --exclude \"tests/upstream/**\"",
     "test:browser": "playwright test && playwright test --config playwright.viewer.config.ts",
     "test:browser:headed": "playwright test --headed",
     "test:consumer": "node tests/consumer/run-packed-consumer.mjs",
@@ -82,7 +82,10 @@
     "release:finalize": "node scripts/release/finalize-release-evidence.mjs",
     "validate": "npm run lint && npm run test && npm run typecheck && npm run build && npm run test:consumer && npm run pack:check",
     "validate:production": "npm run validate && npm run test:browser",
-    "test:viewer": "playwright test --config playwright.viewer.config.ts"
+    "test:viewer": "playwright test --config playwright.viewer.config.ts",
+    "test:upstream": "playwright test --config playwright.upstream.config.ts",
+    "test:upstream:viewer": "playwright test --config playwright.upstream-viewer.config.ts",
+    "test:upstream:consumer": "node scripts/release/test-upstream-consumer.mjs"
   },
   "workspaces": [
     "examples/basic",
@@ -94,7 +97,8 @@
     "react-dom": "^18.3.0 || ^19.0.0"
   },
   "dependencies": {
-    "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.2/debugger-sh-0.3.15-webide.0.9.0.2.tgz"
+    "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.2/debugger-sh-0.3.15-webide.0.9.0.2.tgz",
+    "debugger-sh-upstream": "https://github.com/justinvassantachart/engine/releases/download/upstream-67c0bf6add4f63b378c3b39751c5f27011234d3f/debugger-sh-0.3.16-upstream.67c0bf6add4f.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

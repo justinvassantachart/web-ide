@@ -5,7 +5,8 @@ import { registerRuntimeForegroundIntent } from './foreground-intent';
 // and llvm-resources.tar.gz from fabioibanez.github.io, inlines an
 // 8.6 MB wasm asset, and materialises the worker blob URL — all before
 // the user has even pressed Run. Deferring keeps page-open cost flat.
-import type { DirNode, Engine as EngineType, EngineOptions, Lang } from 'debugger-sh';
+import type { DirNode, EngineOptions, Lang } from 'debugger-sh';
+import type { EngineBackend, RuntimeEngine as EngineType } from './engine-backend';
 import { buildRuntimeExecutionPlan, runtimeExecutionPlansEqual } from './execution-plan';
 import {
     canonicalRuntimeFilePath,
@@ -157,6 +158,7 @@ interface BrowserRuntimeSessionProfile {
     /** Guard adapters whose resume transport has a bounded breakpoint payload. */
     readonly maxBreakpointConfigurationBytes?: number;
     readonly engineOptions?: EngineOptions;
+    readonly backend?: EngineBackend;
     readonly preserveCompilerOnCancel?: boolean;
     readonly eagerCompilerReseedAfterStop?: boolean;
 }
@@ -335,6 +337,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
     private runtimeFileTree: DirNode = emptyDirectory();
     private runtimeBinaryFiles: Record<string, Uint8Array> = {};
     private runtimeCppArtifacts?: ArtifactEngine['cppArtifacts'];
+    private runtimeCppBuildPlan?: RuntimeExecutionPlan['cppBuildPlan'];
     private pchFallbackAllowed = false;
     private pchCompilerOutput = '';
     private inputBuf = '';
@@ -861,6 +864,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
         this.runtimeFileTree = next.fileTree;
         this.runtimeBinaryFiles = next.binaryFiles;
         this.runtimeCppArtifacts = next.cppArtifacts;
+        this.runtimeCppBuildPlan = next.plan.cppBuildPlan;
         this.pchFallbackAllowed = next.plan.cppArtifacts?.fallbackToSource === true;
         this.preparedGeneration = generation;
         return { success: true, errors: [] };
@@ -929,7 +933,8 @@ export class BrowserRuntimeSession implements RuntimeSession {
     }
 
     compilationStatistics(): unknown {
-        if (this.disposed || this.profile.engineLanguage !== 'c' || !this.profile.engineOptions?.cpp || !this.engine) return undefined;
+        if (this.disposed || this.profile.engineLanguage !== 'c'
+            || (this.profile.backend !== 'upstream' && !this.profile.engineOptions?.cpp) || !this.engine) return undefined;
         return structuredClone(this.engine.cacheStats);
     }
 
@@ -954,11 +959,11 @@ export class BrowserRuntimeSession implements RuntimeSession {
                 if (state.suppressCompile) return prepared;
                 if (prepared.status !== 'completed') return prepared;
                 const cache = this.profile.engineOptions?.cpp?.objectCache;
-                if (!cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0))) return prepared;
+                if (this.profile.backend !== 'upstream' && (!cache || (typeof cache === 'object' && Object.values(cache).some(value => value === 0)))) return prepared;
                 const statistics = this.engine?.cacheStats;
-                if (statistics?.toolchainProfile !== 'stock-certified-v1') return prepared;
-                if (!state.cacheInputsValidated || statistics.cacheEligible !== true) return {
-                    status: 'skipped', diagnostics: [], reason: statistics.cacheEligibilityReason ?? 'cache-ineligible', statistics,
+                if (this.profile.backend !== 'upstream' && statistics?.toolchainProfile !== 'stock-certified-v1') return prepared;
+                if (this.profile.backend !== 'upstream' && (!state.cacheInputsValidated || statistics?.cacheEligible !== true)) return {
+                    status: 'skipped', diagnostics: [], reason: statistics?.cacheEligibilityReason ?? 'cache-ineligible', statistics,
                 };
             }
             const engine = await this.ensureEngine();
@@ -967,6 +972,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
             engine.fs = built.fileTree;
             engine.binaryFiles = built.binaryFiles;
             engine.cppArtifacts = built.cppArtifacts;
+            engine.cppBuildPlan = built.plan.cppBuildPlan;
             engine.debugger.enabled = false;
             state.dispatched = true;
             const outcome = await engine.compile();
@@ -1245,18 +1251,22 @@ export class BrowserRuntimeSession implements RuntimeSession {
         if (!this.engineInit) {
             const token = {};
             this.engineInitToken = token;
-            const initialization = this.engineRetirement.then(() => {
+            const initialization = this.engineRetirement.then<EngineType>(() => {
                 if (this.disposed || this.suspended || this.engineInitToken !== token) {
                     throw new Error('Runtime initialization was cancelled');
                 }
-                return import('debugger-sh');
-            }).then(({ Engine }) => {
-                if (this.disposed || this.suspended || this.engineInitToken !== token) {
-                    throw new Error('Runtime initialization was cancelled');
+                if (this.profile.backend === 'upstream') {
+                    return import('./UpstreamEngineAdapter').then(({ UpstreamEngineAdapter }) =>
+                        UpstreamEngineAdapter.create(this.profile.engineLanguage));
                 }
-                return this.profile.engineOptions
-                    ? Engine.create(this.profile.engineLanguage as Lang, this.profile.engineOptions)
-                    : Engine.create(this.profile.engineLanguage as Lang);
+                return import('debugger-sh').then(({ Engine }) => {
+                    if (this.disposed || this.suspended || this.engineInitToken !== token) {
+                        throw new Error('Runtime initialization was cancelled');
+                    }
+                    return this.profile.engineOptions
+                        ? Engine.create(this.profile.engineLanguage as Lang, this.profile.engineOptions)
+                        : Engine.create(this.profile.engineLanguage as Lang);
+                });
             });
             const adoption = initialization.then(async (engine) => {
                 // dispose() cannot cancel Engine.create(), so reject its
@@ -1449,6 +1459,7 @@ export class BrowserRuntimeSession implements RuntimeSession {
                     const artifacts = engine as ArtifactEngine;
                     artifacts.binaryFiles = this.runtimeBinaryFiles;
                     artifacts.cppArtifacts = this.runtimeCppArtifacts;
+                    engine.cppBuildPlan = this.runtimeCppBuildPlan;
                 } else if (this.runtimeCppArtifacts || Object.keys(this.runtimeBinaryFiles).length) {
                     throw new Error('This debugger-sh build does not support precompiled C++ inputs');
                 }

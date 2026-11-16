@@ -59,7 +59,7 @@ export default defineConfig({
     format: 'es',
   },
   optimizeDeps: {
-    exclude: ['debugger-sh'],
+    exclude: ['debugger-sh', 'debugger-sh-upstream'],
   },
   build: {
     target: 'esnext',
@@ -78,7 +78,7 @@ export default defineConfig({
       cssFileName: 'styles',
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime', 'debugger-sh'],
+      external: ['react', 'react-dom', 'react/jsx-runtime', 'debugger-sh', 'debugger-sh-upstream'],
     },
   },
 })

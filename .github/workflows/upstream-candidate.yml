@@ -1,0 +1,53 @@
+name: Upstream Engine candidate
+on:
+  pull_request:
+  push:
+    branches: [codex/upstream-engine-migration]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: upstream-candidate-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+      - run: npm ci
+      - name: Require immutable upstream release dependency
+        run: node scripts/release/check-upstream-pin.mjs
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run lint && npm run typecheck && npm test
+      - run: npm run build && npm run test:upstream:consumer
+      - run: npm run test:upstream
+      - run: npm run test:upstream:viewer
+      - name: Verify compact source navigation and editor popups
+        run: npx playwright test tests/browser/execution-source-services.spec.ts tests/browser/ui-redesign.spec.ts --grep 'source reveal exposes|compact navigation'
+      - name: Reproduce packed candidate
+        run: |
+          mkdir -p .artifacts/first .artifacts/second
+          npm pack --pack-destination .artifacts/first
+          npm run build:library
+          npm pack --pack-destination .artifacts/second
+          cmp .artifacts/first/*.tgz .artifacts/second/*.tgz
+          sha256sum .artifacts/first/*.tgz > .artifacts/SHA256SUMS
+          git rev-parse HEAD > .artifacts/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-ide-upstream-candidate
+          path: |
+            .artifacts/first/*.tgz
+            .artifacts/SHA256SUMS
+            .artifacts/source-commit.txt
+            .artifacts/upstream-browser-results.json
+            .artifacts/upstream-consumer.json
+            test-results/upstream
