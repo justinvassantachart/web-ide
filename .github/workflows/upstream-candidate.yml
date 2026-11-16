@@ -28,7 +28,7 @@ jobs:
       - run: npm run lint && npm run typecheck && npm test
       - run: npm run build && npm run test:upstream:consumer
       - run: npm run test:upstream
-      - run: npm run test:upstream:viewer
+      - run: xvfb-run -a npm run test:upstream:viewer
       - name: Verify compact source navigation and editor popups
         run: npx playwright test tests/browser/execution-source-services.spec.ts tests/browser/ui-redesign.spec.ts --grep 'source reveal exposes|compact navigation'
       - name: Reproduce packed candidate
@@ -51,3 +51,4 @@ jobs:
             .artifacts/upstream-browser-results.json
             .artifacts/upstream-consumer.json
             test-results/upstream
+            test-results/upstream-viewer

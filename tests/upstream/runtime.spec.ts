@@ -20,14 +20,14 @@ test('Python interactive input, UTF-8 output, binary mount and immediate rerun',
   await page.evaluate(async () => {
     const f = window.upstreamFixture
     await f.create('python')
-    await f.run({ mode: 'run', files: { '/workspace/main.py': 'print("ready", flush=True)\nx = input()\nprint("héllo", x, list(open("/image.bin", "rb").read()))\n' }, binaryFiles: { '/workspace/image.bin': new Uint8Array([0, 255, 128]) } })
+    await f.run({ mode: 'run', files: { '/workspace/main.py': 'import os\nos.mkdir("/.web-ide-build")\nopen("/.web-ide-build/guest-marker", "w").write("must not survive")\nprint("ready", flush=True)\nx = input()\nprint("héllo", x, list(open("/image.bin", "rb").read()))\n' }, binaryFiles: { '/workspace/image.bin': new Uint8Array([0, 255, 128]) } })
   })
   await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('ready')
   await page.evaluate(() => { const f = window.upstreamFixture; f.input('world'); f.input('\r') })
   await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('héllo world [0, 255, 128]')
   expect(await page.evaluate(() => window.upstreamFixture.outcome())).toEqual({ type: 'completed', exitCode: 0 })
-  await page.evaluate(() => window.upstreamFixture.run({ mode: 'run', files: { 'main.py': 'import os\nprint("isolated", not os.path.exists("/image.bin"))' } }))
-  await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('isolated True')
+  await page.evaluate(() => window.upstreamFixture.run({ mode: 'run', files: { 'main.py': 'import os\nprint("isolated", not os.path.exists("/image.bin"), not os.path.exists("/.web-ide-build"))' } }))
+  await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('isolated True True')
   expect(await page.evaluate(() => window.upstreamFixture.outcome())).toEqual({ type: 'completed', exitCode: 0 })
   await page.evaluate(() => window.upstreamFixture.run({ mode: 'run', files: { 'main.py': 'import sys\nprint("readall", flush=True)\nprint("received", repr(sys.stdin.read()))' } }))
   await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('readall')
@@ -83,6 +83,39 @@ test('Stop while cold initialization or input is blocked then recover', async ({
   await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('recovered')
 })
 
+test('Stop settles while the initial Engine WASM fetch is held and only the immediate rerun executes', async ({ page }) => {
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let requests = 0
+  await page.route('**/engine_bg*.wasm', async route => {
+    requests++
+    await held
+    await route.continue()
+  })
+  let stopping: ReturnType<typeof page.evaluate> | undefined
+  try {
+    await page.evaluate(async () => {
+      const f = window.upstreamFixture
+      await f.create('python')
+      await f.run({ mode: 'run', files: { 'main.py': 'print("CANCELLED_COLD_SOURCE")' } })
+    })
+    await expect.poll(() => requests).toBeGreaterThan(0)
+    stopping = page.evaluate(() => window.upstreamFixture.stop())
+    const outcome = await Promise.race([stopping, new Promise(resolve => setTimeout(() => resolve({ type: 'still-waiting-for-fetch' }), 3_000))])
+    expect(outcome).toEqual({ type: 'stopped' })
+    await page.evaluate(() => window.upstreamFixture.run({ mode: 'run', files: { 'main.py': 'print("FRESH_AFTER_COLD_STOP")' } }))
+    expect(await page.evaluate(() => window.upstreamFixture.state.stdout)).not.toContain('CANCELLED_COLD_SOURCE')
+    release()
+    expect(await page.evaluate(() => window.upstreamFixture.outcome())).toEqual({ type: 'completed', exitCode: 0 })
+    expect(await page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('FRESH_AFTER_COLD_STOP')
+    expect(await page.evaluate(() => window.upstreamFixture.state.stdout)).not.toContain('CANCELLED_COLD_SOURCE')
+  } finally {
+    release()
+    await stopping
+    await page.unroute('**/engine_bg*.wasm')
+  }
+})
+
 test('C++ multi-file exceptions, debug source mapping, Stop at breakpoint and rerun', async ({ page }) => {
   const files = {
     '/workspace/main.cpp': '#include <cstdio>\nint work();\nint main() {\n  int result = work();\n  printf("result=%d\\n", result);\n  return 0;\n}\n',
@@ -101,6 +134,23 @@ test('C++ multi-file exceptions, debug source mapping, Stop at breakpoint and re
   expect(await page.evaluate(() => window.upstreamFixture.stop())).toEqual({ type: 'stopped' })
   await page.evaluate(files => window.upstreamFixture.run({ mode: 'run', files }), files)
   expect(await page.evaluate(() => window.upstreamFixture.outcome())).toEqual({ type: 'completed', exitCode: 0 })
+})
+
+test('C++ compile-only preparation cannot execute constructors or main', async ({ page }) => {
+  const files = { 'main.cpp': '#include <cstdio>\nstruct SideEffect { SideEffect() { puts("CONSTRUCTOR EXECUTED"); FILE* f=fopen("/ran.txt", "w"); if(f) { fputs("ran",f); fclose(f); } } } global;\nint main() { puts("MAIN EXECUTED"); while (true) {} }\n' }
+  const result = await page.evaluate(async files => {
+    const f = window.upstreamFixture
+    await f.create('cpp')
+    return f.warmup({ mode: 'run', files })
+  }, files)
+  expect(result?.status).toBe('completed')
+  expect(result?.diagnostics.join('\n')).not.toContain('EXECUTED')
+  expect(await page.evaluate(() => window.upstreamFixture.state.stdout)).not.toContain('EXECUTED')
+  // A foreground Run still starts normally after the private preparation job
+  // was killed before configurationDone; its host-visible constructor executes.
+  await page.evaluate(files => window.upstreamFixture.run({ mode: 'run', files }), files)
+  await expect.poll(() => page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('CONSTRUCTOR EXECUTED')
+  expect(await page.evaluate(() => window.upstreamFixture.stop())).toEqual({ type: 'stopped' })
 })
 
 test('project sessions and tabs cannot observe another session filesystem', async ({ page, context }) => {

@@ -4,6 +4,8 @@ import type { CppBuildPlanV1 } from '@/web-ide/contracts/cpp'
 import type { RuntimeHostDeviceOpener } from '@/web-ide/contracts/runtime'
 import { runtimeRelativeFilePath } from '@/web-ide/core/workspace-path'
 import type { RuntimeEngine, RuntimeEngineResult } from './engine-backend'
+import toolchainManifest from './upstream-toolchains.json'
+import { preflightUpstreamRuntime } from './upstream-preflight'
 
 type UpstreamModule = typeof import('debugger-sh-upstream')
 const HOST_DEVICE_PATH = '/dev/debugger-sh-host'
@@ -75,24 +77,54 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
     },
   }
 
-  private module: UpstreamModule
+  private module?: UpstreamModule
   private engine?: Engine
   private readonly language: 'c' | 'python'
   private active?: Operation
   private disposed = false
   private disposal?: Promise<void>
   private operationId = 0
+  private buildGeneration?: string
   private latest?: NonNullable<RuntimeEngine['cacheStats']['latest']>
 
   static async create(language: 'c' | 'python'): Promise<UpstreamEngineAdapter> {
-    const module = await import('debugger-sh-upstream')
-    return new UpstreamEngineAdapter(language, module, await module.Engine.create())
+    return new UpstreamEngineAdapter(language)
   }
 
-  private constructor(language: 'c' | 'python', module: UpstreamModule, engine: Engine) {
+  private constructor(language: 'c' | 'python') {
     this.language = language
-    this.module = module
-    this.engine = engine
+  }
+
+  private async acquireEngine(signal: AbortSignal): Promise<Engine> {
+    signal.throwIfAborted()
+    if (this.engine) return this.engine
+    let onAbort!: () => void
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal.reason)
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+    const creation = (async () => {
+      const module = await import('debugger-sh-upstream')
+      signal.throwIfAborted()
+      const engine = await module.Engine.create()
+      // Engine initialization has no AbortSignal. Stop can settle immediately;
+      // an instance arriving later belongs to the cancelled operation alone.
+      if (signal.aborted || this.disposed) {
+        engine.dispose()
+        signal.throwIfAborted()
+        throw new Error('Engine adapter is disposed')
+      }
+      this.module = module
+      this.engine = engine
+      return engine
+    })()
+    try { return await Promise.race([creation, aborted]) }
+    catch (error) {
+      if (signal.aborted) throw error
+      const failure = new Error(`Could not initialize the runtime: ${String(error instanceof Error ? error.message : error)}`)
+      failure.name = 'EngineLoadError'
+      throw failure
+    } finally { signal.removeEventListener('abort', onAbort) }
   }
 
   get cacheStats(): RuntimeEngine['cacheStats'] {
@@ -121,15 +153,21 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
       input: Promise.resolve(),
       done: Promise.resolve().then(async (): Promise<RuntimeEngineResult> => {
         try {
-          this.engine ??= await this.module.Engine.create()
+          const engine = await this.acquireEngine(abort.signal)
           abort.signal.throwIfAborted()
-          const engine = this.engine
-          if (kind !== 'prepare_compiler') {
-            this.validateToolchain(artifacts, buildPlan)
-            await this.mount(engine, files, binary, abort.signal)
-          }
+          const preflight = await preflightUpstreamRuntime(engine, this.language, abort.signal, process => {
+            operation.process = process
+            if (abort.signal.aborted) process.kill()
+          })
+          if (preflight) return preflight
           abort.signal.throwIfAborted()
-          const duplex = opener ? new this.module.Duplex() : undefined
+          if (kind === 'prepare_compiler') return { type: 'completed', exitCode: 0 }
+          this.validateToolchain(artifacts, buildPlan)
+          await this.mount(engine, files, binary, abort.signal)
+          abort.signal.throwIfAborted()
+          const cppOptions = this.language === 'c' ? await this.cppOptions(engine, files, binary, artifacts, buildPlan) : undefined
+          abort.signal.throwIfAborted()
+          const duplex = opener ? new this.module!.Duplex() : undefined
           operation.duplex = duplex
           if (duplex && opener) {
             // The guest still opens ONE read/write path. Framing/correlation are
@@ -151,23 +189,29 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
           }
           abort.signal.throwIfAborted()
           const io = { stdin: true as const, debug, ...(duplex ? { devices: { [HOST_DEVICE_PATH]: duplex } } : {}) }
-          const process = kind === 'prepare_compiler'
-            ? engine.run('clang', ['--version'], { sysroot: 'cpp' })
-            : this.language === 'python'
+          const process = this.language === 'python'
               ? engine.run('python', ['/main.py'], io)
-              : engine.run('cpp', { ...io, ...this.cppOptions(artifacts, buildPlan), compileOnly: kind === 'compile' })
+              : engine.run('cpp', { ...io, ...cppOptions, debug: debug || kind === 'compile' })
           operation.process = process
           process.stdout.on('data', (bytes) => { if (!abort.signal.aborted) this.stdout.emit(bytes) })
           process.stderr.on('data', (bytes) => { if (!abort.signal.aborted) this.stderr.emit(bytes) })
-          this.debugger.attach(process.debugger?.dap)
+          let compiled = false
+          if (kind === 'compile') {
+            // The public debugger starts before WASM instantiation/entry. Once
+            // initialized, compilation/linking has succeeded; never resume the
+            // guest. This preserves upstream's object cache without a new API.
+            process.debugger!.dap.on('event', event => {
+              if (event.event === 'initialized' && !abort.signal.aborted) {
+                compiled = true
+                process.kill()
+              }
+            })
+            process.debugger!.dap.send({ type: 'request', seq: 1, command: 'initialize', arguments: { adapterID: 'web-ide-compile' } })
+          } else this.debugger.attach(process.debugger?.dap)
           if (abort.signal.aborted) process.kill()
           const result = await process
+          if (compiled && !abort.signal.aborted) return { type: 'completed', exitCode: 0 }
           if (result.killed || abort.signal.aborted) return { type: 'stopped' }
-          // Loading the runtime is a host failure, distinct from a guest program
-          // deliberately returning the same numeric exit status (126 or 127).
-          if (result.error) {
-            return { type: 'error', error: { type: 'EngineLoadError', message: result.error.message } }
-          }
           return { type: 'completed', exitCode: result.exitCode }
         } catch (error) {
           if (abort.signal.aborted) return { type: 'stopped' }
@@ -191,7 +235,7 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
 
   private validateToolchain(artifacts?: CppArtifacts, plan?: CppBuildPlanV1): void {
     if (this.language !== 'c') return
-    const identity = this.module.toolchainProvenance.cpp.sha256
+    const identity = toolchainManifest.toolchains.cpp.sha256
     const required = artifacts?.requiredToolchain
     if (required && (required.compilerSha256 !== identity.llvm || required.sysrootSha256 !== identity.sysroot
       || required.exceptionsSha256 !== identity.sysroot)) {
@@ -202,7 +246,7 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
     }
   }
 
-  private cppOptions(artifacts?: CppArtifacts, plan?: CppBuildPlanV1): CppOptions {
+  private async cppOptions(engine: Engine, files: DirNode, binary: Record<string, Uint8Array>, artifacts?: CppArtifacts, plan?: CppBuildPlanV1): Promise<CppOptions> {
     const path = (value: string) => `/${runtimeRelativeFilePath(value)}`
     const cxxFlags = ['-I/', '-fno-pch-timestamp', '-fvalidate-ast-input-files-content']
     if (plan) {
@@ -219,14 +263,39 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
     // Upstream treats these as globs relative to its filesystem root. Legacy
     // artifact paths are absolute; passing them through silently matches nothing.
     const sources = (artifacts?.sources ?? plan?.sources)?.map(runtimeRelativeFilePath)
-    return { buildDir: BUILD_DIRECTORY, cxxFlags, lldFlags, ...(sources ? { sources: [...sources] } : {}) }
+    // Upstream's cache tracks source/header dependencies and compiler flags.
+    // Its sysroot is private, so keep immutable compiler/sysroot identity and
+    // the actual PCH bytes in a separate generation owned by this adapter.
+    // Do not add -sys-header-deps: upstream cannot hash its private sysroot
+    // through the workspace filesystem, which would defeat unchanged reuse.
+    const digest = async (bytes: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))), byte => byte.toString(16).padStart(2, '0')).join('')
+    const overlays: Array<[string, string]> = []
+    const visit = async (tree: DirNode, prefix = ''): Promise<void> => {
+      for (const [name, value] of Object.entries(tree)) {
+        const file = `${prefix}/${name}`
+        if (typeof value !== 'string') await visit(value, file)
+        else if (file.startsWith('/include/')) overlays.push([file, await digest(new TextEncoder().encode(value))])
+      }
+    }
+    await visit(files)
+    for (const [file, bytes] of Object.entries(binary)) if (file.startsWith('/include/')) overlays.push([file, await digest(bytes)])
+    const pch = artifacts?.precompiledHeader
+      ? [artifacts.precompiledHeader, await digest(await engine.fs.readFile(artifacts.precompiledHeader))] : undefined
+    const generation = await digest(new TextEncoder().encode(JSON.stringify({ toolchain: toolchainManifest.toolchains.cpp.sha256, pch, overlays: overlays.sort(([a], [b]) => a.localeCompare(b)) })))
+    if (this.buildGeneration !== undefined && this.buildGeneration !== generation
+      && (await engine.fs.readDir('/')).includes(BUILD_DIRECTORY.slice(1))) {
+      await engine.fs.remove(BUILD_DIRECTORY, { recursive: true })
+    }
+    this.buildGeneration = generation
+    return { buildDir: `${BUILD_DIRECTORY}/${generation}`, cxxFlags, lldFlags, ...(sources ? { sources: [...sources] } : {}) }
   }
 
   private async mount(engine: Engine, files: DirNode, binary: Record<string, Uint8Array>, signal: AbortSignal): Promise<void> {
-    // Only compiler-owned objects survive. Guest-created files never cross runs.
+    // C++ retains its reserved cache namespace within this session. Python has
+    // no compiler cache; every path is replaced before its next run.
     for (const name of await engine.fs.readDir('/')) {
       signal.throwIfAborted()
-      if (`/${name}` !== BUILD_DIRECTORY) await engine.fs.remove(`/${name}`, { recursive: true })
+      if (this.language !== 'c' || `/${name}` !== BUILD_DIRECTORY) await engine.fs.remove(`/${name}`, { recursive: true })
     }
     const write = async (path: string, bytes: string | Uint8Array) => {
       if (path === BUILD_DIRECTORY || path.startsWith(`${BUILD_DIRECTORY}/`)) throw new Error('Execution input collides with the compiler cache')
@@ -270,13 +339,14 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
     if (options?.signal?.aborted || this.active) return 'cancelled'
     this.engine?.dispose()
     this.engine = undefined
+    this.buildGeneration = undefined
     return 'released'
   }
 
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal
     this.disposed = true
-    this.disposal = this.cancelCurrentOperation().finally(() => { this.engine?.dispose(); this.engine = undefined })
+    this.disposal = this.cancelCurrentOperation().finally(() => { this.engine?.dispose(); this.engine = undefined; this.buildGeneration = undefined })
     return this.disposal
   }
 }

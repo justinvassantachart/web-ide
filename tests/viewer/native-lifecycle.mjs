@@ -5,7 +5,7 @@ export async function runNativeLifecycle({url, executablePath}) {
 const profile=await mkdtemp(path.join(tmpdir(),'shared-native-browser-'));
 // Match Playwright: isolate the macOS keychain and prevent unrelated native
 // window occlusion from suppressing frames. Inactive tabs still become hidden.
-const browserProcess=spawn(executablePath,[...(process.platform==='darwin'?['--use-mock-keychain','--disable-backgrounding-occluded-windows']:[]),'--remote-debugging-port=0','--remote-debugging-address=127.0.0.1',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','about:blank'],{stdio:'ignore'});
+const browserProcess=spawn(executablePath,[...(process.platform==='darwin'?['--use-mock-keychain','--disable-backgrounding-occluded-windows']:[]),...(process.platform==='linux'&&process.env.CI?['--no-sandbox']:[]),'--remote-debugging-port=0','--remote-debugging-address=127.0.0.1',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','about:blank'],{stdio:'ignore'});
 let ws;const events=[],waiters=new Map();let sequence=0;
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 try{
@@ -39,6 +39,6 @@ try{
  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',true);
  const after=await evaluate('window.viewer.measure()');const lifecycle=await evaluate('window.lifecycle');const result={initial,hidden,frozen,final,before,after,lifecycle};await send('Browser.close');return result;
 
-}finally{for(const pending of waiters.values())clearTimeout(pending.timer);ws?.close();browserProcess.kill('SIGTERM');if(browserProcess.exitCode===null)await new Promise(resolve=>{const timer=setTimeout(()=>browserProcess.kill('SIGKILL'),3000);browserProcess.once('exit',()=>{clearTimeout(timer);resolve()})});await rm(profile,{recursive:true,force:true});}
+}finally{for(const pending of waiters.values())clearTimeout(pending.timer);ws?.close();browserProcess.kill('SIGTERM');if(browserProcess.exitCode===null&&browserProcess.signalCode===null)await new Promise(resolve=>{const timer=setTimeout(()=>browserProcess.kill('SIGKILL'),3000);browserProcess.once('exit',()=>{clearTimeout(timer);resolve()})});await rm(profile,{recursive:true,force:true});}
 
 }

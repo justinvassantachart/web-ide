@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 
 const createEngine = vi.hoisted(() => vi.fn())
+const preflight = vi.hoisted(() => vi.fn())
+vi.mock('../../src/runtimes/upstream-preflight', () => ({ preflightUpstreamRuntime: preflight }))
+vi.mock('../../src/runtimes/upstream-toolchains.json', () => ({ default: { toolchains: { cpp: { sha256: { llvm: 'compiler', sysroot: 'sysroot' } } } } }))
 vi.mock('debugger-sh-upstream', () => ({
   Engine: { create: createEngine },
-  toolchainProvenance: { cpp: { sha256: { llvm: 'compiler', sysroot: 'sysroot' } } },
   Duplex: class extends EventEmitter {
     readonly from = { flow: vi.fn() }
     readonly write = vi.fn(async () => {})
@@ -38,10 +40,16 @@ class FakeEngine {
   readonly fs = {
     readDir: vi.fn(async () => [...new Set([...this.files.keys()].map(path => path.split('/')[1]))]),
     remove: vi.fn(async (path: string) => {
+      if (![...this.files.keys()].some(key => key === path || key.startsWith(`${path}/`))) throw new Error(`Missing file: ${path}`)
       for (const key of this.files.keys()) if (key === path || key.startsWith(`${path}/`)) this.files.delete(key)
     }),
     mkdir: vi.fn(async () => {}),
     writeFile: vi.fn(async (path: string, bytes: string | Uint8Array) => { this.files.set(path, bytes) }),
+    readFile: vi.fn(async (path: string) => {
+      const value = this.files.get(path)
+      if (value === undefined) throw new Error(`Missing file: ${path}`)
+      return typeof value === 'string' ? new TextEncoder().encode(value) : value
+    }),
   }
   readonly processes: FakeProcess[] = []
   readonly run = vi.fn(() => { const process = new FakeProcess(); this.processes.push(process); return process })
@@ -50,7 +58,7 @@ class FakeEngine {
 
 let engine: FakeEngine
 const adapters: UpstreamEngineAdapter[] = []
-beforeEach(() => { engine = new FakeEngine(); createEngine.mockReset().mockResolvedValue(engine) })
+beforeEach(() => { engine = new FakeEngine(); createEngine.mockReset().mockResolvedValue(engine); preflight.mockReset().mockResolvedValue(undefined) })
 afterEach(async () => { await Promise.all(adapters.splice(0).map(adapter => adapter.dispose())) })
 async function create(language: 'c' | 'python' = 'python') {
   const adapter = await UpstreamEngineAdapter.create(language)
@@ -68,15 +76,16 @@ describe('upstream adapter ownership and lifecycle', () => {
     expect(createEngine).not.toHaveBeenCalled()
   })
 
-  it('mounts owned text/binary snapshots and removes guest writes while preserving compiler objects', async () => {
-    const adapter = await create()
+  it.each(['python', 'c'] as const)('mounts owned snapshots and retains the reserved cache only for C++ (%s)', async language => {
+    const adapter = await create(language)
     const bytes = new Uint8Array([0, 255, 128])
     adapter.binaryFiles = { '/image.bin': bytes }
     const first = adapter.run()
     bytes.fill(42)
     const { process } = await spawned()
     expect(engine.files.get('/image.bin')).toEqual(new Uint8Array([0, 255, 128]))
-    expect(engine.run).toHaveBeenCalledWith('python', ['/main.py'], expect.objectContaining({ stdin: true }))
+    if (language === 'python') expect(engine.run).toHaveBeenCalledWith('python', ['/main.py'], expect.objectContaining({ stdin: true }))
+    else expect(engine.run).toHaveBeenCalledWith('cpp', expect.objectContaining({ stdin: true }))
     engine.files.set('/guest-created.txt', 'do not carry forward')
     engine.files.set('/.web-ide-build/main.cpp.o', new Uint8Array([3]))
     process.finish()
@@ -86,7 +95,7 @@ describe('upstream adapter ownership and lifecycle', () => {
     const { process: next } = await spawned(1)
     expect(engine.files.has('/guest-created.txt')).toBe(false)
     expect(engine.files.has('/image.bin')).toBe(false)
-    expect(engine.files.has('/.web-ide-build/main.cpp.o')).toBe(true)
+    expect(engine.files.has('/.web-ide-build/main.cpp.o')).toBe(language === 'c')
     next.finish()
     await second
   })
@@ -102,6 +111,47 @@ describe('upstream adapter ownership and lifecycle', () => {
     await expect(run).resolves.toEqual({ type: 'stopped' })
     await stop
     expect(engine.run).not.toHaveBeenCalled()
+  })
+
+  it.each(['stop', 'dispose'] as const)('%s settles during held Engine initialization and disposes only its late instance', async action => {
+    const lateEngine = engine
+    const held = deferred<FakeEngine>()
+    createEngine.mockReturnValueOnce(held.promise)
+    const adapter = await create()
+    expect(createEngine).not.toHaveBeenCalled()
+    const first = adapter.run()
+    await vi.waitFor(() => expect(createEngine).toHaveBeenCalledOnce())
+    await (action === 'stop' ? adapter.cancelCurrentOperation() : adapter.dispose())
+    await expect(first).resolves.toEqual({ type: 'stopped' })
+    expect(lateEngine.dispose).not.toHaveBeenCalled()
+    expect(lateEngine.run).not.toHaveBeenCalled()
+    if (action === 'stop') {
+      engine = new FakeEngine()
+      createEngine.mockResolvedValue(engine)
+      adapter.fs = { 'main.py': 'print("fresh")' }
+      const next = adapter.run()
+      const { process } = await spawned()
+      held.resolve(lateEngine)
+      await vi.waitFor(() => expect(lateEngine.dispose).toHaveBeenCalledOnce())
+      expect(engine.dispose).not.toHaveBeenCalled()
+      expect(engine.files.get('/main.py')).toBe('print("fresh")')
+      process.finish()
+      await expect(next).resolves.toEqual({ type: 'completed', exitCode: 0 })
+    } else {
+      held.resolve(lateEngine)
+      await vi.waitFor(() => expect(lateEngine.dispose).toHaveBeenCalledOnce())
+      await expect(adapter.run()).rejects.toThrow('disposed')
+    }
+  })
+
+  it('reports failed Engine initialization as a load error and allows a fresh retry', async () => {
+    createEngine.mockRejectedValueOnce(new TypeError('WASM download unavailable'))
+    const adapter = await create()
+    await expect(adapter.run()).resolves.toMatchObject({ type: 'error', error: { type: 'EngineLoadError', message: expect.stringContaining('WASM download unavailable') } })
+    const retry = adapter.run()
+    const { process } = await spawned()
+    process.finish()
+    await expect(retry).resolves.toEqual({ type: 'completed', exitCode: 0 })
   })
 
   it('keeps one duplex path, aborts blocked host requests, and rejects old responses after rerun', async () => {
@@ -153,17 +203,20 @@ describe('upstream adapter ownership and lifecycle', () => {
   it('retains PCH and archive inputs for compile-only work but never opens host devices', async () => {
     const adapter = await create('c')
     adapter.fs = { 'main.cpp': 'int main() { return 0; }' }
+    adapter.binaryFiles = { '/course.pch': new Uint8Array([1, 2, 3]) }
     adapter.cppArtifacts = { sources: ['/main.cpp'], precompiledHeader: '/course.pch', archives: ['/course.a'],
       requiredToolchain: { compilerSha256: 'compiler', sysrootSha256: 'sysroot', exceptionsSha256: 'sysroot' } }
     const opener = vi.fn()
     adapter.hostDevice = opener
     const run = adapter.compile()
     const { process } = await spawned()
-    expect(engine.run).toHaveBeenCalledWith('cpp', expect.objectContaining({ compileOnly: true, debug: false,
+    expect(engine.run).toHaveBeenCalledWith('cpp', expect.objectContaining({ debug: true,
       sources: ['main.cpp'], cxxFlags: expect.arrayContaining(['-include-pch', '/course.pch']), lldFlags: ['/course.a'] }))
     expect(opener).not.toHaveBeenCalled()
-    process.finish()
-    await run
+    process.debugger.dap.emit('event', { event: 'initialized' })
+    await expect(run).resolves.toEqual({ type: 'completed', exitCode: 0 })
+    expect(process.kill).toHaveBeenCalledOnce()
+    expect(process.debugger.dap.send).not.toHaveBeenCalledWith(expect.objectContaining({ command: 'configurationDone' }))
     adapter.cppArtifacts.requiredToolchain!.compilerSha256 = 'legacy-compiler'
     await expect(adapter.run()).resolves.toMatchObject({ type: 'error', error: { message: expect.stringContaining('different C++ toolchain') } })
     expect(engine.run).toHaveBeenCalledOnce()
@@ -182,14 +235,73 @@ describe('upstream adapter ownership and lifecycle', () => {
 
   it('distinguishes a runtime asset failure from a guest exit with the same code', async () => {
     const adapter = await create()
+    preflight.mockResolvedValueOnce({ type: 'error', error: { type: 'EngineLoadError', message: 'Python runtime download unavailable' } })
     const unavailable = adapter.run()
-    const { process } = await spawned()
-    process.finish(127, false, { type: 'load', message: 'Python runtime download unavailable' })
     await expect(unavailable).resolves.toEqual({ type: 'error', error: { type: 'EngineLoadError', message: 'Python runtime download unavailable' } })
+    expect(engine.run).not.toHaveBeenCalled()
     const guest = adapter.run()
-    const { process: next } = await spawned(1)
+    const { process: next } = await spawned()
     next.finish(127)
     await expect(guest).resolves.toEqual({ type: 'completed', exitCode: 127 })
+  })
+
+  it('uses a new cache generation for changed PCH bytes but keeps it across source edits', async () => {
+    const adapter = await create('c')
+    adapter.fs = { 'main.cpp': 'int main() { return 0; }' }
+    adapter.binaryFiles = { '/course.pch': new Uint8Array([1, 2, 3]) }
+    adapter.cppArtifacts = { sources: ['main.cpp'], precompiledHeader: '/course.pch' }
+    const generations: string[] = []
+    for (let i = 0; i < 3; i++) {
+      const run = adapter.run()
+      const { process } = await spawned(i)
+      const options = (engine.run.mock.calls[i] as unknown as [string, { buildDir: string }])[1]
+      generations.push(options.buildDir)
+      engine.files.set(`${options.buildDir}/main.cpp.o`, new Uint8Array([1]))
+      process.finish()
+      await run
+      adapter.fs = { 'main.cpp': 'int main() { return 1; }' }
+      if (i === 1) adapter.binaryFiles = { '/course.pch': new Uint8Array([4, 5, 6]) }
+    }
+    expect(generations[1]).toBe(generations[0])
+    expect(generations[2]).not.toBe(generations[1])
+    expect(engine.fs.remove).toHaveBeenCalledWith('/.web-ide-build', { recursive: true })
+  })
+
+  it('allows a changed PCH generation after releasing the previous Engine', async () => {
+    const adapter = await create('c')
+    adapter.fs = { 'main.cpp': 'int main() { return 0; }' }
+    adapter.binaryFiles = { '/course.pch': new Uint8Array([1]) }
+    adapter.cppArtifacts = { sources: ['main.cpp'], precompiledHeader: '/course.pch' }
+    const first = adapter.run()
+    const { process } = await spawned()
+    process.finish()
+    await first
+    await expect(adapter.releaseCompilerResources()).resolves.toBe('released')
+    engine = new FakeEngine()
+    createEngine.mockResolvedValue(engine)
+    adapter.binaryFiles = { '/course.pch': new Uint8Array([2]) }
+    const next = adapter.run()
+    const { process: replacement } = await spawned()
+    replacement.finish()
+    await expect(next).resolves.toEqual({ type: 'completed', exitCode: 0 })
+    expect(engine.fs.remove).not.toHaveBeenCalledWith('/.web-ide-build', { recursive: true })
+  })
+
+  it('allows a changed generation when Stop happened before any cache directory existed', async () => {
+    const adapter = await create('c')
+    adapter.fs = { 'main.cpp': 'int main() { return 0; }' }
+    adapter.binaryFiles = { '/course.pch': new Uint8Array([1]) }
+    adapter.cppArtifacts = { sources: ['main.cpp'], precompiledHeader: '/course.pch' }
+    const first = adapter.run()
+    await spawned()
+    await adapter.cancelCurrentOperation()
+    await expect(first).resolves.toEqual({ type: 'stopped' })
+    adapter.binaryFiles = { '/course.pch': new Uint8Array([2]) }
+    const next = adapter.run()
+    const { process } = await spawned(1)
+    process.finish()
+    await expect(next).resolves.toEqual({ type: 'completed', exitCode: 0 })
+    expect(engine.fs.remove).not.toHaveBeenCalledWith('/.web-ide-build', { recursive: true })
   })
 
   it('cancels a deferred resource release without stopping the active program', async () => {

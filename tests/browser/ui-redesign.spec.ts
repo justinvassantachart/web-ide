@@ -37,10 +37,17 @@ test('compact navigation preserves mounted editor and terminal while exposing fu
   await page.goto('/?layout=redesign')
   const views = page.getByRole('tablist', { name: 'Workbench views' })
   await expect(views).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Run', exact: true })).toBeEnabled()
   await expect(page.locator('.monaco-editor')).toBeVisible()
   const firstEditor = await page.locator('.monaco-editor').elementHandle()
   await views.getByRole('tab', { name: 'Workspace', exact: true }).click()
   await expect(page.getByRole('tree', { name: 'Workspace files' })).toBeVisible()
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await page.getByRole('tree', { name: 'Workspace files' }).getByRole('treeitem', { name: 'helpers.py', exact: true }).click()
+    await expect(views.getByRole('tab', { name: 'Code', exact: true })).toHaveAttribute('aria-selected', 'true')
+    expect(await firstEditor!.evaluate(element => element.isConnected)).toBe(true)
+    await views.getByRole('tab', { name: 'Workspace', exact: true }).click()
+  }
   await views.getByRole('tab', { name: 'Output', exact: true }).click()
   await expect(page.getByRole('tablist', { name: 'Workbench panels' })).toBeVisible()
   await views.getByRole('tab', { name: 'Code', exact: true }).click()

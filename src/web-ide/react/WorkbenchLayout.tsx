@@ -21,6 +21,7 @@ import { useSidebarLayout } from './sidebar-layout-context'
 import { useWorkbenchTheme } from './use-workbench-theme'
 import { useWorkbenchInstance } from './workbench-instance-context'
 import { useSourcePresentationState } from './source-presentation-state'
+import { EditorNavigationContext } from './editor-navigation-context'
 
 /** Reusable workbench UI. Runtime and contribution providers sit above it. */
 export function WorkbenchLayout() {
@@ -38,6 +39,7 @@ export function WorkbenchLayout() {
   // compact mode. A later explicit navigation choice remains the user's choice.
   const compactView = compactSelection.revealRequest === revealRequest ? compactSelection.view : 'code'
   const setCompactView = (view: string) => setCompactSelection({ view, revealRequest })
+  const showEditor = useCallback(() => setCompactSelection({ view: 'code', revealRequest }), [revealRequest])
   const compactId = useId()
   const responsive = configuration.responsive
   const breakpoint = responsive === false ? 0 : responsive?.breakpoint ?? 900
@@ -67,6 +69,7 @@ export function WorkbenchLayout() {
   }, [configuration.reloadWhenNotIsolated])
 
   return (
+    <EditorNavigationContext.Provider value={showEditor}>
     <TooltipProvider delayDuration={300}>
       <GlobalHotkeys />
       <HostEventBridge />
@@ -139,5 +142,6 @@ export function WorkbenchLayout() {
         {chromeStatusBar && <StatusBar />}
       </div>
     </TooltipProvider>
+    </EditorNavigationContext.Provider>
   )
 }

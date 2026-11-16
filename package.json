@@ -54,7 +54,8 @@
     "./assets": {
       "types": "./dist/assets.d.ts",
       "import": "./dist/assets.js"
-    }
+    },
+    "./upstream-toolchains.json": "./dist/upstream-toolchains.json"
   },
   "sideEffects": [
     "*.css"
@@ -98,7 +99,7 @@
   },
   "dependencies": {
     "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.2/debugger-sh-0.3.15-webide.0.9.0.2.tgz",
-    "debugger-sh-upstream": "https://github.com/justinvassantachart/engine/releases/download/upstream-67c0bf6add4f63b378c3b39751c5f27011234d3f/debugger-sh-0.3.16-upstream.67c0bf6add4f.tgz"
+    "debugger-sh-upstream": "https://github.com/justinvassantachart/engine/releases/download/upstream-e7a53c8d02e7e611a8312e6e734d5c86094c88e6/debugger-sh-0.3.16-upstream.e7a53c8d02e7.tgz"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

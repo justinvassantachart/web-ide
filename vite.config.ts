@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -16,6 +17,12 @@ export default defineConfig({
   base: './',
   plugins: [
     react(),
+    {
+      name: 'upstream-toolchain-manifest',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'upstream-toolchains.json', source: readFileSync(new URL('./src/runtimes/upstream-toolchains.json', import.meta.url), 'utf8') })
+      },
+    },
     {
       name: 'scope-workbench-styles',
       enforce: 'post',

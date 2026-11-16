@@ -32,6 +32,17 @@ try {
   for (const file of ['src', 'index.html', 'vite.config.ts', 'tsconfig.json', 'tsconfig.nodenext.json']) {
     await cp(path.join(fixture, file), path.join(consumer, file), { recursive: true })
   }
+  const viteConfigPath = path.join(consumer, 'vite.config.ts')
+  const viteConfig = await readFile(viteConfigPath, 'utf8')
+  await writeFile(viteConfigPath, viteConfig.replace('plugins: [', `plugins: [{
+    name: 'conditional-response-isolation',
+    configurePreviewServer(server) {
+      server.middlewares.use((_request, response, next) => {
+        for (const [name, value] of Object.entries(isolationHeaders)) response.setHeader(name, value)
+        next()
+      })
+    },
+  },`).replace("exclude: ['debugger-sh']", "exclude: ['debugger-sh', 'debugger-sh-upstream']"))
   await writeFile(path.join(consumer, 'src/upstream-api.ts'), `
 import { createCppRuntimeProvider, createPythonRuntimeProvider, type EngineBackend } from 'web-ide/runtimes'
 const backend: EngineBackend = 'upstream'
@@ -68,6 +79,10 @@ export const upstreamProviders = [createCppRuntimeProvider({ backend }), createP
   console.log(`Clean consumer passed for ${manifest.version} (${packed.integrity})`)
   if (viewer) {
     for (const file of ['index.html', 'main.tsx']) await cp(path.join(root, 'tests/viewer', file), path.join(consumer, file))
+    const main = path.join(consumer, 'main.tsx')
+    await writeFile(main, (await readFile(main, 'utf8'))
+      .replace("import { pythonRuntimePlugin } from 'web-ide/runtimes'", "import { pythonRuntimePlugin, createPythonRuntimeProvider } from 'web-ide/runtimes'")
+      .replace('plugins: [pythonRuntimePlugin,', "plugins: [{ ...pythonRuntimePlugin, contributes: { ...pythonRuntimePlugin.contributes, runtimeProviders: [createPythonRuntimeProvider({ backend: 'upstream' })] } },"))
     run(['exec', 'vite', '--', 'build'], consumer)
     server = spawn(process.execPath, [path.join(consumer, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', '4207', '--strictPort'], { cwd: consumer, stdio: 'inherit' })
     await new Promise((resolve, reject) => {
