@@ -116,6 +116,26 @@ test('Stop settles while the initial Engine WASM fetch is held and only the imme
   }
 })
 
+test('a failed initial Engine WASM download retries successfully in the same page', async ({ page }) => {
+  let requests = 0
+  await page.route('**/engine_bg*.wasm', async route => {
+    if (++requests === 1) await route.fulfill({ status: 503, body: 'Temporarily unavailable' })
+    else await route.continue()
+  })
+  await page.evaluate(async () => {
+    const f = window.upstreamFixture
+    await f.create('python')
+    await f.run({ mode: 'run', files: { 'main.py': 'print("after initialization retry")' } })
+  })
+  expect(await page.evaluate(() => window.upstreamFixture.outcome())).toMatchObject({
+    type: 'error', error: { type: 'EngineLoadError' },
+  })
+  await page.evaluate(() => window.upstreamFixture.run({ mode: 'run', files: { 'main.py': 'print("after initialization retry")' } }))
+  expect(await page.evaluate(() => window.upstreamFixture.outcome())).toEqual({ type: 'completed', exitCode: 0 })
+  expect(await page.evaluate(() => window.upstreamFixture.state.stdout)).toContain('after initialization retry')
+  expect(requests).toBe(2)
+})
+
 test('C++ multi-file exceptions, debug source mapping, Stop at breakpoint and rerun', async ({ page }) => {
   const files = {
     '/workspace/main.cpp': '#include <cstdio>\nint work();\nint main() {\n  int result = work();\n  printf("result=%d\\n", result);\n  return 0;\n}\n',
