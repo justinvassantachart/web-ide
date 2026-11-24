@@ -1,6 +1,6 @@
 {
   "name": "web-ide",
-  "version": "0.12.0-upstream.0",
+  "version": "0.12.0-upstream.1",
   "private": true,
   "description": "Embeddable browser IDE workbench with open host, runtime, and plugin contracts.",
   "type": "module",
@@ -55,7 +55,8 @@
       "types": "./dist/assets.d.ts",
       "import": "./dist/assets.js"
     },
-    "./upstream-toolchains.json": "./dist/upstream-toolchains.json"
+    "./upstream-toolchains.json": "./dist/upstream-toolchains.json",
+    "./upstream-engine.json": "./dist/upstream-engine.json"
   },
   "sideEffects": [
     "*.css"
@@ -99,7 +100,7 @@
   },
   "dependencies": {
     "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.9.0.2/debugger-sh-0.3.15-webide.0.9.0.2.tgz",
-    "debugger-sh-upstream": "https://github.com/justinvassantachart/engine/releases/download/upstream-e7a53c8d02e7e611a8312e6e734d5c86094c88e6/debugger-sh-0.3.16-upstream.e7a53c8d02e7.tgz"
+    "debugger-sh-upstream": "npm:debugger-sh@0.4.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

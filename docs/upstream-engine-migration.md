@@ -18,22 +18,24 @@ it is never stored in a student's project.
 | PCH and archives | Compiler/linker flags and binary filesystem | Keep PCH enabled; pass archives and PCH; reject incompatible required compiler/sysroot digests | Rebuilt Stanford `upstream-v1` PCH/support archives using upstream libc++ ABI |
 | Object reuse | Source/header dependency hashes and compile flags | Keep only `/.web-ide-build` across runs; generation includes compiler/sysroot/PCH bytes and system-header overlays | Prewarm and foreground scheduling remain in Web IDE/course host |
 | Compiler retention | Compiled modules, sysroots, pooled workers | Toolchain-only prewarm and explicit release/disposal | Benchmarks must distinguish this from the fork's retained compiler instance |
-| Deque formatting | Open upstream PR #23, ABI-v2 block-size fix | No duplicate formatter implementation | Course ADT and linked-list graph regression fixtures |
+| Deque formatting | Merged upstream PR #23, ABI-v2 block-size fix | No duplicate formatter implementation | Course ADT and linked-list graph regression fixtures |
 | Error recovery | Retry failed toolchain downloads | Probe known-zero isolated host commands before guest mounts; report `EngineLoadError`, preserve guest exit codes, reject stale work, drain disposal | Show runtime-unavailable without parsing student stderr; no persistence migration |
 
-The Engine baseline is main plus deque PR #23, commit
-`28b6738e5746e2c2950c5b60e0b5a7cc746429b0`, which includes the exception-stack fix
-`d14753f4ee78f3655db8f555f685102f64b61dc2`. PR #30 was closed; its bundled runtime/API
-extensions are not prerequisites. The owned package build resolves package-relative WASM
-and records source/toolchain receipts. The adapter does not depend on an unbuilt Git checkout
-or floating main. Any unavoidable internal Engine defect must be demonstrated separately
-against this baseline before a new upstream PR is proposed.
+Web IDE `0.12.0-upstream.1` uses the **unmodified official npm release**
+`debugger-sh@0.4.2`, aliased as `debugger-sh-upstream` to retain the legacy rollback package.
+The exact npm integrity, tarball digest, upstream source
+`c7c74ed8d4635acadea94683ce5774272ad8b82d`, installed-file hashes and runtime WASM URL are
+exported in `web-ide/upstream-engine.json`. Upstream PRs #23 (deque formatting) and #31
+(failed initialization retry) are merged into this release. PR #30 remains unnecessary.
+No new Engine patch, build or upstream PR is required.
 
-The owned Engine candidate has one three-line runtime fix: clear the shared initialization
-promise when initial WASM loading rejects. Without it, a single initial HTTP 503 poisons all
-later `Engine.create()` calls in that page. Web IDE cannot clear this module-private promise.
-The regression fails on unmodified main plus PR #23 and passes with the fix in Chromium and
-WebKit. This fix is kept in the owned fork; proposing it upstream requires owner approval.
+Version 0.4.1 inlines the worker and fixes reentrant debugger events. Version 0.4.2 adds
+`fs.exists` and skips linking unchanged programs. Its linker reuse does not account for
+removed sources or replacement archive bytes: real Chromium and WebKit regressions reproduced
+an obsolete executable after either change. The shared adapter fingerprints mounted inputs,
+source selection and flags, then removes only its cached executable through public `fs.remove`
+when those inputs change. Upstream's compiled objects remain reusable. Failed relinks also
+cannot revive the old executable on a retry. Unchanged runs retain both object and link reuse.
 
 Compile-only preparation uses the public debugger's initial configuration barrier: after
 compilation and linking, the worker supplies debug information before WASM instantiation or
@@ -42,11 +44,14 @@ and main never execute. The regression uses a constructor with side effects and 
 main. Instrumentation overhead is included in preparation benchmarks, not hidden as execution.
 No `compileOnly`, `ProcessResult.error`, or `toolchainProvenance` Engine extension is required.
 
-The built candidate pins compiler and sysroot bytes under
-`https://justinvassantachart.github.io/engine/toolchains/sha256/<digest>/<filename>`.
-Web IDE's exported `upstream-toolchains.json` records publisher origins, mirrored URLs and
-verified SHA-256 values. Release checks verify those bytes; failed downloads remain retryable. The host contains only
-public toolchain artifacts and preserves previously published digest directories.
+The official release loads its versioned Engine WASM from
+`https://cdn.jsdelivr.net/npm/debugger-sh@0.4.2/dist/engine_bg.wasm` and its toolchains from
+the publisher's `debugger-sh.github.io` URLs. The exported `upstream-toolchains.json` binds
+those exact URLs and SHA-256 values, retaining the previous checksum-addressed mirrors as
+rollback references. All six toolchain downloads remain byte-identical to the previous
+candidate, so existing Stanford and Nova PCH/archive bytes keep the same ABI. The CDN Engine
+WASM is verified against the file in the npm tarball. Consumers permit only the needed
+runtime download origins and the inline Blob worker; no new CDN script permission is needed.
 
 The adapter uses a private compiler output path rather than exposing `CppBuildPlan.outputPath`;
 the existing runtime has no compiled-output export API. The upstream Python debugger already
@@ -62,8 +67,8 @@ its own explicit gate and cannot pass that historical receipt by changing its in
 `npm run test:upstream:viewer` runs the existing viewer behavior suite from the same clean
 candidate consumer; the historical viewer command remains bound to its stable receipt.
 
-The `Upstream Engine candidate` CI workflow requires an immutable source-qualified Engine
-release URL and lock integrity, runs unit/type/lint/build checks and the clean consumer, runs
+The `Upstream Engine candidate` CI workflow requires the exact official npm Engine
+version, lock integrity and all installed-file hashes, runs unit/type/lint/build checks and the clean consumer, runs
 the production runtime fixture in Chromium and WebKit, then builds/packs twice and compares
 the tarballs byte-for-byte. Its artifact contains the candidate, source commit, SHA-256, clean
 consumer receipt, and browser report. Publication must use that artifact, not a local rebuild.
@@ -80,7 +85,9 @@ immediately and only its new source executes after the download resumes. Acquisi
 to the cancellable adapter operation, and an instance arriving after cancellation is disposed.
 The cache regression observes actual compiler worker jobs: two on a cold two-source build,
 zero unchanged, one after a one-source edit, and correct invalidation after header, flag and
-same-path binary PCH changes. Changed builds are compared with clean-session outputs.
+same-path binary PCH changes. Source removal, explicit source-selection changes, same-path
+archive replacement and failed-link retries are checked against clean-session results;
+unchanged runs are also required to perform zero linker jobs.
 
 All worker responses, **including HTTP 304**, must carry the page's cross-origin isolation
 headers. Vite's `preview.headers` alone omits these on conditional responses; the fixture uses
@@ -89,16 +96,15 @@ a new tab for every rerun.
 
 ## Rollout and rollback
 
-1. Build and verify the pinned Engine prerelease in CI, then publish its exact tarball as a
-   GitHub prerelease. Record source SHA, tarball digest and toolchain manifest.
-2. Pin that immutable URL in Web IDE, run the candidate CI workflow, and publish the exact
-   verified Web IDE prerelease artifact.
-3. Build the Stanford companion's separate upstream profile against the same toolchain;
-   retain its legacy profile. Verify and publish its immutable prerelease artifact.
-4. Pin the exact same Web IDE/Engine packages in CS106B and THS. Run each host's checks, build
-   both backend configurations, and deploy only the configured staging targets.
-5. The owner performs authenticated staging acceptance using synthetic projects/accounts.
-   Stable publication and production-default changes remain a separate explicit decision.
+1. Verify the official Engine npm tarball, registry signature/provenance, source tag and
+   installed files. Pin its exact npm alias and integrity; retain the legacy package.
+2. Run the Web IDE candidate CI workflow and publish its exact reproducible prerelease artifact.
+3. Refresh the Stanford companion's exact peer pin and toolchain provenance, retaining its
+   byte-identical upstream PCH/archive payload and legacy profile.
+4. Pin the same Web IDE/Engine tuple in CS106B, THS and Nova. Run host checks, both backend
+   builds and browser regressions before updating their existing deployment targets.
+5. Keep authenticated owner acceptance separate from synthetic browser/AI integration checks.
+   New production activation still requires explicit owner authorization.
 
 Rollback redeploys the same host source with `backend: 'legacy'`, or restores the recorded
 last-good immutable host build. Recreate runtime sessions on page reload. No database,

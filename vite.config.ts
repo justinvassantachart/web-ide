@@ -21,6 +21,7 @@ export default defineConfig({
       name: 'upstream-toolchain-manifest',
       generateBundle() {
         this.emitFile({ type: 'asset', fileName: 'upstream-toolchains.json', source: readFileSync(new URL('./src/runtimes/upstream-toolchains.json', import.meta.url), 'utf8') })
+        this.emitFile({ type: 'asset', fileName: 'upstream-engine.json', source: readFileSync(new URL('./src/runtimes/upstream-engine.json', import.meta.url), 'utf8') })
       },
     },
     {

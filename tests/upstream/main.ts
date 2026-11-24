@@ -50,8 +50,10 @@ export type UpstreamFixture = typeof fixture
 
 interface CacheBuildInput {
   files: Record<string, string>
+  sources?: string[]
   flagValue?: number
   pchValue?: number
+  archiveValue?: number
 }
 
 interface CompilerJob {
@@ -62,15 +64,18 @@ interface CompilerJob {
 }
 
 const precompiledHeaders = new Map<number, { header: string, bytes: Uint8Array }>()
+const archives = new Map<number, Uint8Array>()
 
 // Observe real compiler work without adding a cache/debug API to the package.
 // Probe, linker, executable and PCH-creation jobs do not count as source compiles.
-async function observeCompilerJobs<T>(run: () => Promise<T>): Promise<{ result: T, jobs: CompilerJob[] }> {
+async function observeCompilerJobs<T>(run: () => Promise<T>): Promise<{ result: T, jobs: CompilerJob[], links: number }> {
   const original = Worker.prototype.postMessage
   const jobs: CompilerJob[] = []
+  let links = 0
   Worker.prototype.postMessage = function (this: Worker, message: unknown, ...rest: unknown[]) {
     const value = message as { type?: unknown, job?: { args?: unknown } } | null
     const args = value?.job?.args
+    if (value?.type === 'run' && Array.isArray(args) && args.includes('--export-dynamic')) links++
     if (value?.type === 'run' && Array.isArray(args) && args.every(arg => typeof arg === 'string')
       && args.includes('-cc1') && args.includes('-emit-obj')) {
       const output = args[args.indexOf('-o') + 1] as string
@@ -78,7 +83,7 @@ async function observeCompilerJobs<T>(run: () => Promise<T>): Promise<{ result: 
     }
     return Reflect.apply(original, this, [message, ...rest])
   }
-  try { return { result: await run(), jobs } }
+  try { return { result: await run(), jobs, links } }
   finally { Worker.prototype.postMessage = original }
 }
 
@@ -88,7 +93,9 @@ const cacheFixture = {
     const { default: manifest } = await import('web-ide/upstream-toolchains.json')
     const pch = input.pchValue === undefined ? undefined : precompiledHeaders.get(input.pchValue)
     if (input.pchValue !== undefined && !pch) throw new Error('Prepare the binary PCH before measuring the build')
-    const sources = Object.keys(input.files).filter(path => path.endsWith('.cpp'))
+    const archive = input.archiveValue === undefined ? undefined : archives.get(input.archiveValue)
+    if (input.archiveValue !== undefined && !archive) throw new Error('Prepare the archive before measuring the build')
+    const sources = input.sources ?? Object.keys(input.files).filter(path => path.endsWith('.cpp'))
     const stdoutStart = state.stdout.length
     const stderrStart = state.stderr.length
     const observed = await observeCompilerJobs(async () => {
@@ -103,9 +110,10 @@ const cacheFixture = {
             warningPreset: 'default',
             toolchain: { compilerDigest: manifest.toolchains.cpp.sha256.llvm, sysrootDigest: manifest.toolchains.cpp.sha256.sysroot, cxxAbiId: 'upstream-libcxx-wasm-eh' },
           },
-          sources, archives: [], linkLibraries: [], outputPath: '/main',
+          sources, archives: archive ? [{ path: 'library.a', wholeArchive: false }] : [], linkLibraries: [], outputPath: '/main',
         },
-        ...(pch ? { binaryFiles: { 'course.pch': pch.bytes }, cppArtifacts: { sources, precompiledHeader: 'course.pch' } } : {}),
+        binaryFiles: { ...(pch ? { 'course.pch': pch.bytes } : {}), ...(archive ? { 'library.a': archive } : {}) },
+        ...(pch ? { cppArtifacts: { sources, precompiledHeader: 'course.pch' } } : {}),
       })
       return fixture.outcome()
     })
@@ -113,10 +121,32 @@ const cacheFixture = {
     const progress = new Set([
       'Initializing execution environment...', `[build] Building ${sources.join(', ')}…`,
       '\u001b[1;34mInitializing execution environment...\u001b[0m', `\u001b[90m[build] Building ${sources.join(', ')}…\u001b[0m`,
+      `[build] Building ${Object.keys(input.files).filter(path => path.endsWith('.cpp')).join(', ')}…`,
+      `\u001b[90m[build] Building ${Object.keys(input.files).filter(path => path.endsWith('.cpp')).join(', ')}…\u001b[0m`,
       'Execution environment ready', '\u001b[1;34mExecution environment ready\u001b[0m',
     ])
     const stdout = rawStdout.replace(/\r\n/g, '\n').split('\n').filter(line => !progress.has(line)).join('\n')
-    return { outcome: observed.result, jobs: observed.jobs, stdout, rawStdout, stderr: state.stderr.slice(stderrStart) }
+    return { outcome: observed.result, jobs: observed.jobs, links: observed.links, stdout, rawStdout, stderr: state.stderr.slice(stderrStart) }
+  },
+  async prepareArchive(value: number) {
+    const { Engine } = await import('debugger-sh-upstream')
+    const engine = await Engine.create()
+    try {
+      await engine.fs.writeFile('/library.cpp', `int ${value < 0 ? 'wrong_symbol' : 'library_value'}() { return ${value}; }`)
+      const process = engine.run('clang', ['-cc1', '-triple', 'wasm32-wasip1', '-emit-obj', '-x', 'c++', '-o', '/library.o', '/library.cpp'], { sysroot: 'cpp' })
+      if ((await process).exitCode !== 0) throw new Error('Archive fixture compilation failed')
+      const object = new Uint8Array(await engine.fs.readFile('/library.o'))
+      // A real single-member Unix ar archive; LLVM's WASM linker reads this
+      // archive exactly as it reads the course support libraries.
+      const header = 'library.o/'.padEnd(16) + '0'.padEnd(12) + '0'.padEnd(6) + '0'.padEnd(6)
+        + '100644'.padEnd(8) + String(object.length).padEnd(10) + '`\n'
+      const prefix = new TextEncoder().encode('!<arch>\n' + header)
+      const bytes = new Uint8Array(prefix.length + object.length + object.length % 2)
+      bytes.set(prefix); bytes.set(object, prefix.length)
+      if (object.length % 2) bytes[bytes.length - 1] = 10
+      archives.set(value, bytes)
+      return bytes.length
+    } finally { engine.dispose() }
   },
   async preparePch(value: number) {
     const { Engine } = await import('debugger-sh-upstream')

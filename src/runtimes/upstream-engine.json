@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "repository": "debugger-sh/engine",
+  "packageName": "debugger-sh",
+  "version": "0.4.2",
+  "gitHead": "c7c74ed8d4635acadea94683ce5774272ad8b82d",
+  "tarball": "https://registry.npmjs.org/debugger-sh/-/debugger-sh-0.4.2.tgz",
+  "integrity": "sha512-fMeGsd9Y1gfdIWNLkU++JuLduj14DsNTDhDOmz2ICYcW1x8O13nZjbqt75AFowOibJbR1tKMcRMECjL6JCSfSw==",
+  "sha256": "4b9965383d50651e04b59ee66ff8dd976119a4eb2f7b60b810d52b3043fba7a4",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 1075,
+      "sha256": "50a084c6aa646e467099a582fd903d6fc9bb3a2df8a69155f57acce3e73a31ae"
+    },
+    {
+      "path": "dist/debugger-sh.js",
+      "bytes": 107351,
+      "sha256": "9bf51f1ccb7a1a17f4b3e8233abd089f8df1c537457a34ece539bc42a0a8c23a"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1984,
+      "sha256": "3632879c74ef0efc4ecf73855c1705d91a574edafc9dec8762faa1aa3f51f5c4"
+    },
+    {
+      "path": "dist/debugger.d.ts.map",
+      "bytes": 1662,
+      "sha256": "998c8eed6247cdae8c3ec1c0f68921cdc7e4f872c1ae45a9d9d0db0b38f2ff5f"
+    },
+    {
+      "path": "dist/fs.d.ts.map",
+      "bytes": 2222,
+      "sha256": "10c00b6e9eda2f169dd36e92c50fc046c5b251996289a5bf22c3b81a078002ab"
+    },
+    {
+      "path": "dist/index.d.ts.map",
+      "bytes": 1962,
+      "sha256": "1774abfc019cfbd5160e2d888bd0b61d2a0bd322d3c30d9ee50b74d1d584c65c"
+    },
+    {
+      "path": "dist/process.d.ts.map",
+      "bytes": 3610,
+      "sha256": "490de1468912cc85ba217a394b1142dd1448aab03735ab77d38201ea015b2f42"
+    },
+    {
+      "path": "dist/toolchains.d.ts.map",
+      "bytes": 2451,
+      "sha256": "e6c1ca1868eb9d1c7a551d11dad8d6bf443464bd0e63dac99f48cb6dec606b7c"
+    },
+    {
+      "path": "dist/util.d.ts.map",
+      "bytes": 400,
+      "sha256": "0514fd523e88647ee063ca9dc09442ad6f6610d1ebdc6aa28e2a21c4ea6fa59d"
+    },
+    {
+      "path": "dist/worker.d.ts.map",
+      "bytes": 109,
+      "sha256": "ab12e25d6eedf3b429d1948203d2506a5d3ecf7165a4eb75839bb86da02284a5"
+    },
+    {
+      "path": "README.md",
+      "bytes": 7344,
+      "sha256": "6437aa7d5a149183996f96e5500b7c374f0e7664b8160d0b111f7683e04fb623"
+    },
+    {
+      "path": "dist/debugger.d.ts",
+      "bytes": 4307,
+      "sha256": "1a6182eee474ad6dfce0c7901ae7f93f9a46437e23ebc00c6ba712aeeb519475"
+    },
+    {
+      "path": "dist/fs.d.ts",
+      "bytes": 3689,
+      "sha256": "f6f3a8d00076f053bd482b170c75df690ed2f05b5e1b9e4e5f8d28210d3337d0"
+    },
+    {
+      "path": "dist/index.d.ts",
+      "bytes": 2933,
+      "sha256": "14f32e99c363908e1c9cf44c726e2c7631d8aadfd5829ceaed97573d6cd747cf"
+    },
+    {
+      "path": "dist/process.d.ts",
+      "bytes": 10679,
+      "sha256": "b05e6be40bab6690df5b524dfd7d3cf8f6b989ee783c237a971b97247a63a9f5"
+    },
+    {
+      "path": "dist/toolchains.d.ts",
+      "bytes": 9189,
+      "sha256": "137745fd312418381ca2af1a413d3183ab037fb1e17f7c3139b9052f4be2c04e"
+    },
+    {
+      "path": "dist/util.d.ts",
+      "bytes": 650,
+      "sha256": "d7d744ae5f4530e25304e5b07425119845692c0a4db5eda5abb3e4d487012342"
+    },
+    {
+      "path": "dist/worker.d.ts",
+      "bytes": 47,
+      "sha256": "14e7397ad7aab084b1c5b23b9f101c079611e43e872d5b4250f2be5499a6a273"
+    },
+    {
+      "path": "dist/engine_bg.wasm",
+      "bytes": 8575637,
+      "sha256": "9ee465d774fde1c71995dbc5861f2991c680f509ff9f164da8757238db6f9f51"
+    }
+  ],
+  "attestationUrl": "https://registry.npmjs.org/-/npm/v1/attestations/debugger-sh@0.4.2",
+  "wasmUrl": "https://cdn.jsdelivr.net/npm/debugger-sh@0.4.2/dist/engine_bg.wasm",
+  "workerMode": "inline-blob"
+}

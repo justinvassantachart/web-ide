@@ -85,6 +85,7 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
   private disposal?: Promise<void>
   private operationId = 0
   private buildGeneration?: string
+  private linkInputs?: string
   private latest?: NonNullable<RuntimeEngine['cacheStats']['latest']>
 
   static async create(language: 'c' | 'python'): Promise<UpstreamEngineAdapter> {
@@ -270,15 +271,24 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
     // through the workspace filesystem, which would defeat unchanged reuse.
     const digest = async (bytes: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))), byte => byte.toString(16).padStart(2, '0')).join('')
     const overlays: Array<[string, string]> = []
+    const mountedInputs: Array<[string, string]> = []
     const visit = async (tree: DirNode, prefix = ''): Promise<void> => {
       for (const [name, value] of Object.entries(tree)) {
         const file = `${prefix}/${name}`
         if (typeof value !== 'string') await visit(value, file)
-        else if (file.startsWith('/include/')) overlays.push([file, await digest(new TextEncoder().encode(value))])
+        else {
+          const hash = await digest(new TextEncoder().encode(value))
+          mountedInputs.push([file, hash])
+          if (file.startsWith('/include/')) overlays.push([file, hash])
+        }
       }
     }
     await visit(files)
-    for (const [file, bytes] of Object.entries(binary)) if (file.startsWith('/include/')) overlays.push([file, await digest(bytes)])
+    for (const [file, bytes] of Object.entries(binary)) {
+      const hash = await digest(bytes)
+      mountedInputs.push([path(file), hash])
+      if (path(file).startsWith('/include/')) overlays.push([path(file), hash])
+    }
     const pch = artifacts?.precompiledHeader
       ? [artifacts.precompiledHeader, await digest(await engine.fs.readFile(artifacts.precompiledHeader))] : undefined
     const generation = await digest(new TextEncoder().encode(JSON.stringify({ toolchain: toolchainManifest.toolchains.cpp.sha256, pch, overlays: overlays.sort(([a], [b]) => a.localeCompare(b)) })))
@@ -287,7 +297,21 @@ export class UpstreamEngineAdapter implements RuntimeEngine {
       await engine.fs.remove(BUILD_DIRECTORY, { recursive: true })
     }
     this.buildGeneration = generation
-    return { buildDir: `${BUILD_DIRECTORY}/${generation}`, cxxFlags, lldFlags, ...(sources ? { sources: [...sources] } : {}) }
+    const buildDir = `${BUILD_DIRECTORY}/${generation}`
+    // Engine 0.4.2 skips linking when no source recompiles. It does not track
+    // removed sources or replacement archives. Discard only the executable
+    // when our mounted inputs change, retaining upstream's object/dependency
+    // cache. Delete before attempting the build so failed links cannot leave
+    // a previous executable eligible for reuse on the next attempt.
+    const linkInputs = await digest(new TextEncoder().encode(JSON.stringify({
+      generation, sources, cxxFlags, lldFlags,
+      files: mountedInputs.sort(([a], [b]) => a.localeCompare(b)),
+    })))
+    if (this.linkInputs !== linkInputs && await engine.fs.exists(`${buildDir}/main`)) {
+      await engine.fs.remove(`${buildDir}/main`)
+    }
+    this.linkInputs = linkInputs
+    return { buildDir, cxxFlags, lldFlags, ...(sources ? { sources: [...sources] } : {}) }
   }
 
   private async mount(engine: Engine, files: DirNode, binary: Record<string, Uint8Array>, signal: AbortSignal): Promise<void> {

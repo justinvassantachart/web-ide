@@ -38,6 +38,7 @@ class FakeProcess {
 class FakeEngine {
   readonly files = new Map<string, string | Uint8Array>()
   readonly fs = {
+    exists: vi.fn(async (path: string) => this.files.has(path)),
     readDir: vi.fn(async () => [...new Set([...this.files.keys()].map(path => path.split('/')[1]))]),
     remove: vi.fn(async (path: string) => {
       if (![...this.files.keys()].some(key => key === path || key.startsWith(`${path}/`))) throw new Error(`Missing file: ${path}`)

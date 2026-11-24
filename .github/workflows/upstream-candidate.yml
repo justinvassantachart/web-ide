@@ -22,8 +22,8 @@ jobs:
           node-version: 24.11.1
           cache: npm
       - run: npm ci
-      - name: Require immutable upstream release dependency
-        run: node scripts/release/check-upstream-pin.mjs
+      - name: Verify official upstream package and runtime downloads
+        run: node scripts/release/check-upstream-pin.mjs --downloads
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run lint && npm run typecheck && npm test
       - run: npm run build && npm run test:upstream:consumer
