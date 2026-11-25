@@ -1,5 +1,5 @@
-import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { ReactFlow, Background, type Node, type Edge, type NodeChange, type EdgeChange, type ReactFlowInstance, Position, Handle, Panel, useViewport, useUpdateNodeInternals, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { ReactFlow, Background, type Node, type Edge, type NodeChange, type EdgeChange, type ReactFlowInstance, Position, Handle, useReactFlow, useStore, useStoreApi, useViewport, useUpdateNodeInternals, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useWorkbenchDebugStore } from '@/web-ide/react/workbench-instance-context'
 import { ownEntry } from '@/store/debug-store'
@@ -101,18 +101,35 @@ function SeparatorOverlay({ separatorX }: { separatorX: number }) {
                 strokeWidth={1}
                 strokeDasharray="6 4"
             />
-            <text
-                x={screenX + 16}
-                y={55}
-                fill="oklch(0.6 0 0)"
-                fontSize={10}
-                fontFamily="monospace"
-                textAnchor="start"
-            >
-                OBSERVED REFERENCED OBJECTS
-            </text>
         </svg>
     )
+}
+
+// The initial fit often sees only a stack frame. Give the first measured
+// object graph one chance to come into view, then leave the camera to the user.
+function FitFirstObjects() {
+    const flow = useReactFlow()
+    const store = useStoreApi()
+    const ready = useStore(state => state.nodesInitialized && state.width > 0 && state.height > 0
+        && state.nodes.some(node => node.type === 'heapNode'))
+    const framed = useRef(false)
+
+    useEffect(() => {
+        if (!ready || !flow.viewportInitialized || framed.current) return
+        framed.current = true
+
+        const bounds = flow.getNodesBounds(flow.getNodes())
+        const { x, y, zoom } = flow.getViewport()
+        const { width, height } = store.getState()
+        const left = x + bounds.x * zoom
+        const top = y + bounds.y * zoom
+        if (left >= 0 && top >= 0 && left + bounds.width * zoom <= width && top + bounds.height * zoom <= height) return
+
+        const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200
+        void flow.fitView({ padding: 0.2, maxZoom: zoom, duration })
+    }, [flow, ready, store])
+
+    return null
 }
 
 export function MemoryVisualizer() {
@@ -381,45 +398,42 @@ export function MemoryVisualizer() {
         return <div className="flex h-full items-center justify-center text-muted-foreground font-mono text-xs bg-[var(--color-chrome)]">{debugMode === 'compiling' ? 'Compiling…' : 'Running…'}</div>
 
     return (
-        <div className="w-full h-full bg-[var(--color-chrome)]">
-            <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                nodeTypes={nodeTypes}
-                onInit={(instance) => { flowRef.current = instance }}
-                fitView
-                minZoom={0.2}
-                maxZoom={2}
-                proOptions={{ hideAttribution: true }}
-            >
-                <Background gap={16} size={0.5} color="oklch(0.25 0 0)" />
-                <Panel position="top-left" className="!m-0 !p-0">
-                    <div className="flex gap-6 px-4 py-2">
-                        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground"
-                            title="Frames and observed referenced objects. Indented rows are logical members; arrows show pointer targets.">
-                            Pointer graph
-                        </span>
-                    </div>
-                </Panel>
-                <Panel position="top-right" className="!m-1 flex items-center gap-2">
-                    {debugMode === 'running' && (
-                        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground px-2 py-1">
-                            Running…
-                        </span>
-                    )}
+        <div className="flex h-full w-full flex-col bg-[var(--color-chrome)]">
+            <div className="flex shrink-0 items-center gap-3 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                <span className="shrink-0" title="Frames and observed referenced objects. Indented rows are logical members; arrows show pointer targets.">
+                    Pointer graph
+                </span>
+                {separatorX !== null && <span className="min-w-0 truncate" title="Observed referenced objects">Observed referenced objects</span>}
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                    {debugMode === 'running' && <span>Running…</span>}
                     <button
                         type="button"
                         onClick={() => flowRef.current?.fitView({ padding: 0.2, duration: 200 })}
                         title="Fit graph to view"
-                        className="px-2 py-1 rounded border border-border bg-card text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+                        className="px-2 py-1 rounded border border-border bg-card uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
                     >
                         Fit
                     </button>
-                </Panel>
-                {separatorX !== null && <SeparatorOverlay separatorX={separatorX} />}
-            </ReactFlow>
+                </div>
+            </div>
+            <div className="min-h-0 flex-1">
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    nodeTypes={nodeTypes}
+                    onInit={(instance) => { flowRef.current = instance }}
+                    fitView
+                    minZoom={0.2}
+                    maxZoom={2}
+                    proOptions={{ hideAttribution: true }}
+                >
+                    <Background gap={16} size={0.5} color="oklch(0.25 0 0)" />
+                    <FitFirstObjects />
+                    {separatorX !== null && <SeparatorOverlay separatorX={separatorX} />}
+                </ReactFlow>
+            </div>
         </div>
     )
 }

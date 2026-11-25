@@ -11,6 +11,71 @@ const source = readFileSync(new URL('./fixtures/cpp-referenced-objects.cpp', imp
 const linkedLine = source.split('\n').findIndex(line => line.includes('// GRAPH_LINKED')) + 1
 const cycleLine = source.split('\n').findIndex(line => line.includes('// GRAPH_CYCLE')) + 1
 
+function settledTransform(viewport: Locator) {
+  return viewport.evaluate(element => new Promise<string>(resolve => {
+    let previous = ''
+    let stableFrames = 0
+    function check() {
+      const transform = getComputedStyle(element).transform
+      stableFrames = transform === previous ? stableFrames + 1 : 0
+      previous = transform
+      if (stableFrames >= 3) resolve(transform)
+      else requestAnimationFrame(check)
+    }
+    requestAnimationFrame(check)
+  }))
+}
+
+test('frames the first referenced object and preserves a manual pan as the list grows', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await page.goto('/?runtime=cpp&cppReferenceGraph=1')
+  const firstAllocation = 'Node* head = new Node{10, nullptr};'
+  const allocationLine = source.split('\n').findIndex(line => line.includes(firstAllocation)) + 1
+  const status = page.getByRole('contentinfo', { name: 'Status bar' })
+  await expect(status).toContainText('Ready')
+  await editorLine(page, firstAllocation).click()
+  await page.keyboard.press('F9')
+  await page.locator('[data-command-id="workbench.debug"]').click()
+  await expect(status).toContainText(`Paused at main.cpp:${allocationLine}`)
+  await page.getByRole('tab', { name: 'Graph', exact: true }).click()
+  const graph = page.locator('.react-flow')
+  const viewport = graph.locator('.react-flow__viewport')
+  const stack = graph.locator('.react-flow__node-stackFrame')
+  const objects = graph.locator('.react-flow__node-heapNode')
+  const step = page.getByRole('button', { name: 'Step Over', exact: true })
+  await expect(stack).toBeInViewport({ ratio: 0.99 })
+  await expect(objects).toHaveCount(0)
+  await settledTransform(viewport)
+  await step.click()
+  await expect(status).toContainText(`Paused at main.cpp:${allocationLine + 1}`)
+  await expect(objects).toHaveCount(1)
+  await expect(objects.first()).toBeInViewport({ ratio: 0.99, timeout: 5000 })
+  await expect(stack).toBeInViewport({ ratio: 0.99 })
+  const fitted = await settledTransform(viewport)
+
+  const box = (await graph.boundingBox())!
+  await page.mouse.move(box.x + 20, box.y + box.height - 20)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 20, box.y + box.height - 70, { steps: 8 })
+  await page.mouse.up()
+  const panned = await settledTransform(viewport)
+  expect(panned).not.toEqual(fitted)
+
+  const title = (await page.getByText('Pointer graph', { exact: true }).boundingBox())!
+  const observed = (await page.getByText(/^observed referenced objects$/i).boundingBox())!
+  const fitButton = (await page.getByRole('button', { name: 'Fit', exact: true }).boundingBox())!
+  expect(Math.abs((title.y + title.height / 2) - (observed.y + observed.height / 2))).toBeLessThan(3)
+  expect(observed.x).toBeGreaterThanOrEqual(title.x + title.width)
+  expect(observed.x + observed.width).toBeLessThanOrEqual(fitButton.x)
+
+  await step.click()
+  await expect(status).toContainText(`Paused at main.cpp:${allocationLine + 2}`)
+  await expect(objects).toHaveCount(2)
+  expect(await settledTransform(viewport)).toBe(panned)
+  await page.getByRole('button', { name: 'Fit', exact: true }).click()
+  await expect(objects.last()).toBeInViewport({ ratio: 0.99, timeout: 5000 })
+})
+
 test('keeps observed C++ objects and pointer edges separate through expansion and new pauses', async ({ page }, testInfo) => {
   const diagnostics = observeBrowserDiagnostics(page)
   await page.setViewportSize({ width: 1700, height: 1100 })
@@ -120,18 +185,7 @@ test('keeps observed C++ objects and pointer edges separate through expansion an
   expect(await verifyGraph()).toEqual(before)
   await page.getByRole('button', { name: 'Fit', exact: true }).click()
   // Wait only for screenshot framing; graph correctness above uses identities.
-  await page.locator('.react-flow__viewport').evaluate(viewport => new Promise<void>(resolve => {
-    let previous = ''
-    let stableFrames = 0
-    const settled = () => {
-      const transform = getComputedStyle(viewport).transform
-      stableFrames = transform === previous ? stableFrames + 1 : 0
-      previous = transform
-      if (stableFrames >= 3) resolve()
-      else requestAnimationFrame(settled)
-    }
-    requestAnimationFrame(settled)
-  }))
+  await settledTransform(page.locator('.react-flow__viewport'))
   await page.screenshot({ path: testInfo.outputPath('linked-list.png'), fullPage: true })
 
   await page.getByRole('button', { name: 'Step Over', exact: true }).click()

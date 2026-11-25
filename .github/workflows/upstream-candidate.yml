@@ -29,8 +29,11 @@ jobs:
       - run: npm run build && npm run test:upstream:consumer
       - run: npm run test:upstream
       - run: xvfb-run -a npm run test:upstream:viewer
-      - name: Verify compact source navigation and editor popups
-        run: npx playwright test tests/browser/execution-source-services.spec.ts tests/browser/ui-redesign.spec.ts --grep 'source reveal exposes|compact navigation'
+      - name: Verify source navigation, editor popups and pointer graph framing
+        run: >
+          npx playwright test tests/browser/execution-source-services.spec.ts tests/browser/ui-redesign.spec.ts
+          tests/browser/cpp-referenced-objects.spec.ts
+          --grep 'source reveal exposes|compact navigation|frames the first referenced object'
       - name: Reproduce packed candidate
         run: |
           mkdir -p .artifacts/first .artifacts/second
