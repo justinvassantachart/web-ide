@@ -1,6 +1,6 @@
 {
   "name": "web-ide",
-  "version": "0.12.0-upstream.2",
+  "version": "0.12.0-upstream.3",
   "private": true,
   "description": "Embeddable browser IDE workbench with open host, runtime, and plugin contracts.",
   "type": "module",

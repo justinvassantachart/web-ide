@@ -90,7 +90,8 @@ const createDebugState = (
     stepHistory: [],
     stepIndex: -1,
 
-    setDebugMode: (mode) => set({ debugMode: mode }),
+    // Natural exit and Stop end the same session. Only breakpoints survive it.
+    setDebugMode: (mode) => mode === 'idle' ? get().reset() : set({ debugMode: mode }),
     setValueExpanded: (key, expanded) => set(state => ({ expandedValues: { ...state.expandedValues, [key]: expanded } })),
     showNextPage: (key) => set(state => ({ visiblePages: { ...state.visiblePages, [key]: Math.min(10, (ownEntry(state.visiblePages, key) ?? 1) + 1) } })),
     selectFrame: (selectedFrameId) => set({ selectedFrameId }),

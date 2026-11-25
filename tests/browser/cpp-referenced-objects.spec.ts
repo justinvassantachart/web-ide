@@ -35,7 +35,8 @@ test('frames the first referenced object and preserves a manual pan as the list 
   await expect(status).toContainText('Ready')
   await editorLine(page, firstAllocation).click()
   await page.keyboard.press('F9')
-  await page.locator('[data-command-id="workbench.debug"]').click()
+  const debug = page.locator('[data-command-id="workbench.debug"]')
+  await debug.click()
   await expect(status).toContainText(`Paused at main.cpp:${allocationLine}`)
   await page.getByRole('tab', { name: 'Graph', exact: true }).click()
   const graph = page.locator('.react-flow')
@@ -45,7 +46,7 @@ test('frames the first referenced object and preserves a manual pan as the list 
   const step = page.getByRole('button', { name: 'Step Over', exact: true })
   await expect(stack).toBeInViewport({ ratio: 0.99 })
   await expect(objects).toHaveCount(0)
-  await settledTransform(viewport)
+  const stackOnly = await settledTransform(viewport)
   await step.click()
   await expect(status).toContainText(`Paused at main.cpp:${allocationLine + 1}`)
   await expect(objects).toHaveCount(1)
@@ -74,6 +75,22 @@ test('frames the first referenced object and preserves a manual pan as the list 
   expect(await settledTransform(viewport)).toBe(panned)
   await page.getByRole('button', { name: 'Fit', exact: true }).click()
   await expect(objects.last()).toBeInViewport({ ratio: 0.99, timeout: 5000 })
+  await settledTransform(viewport)
+
+  // Finish with multiple objects in the last snapshot, then start again on
+  // the same graph tab. The new run must frame its own stack and first object.
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await expect(status).toContainText('Ready')
+  await debug.click()
+  await expect(status).toContainText(`Paused at main.cpp:${allocationLine}`)
+  await expect(objects).toHaveCount(0)
+  await expect(stack).toBeInViewport({ ratio: 0.99 })
+  expect(await settledTransform(viewport)).toBe(stackOnly)
+  await step.click()
+  await expect(status).toContainText(`Paused at main.cpp:${allocationLine + 1}`)
+  await expect(objects).toHaveCount(1)
+  await expect(objects.first()).toBeInViewport({ ratio: 0.99, timeout: 5000 })
+  await expect(stack).toBeInViewport({ ratio: 0.99 })
 })
 
 test('keeps observed C++ objects and pointer edges separate through expansion and new pauses', async ({ page }, testInfo) => {
