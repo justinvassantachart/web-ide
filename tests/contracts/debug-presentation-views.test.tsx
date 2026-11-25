@@ -83,6 +83,26 @@ it('shares semantic rows and pages across view remounts', async () => {
 })
 
 describe('debugger capture history', () => {
+  it('keeps the current snapshot when stepping and discards it when the program exits', () => {
+    const store = createDebugStore()
+    const debug = store.getState()
+    debug.toggleBreakpoint('/main.cpp', 5)
+    const first = pause('first')
+    debug.pushHistoryState(first)
+    debug.setDebugMode('running')
+    expect(store.getState().activePause).toBe(first)
+
+    debug.setDebugMode('idle')
+    expect(store.getState()).toMatchObject({
+      activePause: null, memorySnapshot: null, stepHistory: [], callStack: [],
+      breakpoints: { '/main.cpp': [5] },
+    })
+    debug.setDebugMode('running')
+    const next = pause('next run')
+    debug.pushHistoryState(next)
+    expect(store.getState().stepHistory).toEqual([next])
+  })
+
   it('refreshes only the matching live stop and preserves selected immutable history', () => {
     const store = createDebugStore()
     const first = pause('first', 0, [scalar('x', 1)])
