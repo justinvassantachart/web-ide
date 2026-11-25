@@ -7,3 +7,5 @@ test-results/
 *.tsbuildinfo
 *.log
 .DS_Store
+
+.artifacts/

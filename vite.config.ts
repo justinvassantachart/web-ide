@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -16,6 +17,13 @@ export default defineConfig({
   base: './',
   plugins: [
     react(),
+    {
+      name: 'upstream-toolchain-manifest',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'upstream-toolchains.json', source: readFileSync(new URL('./src/runtimes/upstream-toolchains.json', import.meta.url), 'utf8') })
+        this.emitFile({ type: 'asset', fileName: 'upstream-engine.json', source: readFileSync(new URL('./src/runtimes/upstream-engine.json', import.meta.url), 'utf8') })
+      },
+    },
     {
       name: 'scope-workbench-styles',
       enforce: 'post',
@@ -59,7 +67,7 @@ export default defineConfig({
     format: 'es',
   },
   optimizeDeps: {
-    exclude: ['debugger-sh'],
+    exclude: ['debugger-sh', 'debugger-sh-upstream'],
   },
   build: {
     target: 'esnext',
@@ -78,7 +86,7 @@ export default defineConfig({
       cssFileName: 'styles',
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime', 'debugger-sh'],
+      external: ['react', 'react-dom', 'react/jsx-runtime', 'debugger-sh', 'debugger-sh-upstream'],
     },
   },
 })
